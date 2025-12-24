@@ -18,6 +18,15 @@ import hashlib
 DATA_DIR = Path(__file__).parent / "data"
 BEHEERDER_WACHTWOORD = "waterdragers2025"  # Pas aan!
 
+# Teams waaruit scheidsrechters komen (vanaf U16)
+SCHEIDSRECHTER_TEAMS = [
+    "M16-1", "M16-2",
+    "V16-1", "V16-2",
+    "M18-1", "M18-2", "M18-3",
+    "M20-1",
+    "MSE"
+]
+
 # Zorg dat data directory bestaat
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -740,8 +749,12 @@ def toon_scheidsrechters_beheer():
                         max_w = st.number_input("Maximum wedstrijden", min_value=1, 
                                                 value=scheids.get("max_wedstrijden", 5), key=f"max_{nbb}")
                     
-                    eigen_teams_str = ", ".join(scheids.get("eigen_teams", []))
-                    eigen_teams = st.text_input("Eigen teams (komma-gescheiden)", value=eigen_teams_str, key=f"teams_{nbb}")
+                    eigen_teams = st.multiselect(
+                        "Eigen teams", 
+                        options=SCHEIDSRECHTER_TEAMS,
+                        default=scheids.get("eigen_teams", []),
+                        key=f"teams_{nbb}"
+                    )
                     
                     col_save, col_delete = st.columns(2)
                     with col_save:
@@ -754,7 +767,7 @@ def toon_scheidsrechters_beheer():
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
                                 "max_wedstrijden": max_w,
-                                "eigen_teams": [t.strip() for t in eigen_teams.split(",") if t.strip()]
+                                "eigen_teams": eigen_teams
                             }
                             sla_scheidsrechters_op(scheidsrechters)
                             st.session_state[edit_key] = False
@@ -802,7 +815,7 @@ def toon_scheidsrechters_beheer():
             min_wed = st.number_input("Minimum wedstrijden", min_value=0, value=2)
             max_wed = st.number_input("Maximum wedstrijden", min_value=1, value=5)
         
-        eigen_teams = st.text_input("Eigen teams (komma-gescheiden)")
+        eigen_teams = st.multiselect("Eigen teams", options=SCHEIDSRECHTER_TEAMS)
         
         if st.form_submit_button("Toevoegen"):
             if nbb_nummer and naam:
@@ -814,7 +827,7 @@ def toon_scheidsrechters_beheer():
                     "niveau_2e_scheids": niveau_2e,
                     "min_wedstrijden": min_wed,
                     "max_wedstrijden": max_wed,
-                    "eigen_teams": [t.strip() for t in eigen_teams.split(",") if t.strip()]
+                    "eigen_teams": eigen_teams
                 }
                 sla_scheidsrechters_op(scheidsrechters)
                 st.success("Scheidsrechter toegevoegd!")
