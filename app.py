@@ -27,6 +27,21 @@ SCHEIDSRECHTER_TEAMS = [
     "MSE"
 ]
 
+def team_match(volledig_team: str, eigen_team: str) -> bool:
+    """
+    Check of een volledige teamnaam (bijv. 'Waterdragers - M18-3**') 
+    matcht met een eigen team (bijv. 'M18-3').
+    """
+    if not volledig_team or not eigen_team:
+        return False
+    
+    # Normaliseer: uppercase en verwijder sterretjes
+    volledig = str(volledig_team).upper().replace("*", "").strip()
+    eigen = str(eigen_team).upper().replace("*", "").strip()
+    
+    # Check of eigen team in de volledige naam zit
+    return eigen in volledig
+
 # Zorg dat data directory bestaat
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -107,16 +122,18 @@ def heeft_eigen_wedstrijd(nbb_nummer: str, datum_tijd: datetime, wedstrijden: di
         return False
     
     for wed_id, wed in wedstrijden.items():
-        # Check of dit een wedstrijd is van een eigen team
-        is_eigen_wed = False
+        # Check of dit een wedstrijd is van een eigen team (flexibele matching)
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
         
+        is_eigen_wed = False
         if wed.get("type") == "uit":
             # Bij uitwedstrijd: thuisteam is het eigen team dat uit speelt
-            if wed["thuisteam"] in eigen_teams:
+            if is_eigen_thuis:
                 is_eigen_wed = True
         else:
             # Bij thuiswedstrijd: check beide teams
-            if wed["thuisteam"] in eigen_teams or wed["uitteam"] in eigen_teams:
+            if is_eigen_thuis or is_eigen_uit:
                 is_eigen_wed = True
         
         if not is_eigen_wed:
@@ -179,9 +196,11 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
         
-        # Check eigen team (thuiswedstrijd van eigen team)
-        if wed["thuisteam"] in scheids.get("eigen_teams", []) or \
-           wed["uitteam"] in scheids.get("eigen_teams", []):
+        # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
+        eigen_teams = scheids.get("eigen_teams", [])
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        if is_eigen_thuis or is_eigen_uit:
             continue
         
         # Check zondag
@@ -246,9 +265,11 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
         
-        # Check eigen team (thuiswedstrijd van eigen team)
-        if wed["thuisteam"] in scheids.get("eigen_teams", []) or \
-           wed["uitteam"] in scheids.get("eigen_teams", []):
+        # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
+        eigen_teams_scheids = scheids.get("eigen_teams", [])
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams_scheids)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams_scheids)
+        if is_eigen_thuis or is_eigen_uit:
             continue
         
         # Check zondag
@@ -404,9 +425,12 @@ def toon_speler_view(nbb_nummer: str):
             wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
             
             # Check of dit een wedstrijd is van een eigen team
+            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+            
             if wed.get("type") == "uit":
                 # Uitwedstrijd: thuisteam is eigen team dat uit speelt
-                if wed["thuisteam"] in eigen_teams:
+                if is_eigen_thuis:
                     reistijd = wed.get("reistijd_minuten", 45)
                     # Terugkomsttijd: starttijd + reistijd heen + wedstrijd (1.5u) + reistijd terug
                     terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
@@ -418,7 +442,7 @@ def toon_speler_view(nbb_nummer: str):
                     })
             else:
                 # Thuiswedstrijd
-                if wed["thuisteam"] in eigen_teams or wed["uitteam"] in eigen_teams:
+                if is_eigen_thuis or is_eigen_uit:
                     # Eindtijd: starttijd + wedstrijd (1.5u)
                     eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
                     eigen_wedstrijden.append({
