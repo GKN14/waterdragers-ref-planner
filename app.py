@@ -955,6 +955,12 @@ def bepaal_niveau_uit_team(teamnaam: str) -> int:
     team = team.rstrip("*")
     
     # Niveau-indeling op basis van teamnaam
+    # Niveau 1: X10-1, X10-2, X12-2, V12-2
+    # Niveau 2: X12-1, V12-1, X14-2, M16-2
+    # Niveau 3: X14-1, M16-1, V16-2
+    # Niveau 4: V16-1, M18-2, M18-3
+    # Niveau 5: M18-1, M20-1, MSE
+    
     niveau_1 = ["X10-1", "X10-2", "X12-2", "V12-2"]
     niveau_2 = ["X12-1", "V12-1", "X14-2", "M16-2"]
     niveau_3 = ["X14-1", "M16-1", "V16-2"]
@@ -972,16 +978,37 @@ def bepaal_niveau_uit_team(teamnaam: str) -> int:
     elif team in niveau_5:
         return 5
     
-    # Fallback op basis van leeftijdscategorie als team niet bekend is
-    if "X10" in team or "X12" in team and "1" not in team:
+    # Fallback op basis van leeftijdscategorie als team niet exact matcht
+    if "X10" in team:
         return 1
-    elif "X12" in team or "V12" in team or "X14" in team:
+    elif "X12" in team or "V12" in team:
+        # X12-1 en V12-1 zijn niveau 2, rest niveau 1
+        if "-1" in team:
+            return 2
+        return 1
+    elif "X14" in team:
+        # X14-1 is niveau 3, X14-2 is niveau 2
+        if "-1" in team:
+            return 3
         return 2
-    elif "X14" in team or "M16" in team or "V16" in team:
+    elif "M16" in team:
+        # M16-1 is niveau 3, M16-2 is niveau 2
+        if "-1" in team:
+            return 3
+        return 2
+    elif "V16" in team:
+        # V16-1 is niveau 4, V16-2 is niveau 3
+        if "-1" in team:
+            return 4
         return 3
-    elif "M18" in team or "V16-1" in team:
+    elif "M18" in team:
+        # M18-1 is niveau 5, M18-2 en M18-3 zijn niveau 4
+        if "-1" in team:
+            return 5
         return 4
-    elif "M20" in team or "MSE" in team:
+    elif "M20" in team or "M22" in team:
+        return 5
+    elif "MSE" in team:
         return 5
     
     return 2  # Default
@@ -1060,8 +1087,33 @@ def toon_import_export():
                     st.write(f"**Gevonden: {len(df_club)} wedstrijden van {club_naam}**")
                     
                     if len(df_club) > 0:
+                        # Bereken niveau voor preview
+                        def get_eigen_team_niveau(row):
+                            if club_naam.lower() in str(row["Thuisteam"]).lower():
+                                eigen_team = row["Thuisteam"]
+                            else:
+                                eigen_team = row["Uitteam"]
+                            return bepaal_niveau_uit_team(eigen_team)
+                        
+                        df_preview = df_club.copy()
+                        df_preview["Niveau"] = df_preview.apply(get_eigen_team_niveau, axis=1)
+                        df_preview["Type"] = df_preview.apply(
+                            lambda r: "Thuis" if thuislocatie.upper() in str(r.get("Plaatsnaam", "")).upper() else "Uit",
+                            axis=1
+                        )
+                        
                         # Preview
-                        st.dataframe(df_club[["Datum", "Tijd", "Thuisteam", "Uitteam", "Plaatsnaam"]].head(10))
+                        st.dataframe(df_preview[["Datum", "Tijd", "Thuisteam", "Uitteam", "Type", "Niveau"]].head(20))
+                        
+                        # Samenvatting per niveau
+                        thuis_df = df_preview[df_preview["Type"] == "Thuis"]
+                        if len(thuis_df) > 0:
+                            st.write("**Thuiswedstrijden per niveau:**")
+                            niveau_counts = thuis_df["Niveau"].value_counts().sort_index()
+                            cols = st.columns(5)
+                            for i, niveau in enumerate([1, 2, 3, 4, 5]):
+                                count = niveau_counts.get(niveau, 0)
+                                cols[i].metric(f"Niveau {niveau}", count)
                         
                         if st.button("✅ Importeer deze wedstrijden"):
                             wedstrijden = laad_wedstrijden()
