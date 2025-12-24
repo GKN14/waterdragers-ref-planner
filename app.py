@@ -253,6 +253,38 @@ def heeft_eigen_wedstrijd(nbb_nummer: str, datum_tijd: datetime, wedstrijden: di
     
     return False
 
+def heeft_overlappende_fluitwedstrijd(nbb_nummer: str, huidige_wed_id: str, datum_tijd: datetime, wedstrijden: dict) -> bool:
+    """
+    Check of scheidsrechter al is ingeschreven voor een andere wedstrijd die overlapt.
+    Wedstrijden duren ~1,5 uur, scheidsrechter moet 30 min van tevoren aanwezig zijn.
+    """
+    wed_duur = timedelta(hours=1, minutes=30)
+    aanwezig_voor = timedelta(minutes=30)
+    
+    # Tijdsvenster van de wedstrijd waar we naar kijken
+    nieuwe_start = datum_tijd - aanwezig_voor
+    nieuwe_eind = datum_tijd + wed_duur
+    
+    for wed_id, wed in wedstrijden.items():
+        # Skip de huidige wedstrijd
+        if wed_id == huidige_wed_id:
+            continue
+        
+        # Check of speler is ingeschreven voor deze wedstrijd
+        if wed.get("scheids_1") != nbb_nummer and wed.get("scheids_2") != nbb_nummer:
+            continue
+        
+        # Bereken tijdsvenster van de bestaande wedstrijd
+        bestaande_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        bestaande_start = bestaande_datum - aanwezig_voor
+        bestaande_eind = bestaande_datum + wed_duur
+        
+        # Check overlap
+        if nieuwe_start < bestaande_eind and nieuwe_eind > bestaande_start:
+            return True
+    
+    return False
+
 def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden: dict, scheidsrechters: dict, als_eerste: bool) -> dict:
     """
     Bepaal de status van een scheidsrechter positie voor een wedstrijd.
@@ -308,6 +340,11 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
     andere_positie = "scheids_2" if als_eerste else "scheids_1"
     if wed.get(andere_positie) == nbb_nummer:
         return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "al 2e scheids" if als_eerste else "al 1e scheids"}
+    
+    # Check overlap met andere fluitwedstrijden
+    overlap_wed = heeft_overlappende_fluitwedstrijd(nbb_nummer, wed.get("id", ""), wed_datum, wedstrijden)
+    if overlap_wed:
+        return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "overlap andere wedstrijd"}
     
     # Alles ok - beschikbaar
     return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": True, "reden": ""}
@@ -434,6 +471,10 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         # Check of niet al andere positie bij deze wedstrijd
         andere_positie = "scheids_2" if als_eerste else "scheids_1"
         if wed.get(andere_positie) == nbb:
+            continue
+        
+        # Check overlap met andere fluitwedstrijden
+        if heeft_overlappende_fluitwedstrijd(nbb, wed_id, wed_datum, wedstrijden):
             continue
         
         # Bereken "urgentie" - wie moet nog het meest?
@@ -719,8 +760,12 @@ def toon_speler_view(nbb_nummer: str):
                             </div>
                             """, unsafe_allow_html=True)
                         else:
-                            # Onder eigen niveau: normale info box
-                            st.info(f"🏀 **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
+                            # Onder eigen niveau: grijze box (minder prominent)
+                            st.markdown(f"""
+                            <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
+                                🏀 <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <em>Niveau {wed['niveau']}</em>
+                            </div>
+                            """, unsafe_allow_html=True)
                         
                         # Scheidsrechter opties
                         col_1e, col_2e = st.columns(2)
