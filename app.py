@@ -285,8 +285,18 @@ def toon_speler_view(nbb_nummer: str):
     wedstrijden = laad_wedstrijden()
     instellingen = laad_instellingen()
     
-    st.title("🏀 Scheidsrechter Inschrijving")
-    st.subheader(f"Welkom, {scheids['naam']}")
+    # Header met logo
+    logo_path = Path(__file__).parent / "logo.png"
+    if logo_path.exists():
+        col_logo, col_title = st.columns([1, 4])
+        with col_logo:
+            st.image(str(logo_path), width=100)
+        with col_title:
+            st.title("Scheidsrechter Inschrijving")
+            st.subheader(f"Welkom, {scheids['naam']}")
+    else:
+        st.title("🏀 Scheidsrechter Inschrijving")
+        st.subheader(f"Welkom, {scheids['naam']}")
     
     # Status
     huidig_aantal = tel_wedstrijden_scheidsrechter(nbb_nummer)
@@ -421,7 +431,16 @@ def toon_speler_view(nbb_nummer: str):
 
 def toon_beheerder_view():
     """Toon het beheerderspaneel."""
-    st.title("🔧 Beheerder - Scheidsrechter Planning")
+    # Header met logo
+    logo_path = Path(__file__).parent / "logo.png"
+    if logo_path.exists():
+        col_logo, col_title = st.columns([1, 4])
+        with col_logo:
+            st.image(str(logo_path), width=100)
+        with col_title:
+            st.title("Beheerder - Scheidsrechter Planning")
+    else:
+        st.title("🔧 Beheerder - Scheidsrechter Planning")
     
     tab1, tab2, tab3, tab4 = st.tabs([
         "📅 Wedstrijden", 
@@ -495,7 +514,7 @@ def toon_wedstrijden_beheer():
             uitteam = st.text_input("Uitteam" if wed_type == "thuis" else "Tegenstander")
             niveau = st.selectbox("Niveau", [1, 2, 3, 4, 5])
             vereist_bs2 = st.checkbox("BS2 vereist")
-            reistijd = st.number_input("Reistijd (minuten, alleen voor uit)", min_value=0, value=60)
+            reistijd = st.number_input("Reistijd (minuten, voor uitwedstrijden)", min_value=0, value=60)
         
         if st.form_submit_button("Toevoegen"):
             wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
@@ -760,13 +779,153 @@ def toon_instellingen_beheer():
         sla_instellingen_op(instellingen)
         st.success("Niveaus opgeslagen!")
 
+def bepaal_niveau_uit_competitie(competitie: str) -> int:
+    """Bepaal niveau 1-5 uit de NBB competitie string."""
+    competitie = competitie.upper()
+    
+    # Check leeftijdscategorie
+    if "U10" in competitie or "U12" in competitie:
+        return 1
+    elif "U14" in competitie:
+        return 2
+    elif "U16" in competitie:
+        # Check divisie voor U16
+        if "3E DIVISIE" in competitie or "2E DIVISIE" in competitie or "1E DIVISIE" in competitie:
+            return 3
+        return 2
+    elif "U18" in competitie or "U20" in competitie or "U22" in competitie:
+        return 3
+    elif "SENIOREN" in competitie or "MSE" in competitie:
+        # Check divisie voor senioren
+        if "1E DIVISIE" in competitie or "2E DIVISIE" in competitie or "3E DIVISIE" in competitie:
+            return 5
+        return 4
+    
+    return 2  # Default
+
+
 def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    tab1, tab2, tab3 = st.tabs(["📥 Import Scheidsrechters", "📥 Import Wedstrijden", "📤 Export"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📥 NBB Import", "📥 Import Scheidsrechters", "📥 Import Wedstrijden (CSV)", "📤 Export"])
     
     with tab1:
+        st.write("**Import wedstrijden uit NBB export**")
+        st.write("Upload het Excel-bestand dat je uit club.basketball.nl hebt geëxporteerd.")
+        
+        # Instellingen
+        col1, col2 = st.columns(2)
+        with col1:
+            thuislocatie = st.text_input("Thuislocatie (plaatsnaam)", value="NIEUWERKERK", 
+                                          help="Wedstrijden op deze locatie worden als thuiswedstrijd gemarkeerd")
+        with col2:
+            standaard_reistijd = st.number_input("Standaard reistijd uitwedstrijden (min)", 
+                                                  min_value=15, value=45)
+        
+        club_naam = st.text_input("Clubnaam in teamnamen", value="Waterdragers",
+                                   help="Wordt gebruikt om te bepalen welke wedstrijden van jullie club zijn")
+        
+        alleen_gepland = st.checkbox("Alleen geplande wedstrijden importeren", value=True)
+        
+        uploaded_nbb = st.file_uploader("Upload NBB Excel", type=["xlsx", "xls"], key="import_nbb")
+        
+        if uploaded_nbb:
+            try:
+                import pandas as pd
+                df = pd.read_excel(uploaded_nbb)
+                
+                # Check of dit een NBB bestand is
+                required_cols = ["Datum", "Tijd", "Thuisteam", "Uitteam", "Competitie", "Plaatsnaam"]
+                missing = [c for c in required_cols if c not in df.columns]
+                
+                if missing:
+                    st.error(f"Ontbrekende kolommen: {missing}")
+                else:
+                    # Filter op status indien gewenst
+                    if alleen_gepland and "Status" in df.columns:
+                        df = df[df["Status"] == "Gepland"]
+                    
+                    # Filter op club
+                    df_club = df[
+                        df["Thuisteam"].str.contains(club_naam, case=False, na=False) |
+                        df["Uitteam"].str.contains(club_naam, case=False, na=False)
+                    ]
+                    
+                    st.write(f"**Gevonden: {len(df_club)} wedstrijden van {club_naam}**")
+                    
+                    if len(df_club) > 0:
+                        # Preview
+                        st.dataframe(df_club[["Datum", "Tijd", "Thuisteam", "Uitteam", "Plaatsnaam"]].head(10))
+                        
+                        if st.button("✅ Importeer deze wedstrijden"):
+                            wedstrijden = laad_wedstrijden()
+                            count_thuis = 0
+                            count_uit = 0
+                            
+                            for idx, row in df_club.iterrows():
+                                # Bepaal datum/tijd
+                                datum = pd.to_datetime(row["Datum"]).strftime("%Y-%m-%d")
+                                tijd = str(row["Tijd"])[:5] if pd.notna(row["Tijd"]) else "00:00"
+                                
+                                # Bepaal thuis of uit
+                                plaatsnaam = str(row.get("Plaatsnaam", "")).upper()
+                                is_thuis = thuislocatie.upper() in plaatsnaam
+                                
+                                # Bepaal niveau
+                                competitie = str(row.get("Competitie", ""))
+                                niveau = bepaal_niveau_uit_competitie(competitie)
+                                
+                                # Check BS2 vereiste (MSE)
+                                vereist_bs2 = "MSE" in str(row.get("Thuisteam", "")).upper() or \
+                                             "MSE" in str(row.get("Poule", "")).upper()
+                                
+                                wed_id = f"wed_{datum.replace('-','')}_{tijd.replace(':','')}_{idx}"
+                                
+                                if is_thuis:
+                                    # Thuiswedstrijd - scheidsrechters nodig
+                                    wedstrijden[wed_id] = {
+                                        "datum": f"{datum} {tijd}",
+                                        "thuisteam": row["Thuisteam"],
+                                        "uitteam": row["Uitteam"],
+                                        "niveau": niveau,
+                                        "type": "thuis",
+                                        "vereist_bs2": vereist_bs2,
+                                        "scheids_1": None,
+                                        "scheids_2": None
+                                    }
+                                    count_thuis += 1
+                                else:
+                                    # Uitwedstrijd - blokkade
+                                    # Bepaal welk team van ons speelt
+                                    if club_naam.lower() in str(row["Thuisteam"]).lower():
+                                        eigen_team = row["Thuisteam"]
+                                    else:
+                                        eigen_team = row["Uitteam"]
+                                    
+                                    wedstrijden[wed_id] = {
+                                        "datum": f"{datum} {tijd}",
+                                        "thuisteam": eigen_team,  # Eigen team dat uit speelt
+                                        "uitteam": row["Thuisteam"] if club_naam.lower() not in str(row["Thuisteam"]).lower() else row["Uitteam"],
+                                        "niveau": niveau,
+                                        "type": "uit",
+                                        "vereist_bs2": False,
+                                        "reistijd_minuten": standaard_reistijd,
+                                        "scheids_1": None,
+                                        "scheids_2": None
+                                    }
+                                    count_uit += 1
+                            
+                            sla_wedstrijden_op(wedstrijden)
+                            st.success(f"✅ Geïmporteerd: {count_thuis} thuiswedstrijden, {count_uit} uitwedstrijden (blokkades)")
+                            st.rerun()
+                    else:
+                        st.warning(f"Geen wedstrijden gevonden voor '{club_naam}'")
+                        
+            except Exception as e:
+                st.error(f"Fout bij lezen bestand: {e}")
+    
+    with tab2:
         st.write("**Import scheidsrechters (CSV)**")
         st.write("Verwacht formaat:")
         st.code("nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams")
@@ -800,11 +959,11 @@ def toon_import_export():
             sla_scheidsrechters_op(scheidsrechters)
             st.success(f"{count} scheidsrechters geïmporteerd!")
     
-    with tab2:
+    with tab3:
         st.write("**Import wedstrijden (CSV)**")
         st.write("Verwacht formaat:")
         st.code("datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten")
-        st.caption("type = 'thuis' of 'uit', reistijd_minuten alleen voor uitwedstrijden")
+        st.caption("type = 'thuis' of 'uit', reistijd_minuten voor uitwedstrijden")
         
         uploaded_wed = st.file_uploader("Upload CSV", type="csv", key="import_wed")
         if uploaded_wed:
@@ -846,7 +1005,7 @@ def toon_import_export():
             sla_wedstrijden_op(wedstrijden)
             st.success(f"{count} wedstrijden geïmporteerd!")
     
-    with tab3:
+    with tab4:
         st.write("**Export planning (CSV)**")
         
         col1, col2 = st.columns(2)
@@ -907,6 +1066,9 @@ def main():
         layout="wide"
     )
     
+    # Logo laden indien aanwezig
+    logo_path = Path(__file__).parent / "logo.png"
+    
     # Haal query parameters op
     query_params = st.query_params
     
@@ -937,8 +1099,17 @@ def main():
         return
     
     # Default: landingspagina
-    st.title("🏀 Scheidsrechter Planning")
-    st.write("BV Waterdragers")
+    logo_path = Path(__file__).parent / "logo.png"
+    if logo_path.exists():
+        col_logo, col_title = st.columns([1, 4])
+        with col_logo:
+            st.image(str(logo_path), width=120)
+        with col_title:
+            st.title("Scheidsrechter Planning")
+            st.write("BV Waterdragers")
+    else:
+        st.title("🏀 Scheidsrechter Planning")
+        st.write("BV Waterdragers")
     
     st.divider()
     
