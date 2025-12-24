@@ -13,6 +13,13 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 import hashlib
+from io import BytesIO
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 # Custom CSS voor afwisselende dag-achtergronden
 def inject_custom_css():
@@ -917,9 +924,10 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
+        "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
         "📊 Import/Export"
     ])
@@ -931,10 +939,347 @@ def toon_beheerder_view():
         toon_scheidsrechters_beheer()
     
     with tab3:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab4:
+        toon_instellingen_beheer()
+    
+    with tab5:
         toon_import_export()
+
+def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, scheidsrechters: dict) -> bytes:
+    """Genereer een PNG afbeelding van het scheidsrechteroverzicht."""
+    
+    # Configuratie
+    breedte = 800
+    header_hoogte = 100
+    rij_hoogte = 60
+    kolom_breedtes = [70, 70, 320, 280]  # Tijd, Veld, Wedstrijd, Naam
+    
+    # Bereken hoogte
+    aantal_rijen = len(wedstrijden_data)
+    hoogte = header_hoogte + 40 + (aantal_rijen + 1) * rij_hoogte + 20  # +1 voor header rij
+    
+    # Kleuren
+    header_kleur = (70, 130, 180)  # Steel blue
+    header_tekst = (255, 255, 255)
+    tabel_header_bg = (70, 130, 180)
+    rij_even = (245, 245, 245)
+    rij_oneven = (255, 255, 255)
+    rand_kleur = (200, 200, 200)
+    tekst_kleur = (50, 50, 50)
+    
+    # Maak afbeelding
+    img = Image.new('RGB', (breedte, hoogte), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Probeer fonts te laden
+    try:
+        font_groot = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_normaal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font_datum = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", 16)
+    except:
+        font_groot = ImageFont.load_default()
+        font_normaal = ImageFont.load_default()
+        font_bold = ImageFont.load_default()
+        font_datum = ImageFont.load_default()
+    
+    # Header achtergrond
+    draw.rectangle([0, 0, breedte, header_hoogte], fill=header_kleur)
+    
+    # Titel
+    titel = "SCHEIDSRECHTEROVERZICHT"
+    bbox = draw.textbbox((0, 0), titel, font=font_groot)
+    titel_breedte = bbox[2] - bbox[0]
+    draw.text(((breedte - titel_breedte) / 2, 20), titel, fill=header_tekst, font=font_groot)
+    
+    # Datum
+    dag_namen = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
+    maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                   "juli", "augustus", "september", "oktober", "november", "december"]
+    datum_tekst = f"{dag_namen[datum.weekday()]} {datum.day} {maand_namen[datum.month-1]} {datum.year}"
+    bbox = draw.textbbox((0, 0), datum_tekst, font=font_datum)
+    datum_breedte = bbox[2] - bbox[0]
+    draw.text(((breedte - datum_breedte) / 2, 60), datum_tekst, fill=header_tekst, font=font_datum)
+    
+    # Tabel start positie
+    tabel_start_y = header_hoogte + 20
+    margin_left = 30
+    
+    # Tabel header
+    x = margin_left
+    y = tabel_start_y
+    headers = ["Tijd", "Veld", "Wedstrijd", "Naam"]
+    
+    # Header achtergrond
+    draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=tabel_header_bg)
+    
+    for i, (header, width) in enumerate(zip(headers, kolom_breedtes)):
+        # Tekst centreren in kolom
+        bbox = draw.textbbox((0, 0), header, font=font_bold)
+        tekst_breedte = bbox[2] - bbox[0]
+        tekst_x = x + (width - tekst_breedte) / 2
+        draw.text((tekst_x, y + 20), header, fill=header_tekst, font=font_bold)
+        x += width
+    
+    # Data rijen
+    y += rij_hoogte
+    for idx, wed in enumerate(wedstrijden_data):
+        # Achtergrond kleur
+        bg_kleur = rij_even if idx % 2 == 0 else rij_oneven
+        draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=bg_kleur)
+        
+        # Horizontale lijn
+        draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+        
+        x = margin_left
+        
+        # Tijd
+        tijd_tekst = wed["tijd"]
+        bbox = draw.textbbox((0, 0), tijd_tekst, font=font_normaal)
+        tekst_breedte = bbox[2] - bbox[0]
+        draw.text((x + (kolom_breedtes[0] - tekst_breedte) / 2, y + 10), tijd_tekst, fill=tekst_kleur, font=font_normaal)
+        x += kolom_breedtes[0]
+        
+        # Veld
+        veld_tekst = wed.get("veld", "-")
+        bbox = draw.textbbox((0, 0), veld_tekst, font=font_normaal)
+        tekst_breedte = bbox[2] - bbox[0]
+        draw.text((x + (kolom_breedtes[1] - tekst_breedte) / 2, y + 10), veld_tekst, fill=tekst_kleur, font=font_normaal)
+        x += kolom_breedtes[1]
+        
+        # Wedstrijd (2 regels)
+        wed_tekst1 = wed["thuisteam"]
+        wed_tekst2 = wed["uitteam"]
+        draw.text((x + 10, y + 8), wed_tekst1, fill=tekst_kleur, font=font_normaal)
+        draw.text((x + 10, y + 30), wed_tekst2, fill=tekst_kleur, font=font_normaal)
+        x += kolom_breedtes[2]
+        
+        # Naam
+        naam_tekst = wed.get("scheids_naam", "-")
+        draw.text((x + 10, y + 20), naam_tekst, fill=tekst_kleur, font=font_normaal)
+        
+        y += rij_hoogte
+    
+    # Laatste lijn
+    draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+    
+    # Rand om hele tabel
+    draw.rectangle([margin_left, tabel_start_y, breedte - margin_left, y], outline=rand_kleur, width=2)
+    
+    # Verticale lijnen
+    x = margin_left
+    for width in kolom_breedtes[:-1]:
+        x += width
+        draw.line([x, tabel_start_y, x, y], fill=rand_kleur, width=1)
+    
+    # Opslaan naar bytes
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def toon_weekend_overzicht():
+    """Genereer een weekend overzicht als afbeelding."""
+    st.subheader("Weekend Overzicht Generator")
+    
+    if not PIL_AVAILABLE:
+        st.error("PIL/Pillow is niet geïnstalleerd. Installeer met: pip install Pillow")
+        return
+    
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    
+    # Datum selectie
+    st.markdown("**Selecteer datum**")
+    
+    # Vind beschikbare datums
+    datums = set()
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("type") == "uit":
+            continue
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum > datetime.now() - timedelta(days=7):  # Afgelopen week + toekomst
+            datums.add(wed_datum.date())
+    
+    datums = sorted(datums)
+    
+    if not datums:
+        st.warning("Geen wedstrijden gevonden.")
+        return
+    
+    # Datum dropdown
+    dag_namen = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+    datum_opties = {f"{dag_namen[d.weekday()]} {d.strftime('%d-%m-%Y')}": d for d in datums}
+    
+    gekozen_datum_str = st.selectbox("Kies een datum", list(datum_opties.keys()))
+    gekozen_datum = datum_opties[gekozen_datum_str]
+    
+    # Filter wedstrijden voor deze datum
+    dag_wedstrijden = []
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("type") == "uit":
+            continue
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum.date() == gekozen_datum:
+            # Haal scheidsrechter namen op
+            scheids_1_naam = ""
+            scheids_2_naam = ""
+            
+            if wed.get("scheids_1"):
+                scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
+                team_info = scheids_1.get("eigen_teams", [])
+                team_str = f"({team_info[0]})" if team_info else ""
+                scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}"
+            
+            if wed.get("scheids_2"):
+                scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
+                team_info = scheids_2.get("eigen_teams", [])
+                team_str = f"({team_info[0]})" if team_info else ""
+                scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}"
+            
+            # Voeg toe voor elke scheidsrechter (1e en 2e)
+            if scheids_1_naam or scheids_2_naam or True:  # Altijd tonen
+                dag_wedstrijden.append({
+                    "tijd": wed_datum.strftime("%H:%M"),
+                    "veld": wed.get("veld", "-"),
+                    "thuisteam": wed["thuisteam"],
+                    "uitteam": wed["uitteam"],
+                    "scheids_1_naam": scheids_1_naam if scheids_1_naam else "-",
+                    "scheids_2_naam": scheids_2_naam if scheids_2_naam else "-",
+                    "datum": wed_datum
+                })
+    
+    # Sorteer op tijd
+    dag_wedstrijden.sort(key=lambda x: x["datum"])
+    
+    if not dag_wedstrijden:
+        st.warning(f"Geen thuiswedstrijden op {gekozen_datum_str}")
+        return
+    
+    # Weergave opties
+    st.markdown("**Weergave opties**")
+    toon_1e = st.checkbox("Toon 1e scheidsrechters", value=True)
+    toon_2e = st.checkbox("Toon 2e scheidsrechters", value=True)
+    
+    # Maak lijst voor afbeelding
+    overzicht_data = []
+    for wed in dag_wedstrijden:
+        if toon_1e and wed["scheids_1_naam"] != "-":
+            overzicht_data.append({
+                "tijd": wed["tijd"],
+                "veld": wed["veld"],
+                "thuisteam": wed["thuisteam"],
+                "uitteam": wed["uitteam"],
+                "scheids_naam": wed["scheids_1_naam"]
+            })
+        elif toon_1e and wed["scheids_1_naam"] == "-":
+            overzicht_data.append({
+                "tijd": wed["tijd"],
+                "veld": wed["veld"],
+                "thuisteam": wed["thuisteam"],
+                "uitteam": wed["uitteam"],
+                "scheids_naam": "- (1e scheids)"
+            })
+        
+        if toon_2e and wed["scheids_2_naam"] != "-":
+            overzicht_data.append({
+                "tijd": wed["tijd"],
+                "veld": wed["veld"],
+                "thuisteam": wed["thuisteam"],
+                "uitteam": wed["uitteam"],
+                "scheids_naam": wed["scheids_2_naam"]
+            })
+        elif toon_2e and wed["scheids_2_naam"] == "-":
+            overzicht_data.append({
+                "tijd": wed["tijd"],
+                "veld": wed["veld"],
+                "thuisteam": wed["thuisteam"],
+                "uitteam": wed["uitteam"],
+                "scheids_naam": "- (2e scheids)"
+            })
+    
+    # Sorteer op tijd
+    overzicht_data.sort(key=lambda x: x["tijd"])
+    
+    if not overzicht_data:
+        st.warning("Geen scheidsrechters om te tonen met huidige filters.")
+        return
+    
+    st.markdown("---")
+    
+    # Preview tabel
+    st.markdown("**Preview**")
+    
+    # HTML tabel preview
+    dag_namen_lang = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
+    maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
+    
+    html_preview = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 700px;">
+        <div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;">
+            <h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2>
+            <p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]} {gekozen_datum.year}</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;">
+            <tr style="background-color: #4682B4; color: white;">
+                <th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th>
+                <th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Naam</th>
+            </tr>
+    """
+    
+    for idx, wed in enumerate(overzicht_data):
+        bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
+        html_preview += f"""
+            <tr style="background-color: {bg};">
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">{wed['tijd']}</td>
+                <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">{wed['veld']}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{wed['thuisteam']}<br/>{wed['uitteam']}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{wed['scheids_naam']}</td>
+            </tr>
+        """
+    
+    html_preview += "</table></div>"
+    
+    st.markdown(html_preview, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Download knoppen
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Genereer PNG
+        if st.button("🖼️ Genereer PNG afbeelding", type="primary"):
+            try:
+                img_bytes = genereer_overzicht_afbeelding(
+                    datetime.combine(gekozen_datum, datetime.min.time()),
+                    overzicht_data,
+                    scheidsrechters
+                )
+                st.session_state.overzicht_png = img_bytes
+                st.session_state.overzicht_datum = gekozen_datum_str
+                st.success("Afbeelding gegenereerd!")
+            except Exception as e:
+                st.error(f"Fout bij genereren: {e}")
+    
+    # Download knop
+    if "overzicht_png" in st.session_state:
+        with col2:
+            datum_str = gekozen_datum.strftime("%Y-%m-%d")
+            st.download_button(
+                "⬇️ Download PNG",
+                data=st.session_state.overzicht_png,
+                file_name=f"scheidsrechter_overzicht_{datum_str}.png",
+                mime="image/png"
+            )
+        
+        # Toon gegenereerde afbeelding
+        st.markdown("**Gegenereerde afbeelding:**")
+        st.image(st.session_state.overzicht_png)
 
 def toon_wedstrijden_beheer():
     """Beheer wedstrijden en toewijzingen."""
