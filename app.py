@@ -951,10 +951,10 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     """Genereer een PNG afbeelding van het scheidsrechteroverzicht."""
     
     # Configuratie
-    breedte = 800
+    breedte = 850
     header_hoogte = 100
-    rij_hoogte = 60
-    kolom_breedtes = [70, 70, 320, 280]  # Tijd, Veld, Wedstrijd, Naam
+    rij_hoogte = 55
+    kolom_breedtes = [65, 65, 300, 340]  # Tijd, Veld, Wedstrijd, Scheidsrechters
     
     # Bereken hoogte
     aantal_rijen = len(wedstrijden_data)
@@ -968,6 +968,7 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     rij_oneven = (255, 255, 255)
     rand_kleur = (200, 200, 200)
     tekst_kleur = (50, 50, 50)
+    label_kleur = (100, 100, 100)  # Grijs voor "1e:" en "2e:" labels
     
     # Maak afbeelding
     img = Image.new('RGB', (breedte, hoogte), (255, 255, 255))
@@ -976,14 +977,16 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     # Probeer fonts te laden
     try:
         font_groot = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_normaal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font_normaal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
         font_datum = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", 16)
+        font_klein = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
     except:
         font_groot = ImageFont.load_default()
         font_normaal = ImageFont.load_default()
         font_bold = ImageFont.load_default()
         font_datum = ImageFont.load_default()
+        font_klein = ImageFont.load_default()
     
     # Header achtergrond
     draw.rectangle([0, 0, breedte, header_hoogte], fill=header_kleur)
@@ -1010,7 +1013,7 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     # Tabel header
     x = margin_left
     y = tabel_start_y
-    headers = ["Tijd", "Veld", "Wedstrijd", "Naam"]
+    headers = ["Tijd", "Veld", "Wedstrijd", "Scheidsrechters"]
     
     # Header achtergrond
     draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=tabel_header_bg)
@@ -1020,7 +1023,7 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
         bbox = draw.textbbox((0, 0), header, font=font_bold)
         tekst_breedte = bbox[2] - bbox[0]
         tekst_x = x + (width - tekst_breedte) / 2
-        draw.text((tekst_x, y + 20), header, fill=header_tekst, font=font_bold)
+        draw.text((tekst_x, y + 18), header, fill=header_tekst, font=font_bold)
         x += width
     
     # Data rijen
@@ -1039,26 +1042,28 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
         tijd_tekst = wed["tijd"]
         bbox = draw.textbbox((0, 0), tijd_tekst, font=font_normaal)
         tekst_breedte = bbox[2] - bbox[0]
-        draw.text((x + (kolom_breedtes[0] - tekst_breedte) / 2, y + 10), tijd_tekst, fill=tekst_kleur, font=font_normaal)
+        draw.text((x + (kolom_breedtes[0] - tekst_breedte) / 2, y + 18), tijd_tekst, fill=tekst_kleur, font=font_normaal)
         x += kolom_breedtes[0]
         
         # Veld
         veld_tekst = wed.get("veld", "-")
         bbox = draw.textbbox((0, 0), veld_tekst, font=font_normaal)
         tekst_breedte = bbox[2] - bbox[0]
-        draw.text((x + (kolom_breedtes[1] - tekst_breedte) / 2, y + 10), veld_tekst, fill=tekst_kleur, font=font_normaal)
+        draw.text((x + (kolom_breedtes[1] - tekst_breedte) / 2, y + 18), veld_tekst, fill=tekst_kleur, font=font_normaal)
         x += kolom_breedtes[1]
         
         # Wedstrijd (2 regels)
         wed_tekst1 = wed["thuisteam"]
         wed_tekst2 = wed["uitteam"]
-        draw.text((x + 10, y + 8), wed_tekst1, fill=tekst_kleur, font=font_normaal)
-        draw.text((x + 10, y + 30), wed_tekst2, fill=tekst_kleur, font=font_normaal)
+        draw.text((x + 8, y + 8), wed_tekst1, fill=tekst_kleur, font=font_normaal)
+        draw.text((x + 8, y + 28), wed_tekst2, fill=tekst_kleur, font=font_normaal)
         x += kolom_breedtes[2]
         
-        # Naam
-        naam_tekst = wed.get("scheids_naam", "-")
-        draw.text((x + 10, y + 20), naam_tekst, fill=tekst_kleur, font=font_normaal)
+        # Scheidsrechters (2 regels: 1e en 2e)
+        scheids_1 = wed.get("scheids_1", "-")
+        scheids_2 = wed.get("scheids_2", "-")
+        draw.text((x + 8, y + 8), f"1e: {scheids_1}", fill=tekst_kleur, font=font_klein)
+        draw.text((x + 8, y + 28), f"2e: {scheids_2}", fill=tekst_kleur, font=font_klein)
         
         y += rij_hoogte
     
@@ -1121,35 +1126,37 @@ def toon_weekend_overzicht():
     for wed_id, wed in wedstrijden.items():
         if wed.get("type") == "uit":
             continue
-        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        except:
+            continue  # Skip wedstrijden met ongeldige datum
+            
         if wed_datum.date() == gekozen_datum:
             # Haal scheidsrechter namen op
-            scheids_1_naam = ""
-            scheids_2_naam = ""
+            scheids_1_naam = "-"
+            scheids_2_naam = "-"
             
             if wed.get("scheids_1"):
                 scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
                 team_info = scheids_1.get("eigen_teams", [])
                 team_str = f"({team_info[0]})" if team_info else ""
-                scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}"
+                scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}".strip()
             
             if wed.get("scheids_2"):
                 scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
                 team_info = scheids_2.get("eigen_teams", [])
                 team_str = f"({team_info[0]})" if team_info else ""
-                scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}"
+                scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}".strip()
             
-            # Voeg toe voor elke scheidsrechter (1e en 2e)
-            if scheids_1_naam or scheids_2_naam or True:  # Altijd tonen
-                dag_wedstrijden.append({
-                    "tijd": wed_datum.strftime("%H:%M"),
-                    "veld": wed.get("veld", "-"),
-                    "thuisteam": wed["thuisteam"],
-                    "uitteam": wed["uitteam"],
-                    "scheids_1_naam": scheids_1_naam if scheids_1_naam else "-",
-                    "scheids_2_naam": scheids_2_naam if scheids_2_naam else "-",
-                    "datum": wed_datum
-                })
+            dag_wedstrijden.append({
+                "tijd": wed_datum.strftime("%H:%M"),
+                "veld": wed.get("veld", "-"),
+                "thuisteam": wed["thuisteam"],
+                "uitteam": wed["uitteam"],
+                "scheids_1": scheids_1_naam,
+                "scheids_2": scheids_2_naam,
+                "datum": wed_datum
+            })
     
     # Sorteer op tijd
     dag_wedstrijden.sort(key=lambda x: x["datum"])
@@ -1158,54 +1165,8 @@ def toon_weekend_overzicht():
         st.warning(f"Geen thuiswedstrijden op {gekozen_datum_str}")
         return
     
-    # Weergave opties
-    st.markdown("**Weergave opties**")
-    toon_1e = st.checkbox("Toon 1e scheidsrechters", value=True)
-    toon_2e = st.checkbox("Toon 2e scheidsrechters", value=True)
-    
-    # Maak lijst voor afbeelding
-    overzicht_data = []
-    for wed in dag_wedstrijden:
-        if toon_1e and wed["scheids_1_naam"] != "-":
-            overzicht_data.append({
-                "tijd": wed["tijd"],
-                "veld": wed["veld"],
-                "thuisteam": wed["thuisteam"],
-                "uitteam": wed["uitteam"],
-                "scheids_naam": wed["scheids_1_naam"]
-            })
-        elif toon_1e and wed["scheids_1_naam"] == "-":
-            overzicht_data.append({
-                "tijd": wed["tijd"],
-                "veld": wed["veld"],
-                "thuisteam": wed["thuisteam"],
-                "uitteam": wed["uitteam"],
-                "scheids_naam": "- (1e scheids)"
-            })
-        
-        if toon_2e and wed["scheids_2_naam"] != "-":
-            overzicht_data.append({
-                "tijd": wed["tijd"],
-                "veld": wed["veld"],
-                "thuisteam": wed["thuisteam"],
-                "uitteam": wed["uitteam"],
-                "scheids_naam": wed["scheids_2_naam"]
-            })
-        elif toon_2e and wed["scheids_2_naam"] == "-":
-            overzicht_data.append({
-                "tijd": wed["tijd"],
-                "veld": wed["veld"],
-                "thuisteam": wed["thuisteam"],
-                "uitteam": wed["uitteam"],
-                "scheids_naam": "- (2e scheids)"
-            })
-    
-    # Sorteer op tijd
-    overzicht_data.sort(key=lambda x: x["tijd"])
-    
-    if not overzicht_data:
-        st.warning("Geen scheidsrechters om te tonen met huidige filters.")
-        return
+    # Gebruik dag_wedstrijden direct (één rij per wedstrijd)
+    overzicht_data = dag_wedstrijden
     
     st.markdown("---")
     
@@ -1216,33 +1177,14 @@ def toon_weekend_overzicht():
     dag_namen_lang = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
     maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
     
-    html_preview = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 700px;">
-        <div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;">
-            <h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2>
-            <p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]} {gekozen_datum.year}</p>
-        </div>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;">
-            <tr style="background-color: #4682B4; color: white;">
-                <th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th>
-                <th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th>
-                <th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th>
-                <th style="padding: 10px; border: 1px solid #ccc;">Naam</th>
-            </tr>
-    """
-    
+    # Bouw HTML string - één rij per wedstrijd met beide scheidsrechters
+    html_rows = []
     for idx, wed in enumerate(overzicht_data):
         bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
-        html_preview += f"""
-            <tr style="background-color: {bg};">
-                <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">{wed['tijd']}</td>
-                <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">{wed['veld']}</td>
-                <td style="padding: 8px; border: 1px solid #ccc;">{wed['thuisteam']}<br/>{wed['uitteam']}</td>
-                <td style="padding: 8px; border: 1px solid #ccc;">{wed['scheids_naam']}</td>
-            </tr>
-        """
+        scheids_cel = f'1e: {wed["scheids_1"]}<br/>2e: {wed["scheids_2"]}'
+        html_rows.append(f'<tr style="background-color: {bg};"><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["veld"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{scheids_cel}</td></tr>')
     
-    html_preview += "</table></div>"
+    html_preview = f'''<div style="font-family: Arial, sans-serif; max-width: 750px;"><div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;"><h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2><p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]} {gekozen_datum.year}</p></div><table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;"><tr style="background-color: #4682B4; color: white;"><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th><th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th><th style="padding: 10px; border: 1px solid #ccc;">Scheidsrechters</th></tr>{''.join(html_rows)}</table></div>'''
     
     st.markdown(html_preview, unsafe_allow_html=True)
     
