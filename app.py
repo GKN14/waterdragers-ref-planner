@@ -376,7 +376,7 @@ def toon_speler_view(nbb_nummer: str):
     st.divider()
     
     # Toon huidige inschrijvingen
-    st.subheader("📋 Jouw wedstrijden")
+    st.subheader("🎯 Je hebt jezelf ingeschreven om te fluiten:")
     
     mijn_wedstrijden = []
     for wed_id, wed in wedstrijden.items():
@@ -407,7 +407,7 @@ def toon_speler_view(nbb_nummer: str):
                         sla_wedstrijden_op(wedstrijden)
                         st.rerun()
     else:
-        st.write("*Nog geen wedstrijden.*")
+        st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
     
     if not kan_inschrijven:
         return
