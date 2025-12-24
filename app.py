@@ -502,92 +502,8 @@ def toon_speler_view(nbb_nummer: str):
     
     st.divider()
     
-    # Toon eigen wedstrijden (van eigen teams)
-    eigen_teams = scheids.get("eigen_teams", [])
-    if eigen_teams:
-        st.subheader("🏀 Jouw eigen wedstrijden")
-        st.caption("Wedstrijden van je eigen team(s) - hier kun je niet fluiten maar wel je planning op afstemmen")
-        
-        # Verzamel eigen wedstrijden
-        eigen_wedstrijden = []
-        for wed_id, wed in wedstrijden.items():
-            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-            
-            # Check of dit een wedstrijd is van een eigen team
-            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
-            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
-            
-            if wed.get("type") == "uit":
-                # Uitwedstrijd: thuisteam is eigen team dat uit speelt
-                if is_eigen_thuis:
-                    reistijd = wed.get("reistijd_minuten", 45)
-                    # Terugkomsttijd: starttijd + reistijd heen + wedstrijd (1.5u) + reistijd terug
-                    terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
-                    eigen_wedstrijden.append({
-                        **wed,
-                        "id": wed_id,
-                        "is_uit": True,
-                        "terug_tijd": terug_tijd
-                    })
-            else:
-                # Thuiswedstrijd
-                if is_eigen_thuis or is_eigen_uit:
-                    # Eindtijd: starttijd + wedstrijd (1.5u)
-                    eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
-                    eigen_wedstrijden.append({
-                        **wed,
-                        "id": wed_id,
-                        "is_uit": False,
-                        "eind_tijd": eind_tijd
-                    })
-        
-        # Filter op doelmaand indien nodig (gebruik dezelfde logica als beschikbare wedstrijden)
-        deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-        if deadline_dt.day <= 15:
-            doel_maand = deadline_dt.month
-            doel_jaar = deadline_dt.year
-        else:
-            if deadline_dt.month == 12:
-                doel_maand = 1
-                doel_jaar = deadline_dt.year + 1
-            else:
-                doel_maand = deadline_dt.month + 1
-                doel_jaar = deadline_dt.year
-        
-        # Sorteer op datum
-        eigen_wedstrijden = sorted(eigen_wedstrijden, key=lambda x: x["datum"])
-        
-        # Filter op doelmaand voor weergave
-        eigen_in_maand = [w for w in eigen_wedstrijden 
-                         if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").month == doel_maand
-                         and datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").year == doel_jaar]
-        
-        if eigen_in_maand:
-            for wed in eigen_in_maand:
-                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-                dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
-                
-                with st.container():
-                    col1, col2, col3 = st.columns([2, 3, 2])
-                    with col1:
-                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
-                    with col2:
-                        if wed["is_uit"]:
-                            st.write(f"🚗 {wed['thuisteam']} @ {wed['uitteam']}")
-                        else:
-                            st.write(f"🏠 {wed['thuisteam']} - {wed['uitteam']}")
-                    with col3:
-                        if wed["is_uit"]:
-                            st.write(f"Terug ±{wed['terug_tijd'].strftime('%H:%M')}")
-                        else:
-                            st.write(f"Klaar ±{wed['eind_tijd'].strftime('%H:%M')}")
-        else:
-            st.write("*Geen eigen wedstrijden in deze periode.*")
-        
-        st.divider()
-    
-    # Beschikbare wedstrijden
-    st.subheader("📝 Beschikbare wedstrijden")
+    # Gecombineerd wedstrijdenoverzicht
+    st.subheader("📝 Wedstrijdenoverzicht")
     
     # Bepaal welke maand getoond moet worden op basis van deadline
     deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
@@ -610,12 +526,12 @@ def toon_speler_view(nbb_nummer: str):
     toon_alle = st.toggle(f"Toon ook wedstrijden buiten {maand_namen[doel_maand]}", value=False, 
                           help=f"Standaard zie je alleen wedstrijden van {maand_namen[doel_maand]} {doel_jaar}. Zet aan om alle toekomstige wedstrijden te zien.")
     
-    # Haal alle thuiswedstrijden op
-    alle_wedstrijden = []
+    eigen_teams = scheids.get("eigen_teams", [])
+    
+    # Verzamel ALLE wedstrijden (thuiswedstrijden om te fluiten + eigen wedstrijden)
+    alle_items = []
+    
     for wed_id, wed in wedstrijden.items():
-        if wed.get("type") == "uit":
-            continue
-        
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         
         # Filter op toekomst
@@ -627,91 +543,154 @@ def toon_speler_view(nbb_nummer: str):
             if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
                 continue
         
-        alle_wedstrijden.append({
-            "id": wed_id,
-            **wed
-        })
+        # Check of dit een eigen wedstrijd is
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        
+        if wed.get("type") == "uit":
+            # Uitwedstrijd van eigen team
+            if is_eigen_thuis:
+                reistijd = wed.get("reistijd_minuten", 45)
+                terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
+                alle_items.append({
+                    "id": wed_id,
+                    "type": "eigen_uit",
+                    "datum": wed["datum"],
+                    "wed_datum": wed_datum,
+                    "thuisteam": wed["thuisteam"],
+                    "uitteam": wed["uitteam"],
+                    "terug_tijd": terug_tijd
+                })
+        else:
+            # Thuiswedstrijd
+            if is_eigen_thuis or is_eigen_uit:
+                # Eigen thuiswedstrijd (speler speelt zelf)
+                eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
+                alle_items.append({
+                    "id": wed_id,
+                    "type": "eigen_thuis",
+                    "datum": wed["datum"],
+                    "wed_datum": wed_datum,
+                    "thuisteam": wed["thuisteam"],
+                    "uitteam": wed["uitteam"],
+                    "eind_tijd": eind_tijd
+                })
+            else:
+                # Wedstrijd om te fluiten
+                alle_items.append({
+                    "id": wed_id,
+                    "type": "fluiten",
+                    "datum": wed["datum"],
+                    "wed_datum": wed_datum,
+                    **wed
+                })
     
-    # Sorteer: eerst wedstrijden van eigen niveau, dan aflopend niveau, dan datum
-    max_niveau_1e = scheids["niveau_1e_scheids"]
-    alle_wedstrijden = sorted(alle_wedstrijden, key=lambda x: (
-        0 if x["niveau"] == max_niveau_1e else 1,
-        -x["niveau"],
-        x["datum"]
-    ))
+    # Sorteer chronologisch
+    alle_items = sorted(alle_items, key=lambda x: x["datum"])
     
-    if not alle_wedstrijden:
-        st.write("*Geen wedstrijden beschikbaar in deze periode.*")
+    if not alle_items:
+        st.write("*Geen wedstrijden in deze periode.*")
     else:
-        for wed in alle_wedstrijden:
-            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        for item in alle_items:
+            wed_datum = item["wed_datum"]
             dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
-            niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
             buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
             
-            # Bepaal status voor 1e scheidsrechter
-            status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
-            
-            # Bepaal status voor 2e scheidsrechter  
-            status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
-            
-            # Toon wedstrijd
-            with st.container():
-                # Header regel
-                col_datum, col_teams = st.columns([2, 4])
-                with col_datum:
-                    label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                    if buiten_doelmaand:
-                        label += " 📅"
-                    st.write(label)
-                with col_teams:
-                    st.write(f"**{wed['thuisteam']} - {wed['uitteam']}**")
-                    st.caption(f"Niveau {wed['niveau']} ({niveau_tekst})")
+            if item["type"] == "eigen_uit":
+                # Eigen uitwedstrijd
+                with st.container():
+                    col_datum, col_info = st.columns([2, 4])
+                    with col_datum:
+                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
+                        if buiten_doelmaand:
+                            label += " 📅"
+                        st.write(label)
+                    with col_info:
+                        st.write(f"🚗 **{item['thuisteam']}** @ {item['uitteam']}")
+                        st.caption(f"Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}")
+                    st.divider()
+                    
+            elif item["type"] == "eigen_thuis":
+                # Eigen thuiswedstrijd
+                with st.container():
+                    col_datum, col_info = st.columns([2, 4])
+                    with col_datum:
+                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
+                        if buiten_doelmaand:
+                            label += " 📅"
+                        st.write(label)
+                    with col_info:
+                        st.write(f"🏠 **{item['thuisteam']}** - {item['uitteam']}")
+                        st.caption(f"Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}")
+                    st.divider()
+                    
+            else:
+                # Wedstrijd om te fluiten
+                wed = item
+                niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
                 
-                # Scheidsrechter opties
-                col_1e, col_2e = st.columns(2)
+                # Bepaal status voor 1e scheidsrechter
+                status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
                 
-                with col_1e:
-                    if status_1e["ingeschreven_zelf"]:
-                        st.success(f"✅ **1e scheids:** Jij")
-                        if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
-                            wedstrijden[wed["id"]]["scheids_1"] = None
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
-                    elif status_1e["bezet"]:
-                        st.info(f"👤 **1e scheids:** {status_1e['naam']}")
-                    elif status_1e["beschikbaar"]:
-                        if huidig_aantal < max_wed:
-                            if st.button("✅ 1e scheids", key=f"1e_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                # Bepaal status voor 2e scheidsrechter  
+                status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
+                
+                with st.container():
+                    # Header regel
+                    col_datum, col_teams = st.columns([2, 4])
+                    with col_datum:
+                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
+                        if buiten_doelmaand:
+                            label += " 📅"
+                        st.write(label)
+                    with col_teams:
+                        st.write(f"**{wed['thuisteam']} - {wed['uitteam']}**")
+                        st.caption(f"Niveau {wed['niveau']} ({niveau_tekst})")
+                    
+                    # Scheidsrechter opties
+                    col_1e, col_2e = st.columns(2)
+                    
+                    with col_1e:
+                        if status_1e["ingeschreven_zelf"]:
+                            st.success(f"✅ **1e scheids:** Jij")
+                            if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                wedstrijden[wed["id"]]["scheids_1"] = None
                                 sla_wedstrijden_op(wedstrijden)
                                 st.rerun()
+                        elif status_1e["bezet"]:
+                            st.info(f"👤 **1e scheids:** {status_1e['naam']}")
+                        elif status_1e["beschikbaar"]:
+                            if huidig_aantal < max_wed:
+                                if st.button("✅ 1e scheids", key=f"1e_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                            else:
+                                st.write("~~1e scheids~~ *(max bereikt)*")
                         else:
-                            st.write("~~1e scheids~~ *(max bereikt)*")
-                    else:
-                        st.write(f"~~1e scheids~~ *({status_1e['reden']})*")
-                
-                with col_2e:
-                    if status_2e["ingeschreven_zelf"]:
-                        st.success(f"✅ **2e scheids:** Jij")
-                        if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
-                            wedstrijden[wed["id"]]["scheids_2"] = None
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
-                    elif status_2e["bezet"]:
-                        st.info(f"👤 **2e scheids:** {status_2e['naam']}")
-                    elif status_2e["beschikbaar"]:
-                        if huidig_aantal < max_wed:
-                            if st.button("✅ 2e scheids", key=f"2e_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                            st.write(f"~~1e scheids~~ *({status_1e['reden']})*")
+                    
+                    with col_2e:
+                        if status_2e["ingeschreven_zelf"]:
+                            st.success(f"✅ **2e scheids:** Jij")
+                            if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                wedstrijden[wed["id"]]["scheids_2"] = None
                                 sla_wedstrijden_op(wedstrijden)
                                 st.rerun()
+                        elif status_2e["bezet"]:
+                            st.info(f"👤 **2e scheids:** {status_2e['naam']}")
+                        elif status_2e["beschikbaar"]:
+                            if huidig_aantal < max_wed:
+                                if st.button("✅ 2e scheids", key=f"2e_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                            else:
+                                st.write("~~2e scheids~~ *(max bereikt)*")
                         else:
-                            st.write("~~2e scheids~~ *(max bereikt)*")
-                    else:
-                        st.write(f"~~2e scheids~~ *({status_2e['reden']})*")
-                
-                st.divider()
+                            st.write(f"~~2e scheids~~ *({status_2e['reden']})*")
+                    
+                    st.divider()
 
 # ============================================================
 # BEHEERDER VIEW
