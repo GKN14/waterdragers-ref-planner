@@ -591,38 +591,30 @@ def toon_speler_view(nbb_nummer: str):
     if not alle_items:
         st.write("*Geen wedstrijden in deze periode.*")
     else:
+        huidige_dag = None
+        
         for item in alle_items:
             wed_datum = item["wed_datum"]
-            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            dag_naam = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"][wed_datum.weekday()]
+            dag_kort = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            dag_key = wed_datum.strftime("%Y-%m-%d")
             buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
             
+            # Toon dag-header als nieuwe dag
+            if dag_key != huidige_dag:
+                huidige_dag = dag_key
+                dag_label = f"### 📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}"
+                if buiten_doelmaand:
+                    dag_label += " *(buiten periode)*"
+                st.markdown(dag_label)
+            
             if item["type"] == "eigen_uit":
-                # Eigen uitwedstrijd
-                with st.container():
-                    col_datum, col_info = st.columns([2, 4])
-                    with col_datum:
-                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                        if buiten_doelmaand:
-                            label += " 📅"
-                        st.write(label)
-                    with col_info:
-                        st.write(f"🚗 **{item['thuisteam']}** @ {item['uitteam']}")
-                        st.caption(f"Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}")
-                    st.divider()
+                # Eigen uitwedstrijd - opvallend blok
+                st.warning(f"🚗 **{wed_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
                     
             elif item["type"] == "eigen_thuis":
-                # Eigen thuiswedstrijd
-                with st.container():
-                    col_datum, col_info = st.columns([2, 4])
-                    with col_datum:
-                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                        if buiten_doelmaand:
-                            label += " 📅"
-                        st.write(label)
-                    with col_info:
-                        st.write(f"🏠 **{item['thuisteam']}** - {item['uitteam']}")
-                        st.caption(f"Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}")
-                    st.divider()
+                # Eigen thuiswedstrijd - opvallend blok
+                st.warning(f"🏠 **{wed_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
                     
             else:
                 # Wedstrijd om te fluiten
@@ -636,16 +628,8 @@ def toon_speler_view(nbb_nummer: str):
                 status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
                 
                 with st.container():
-                    # Header regel
-                    col_datum, col_teams = st.columns([2, 4])
-                    with col_datum:
-                        label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                        if buiten_doelmaand:
-                            label += " 📅"
-                        st.write(label)
-                    with col_teams:
-                        st.write(f"**{wed['thuisteam']} - {wed['uitteam']}**")
-                        st.caption(f"Niveau {wed['niveau']} ({niveau_tekst})")
+                    # Compacte header
+                    st.markdown(f"**{wed_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
                     
                     # Scheidsrechter opties
                     col_1e, col_2e = st.columns(2)
@@ -666,9 +650,9 @@ def toon_speler_view(nbb_nummer: str):
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
                             else:
-                                st.write("~~1e scheids~~ *(max bereikt)*")
+                                st.caption("~~1e scheids~~ *(max bereikt)*")
                         else:
-                            st.write(f"~~1e scheids~~ *({status_1e['reden']})*")
+                            st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
                     
                     with col_2e:
                         if status_2e["ingeschreven_zelf"]:
@@ -686,11 +670,11 @@ def toon_speler_view(nbb_nummer: str):
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
                             else:
-                                st.write("~~2e scheids~~ *(max bereikt)*")
+                                st.caption("~~2e scheids~~ *(max bereikt)*")
                         else:
-                            st.write(f"~~2e scheids~~ *({status_2e['reden']})*")
+                            st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
                     
-                    st.divider()
+                    st.markdown("---")
 
 # ============================================================
 # BEHEERDER VIEW
