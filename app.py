@@ -686,30 +686,39 @@ def toon_speler_view(nbb_nummer: str):
                         wed = item
                         niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
                         
+                        # Bepaal of dit een wedstrijd op eigen niveau is
+                        eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+                        is_eigen_niveau = wed["niveau"] == eigen_niveau
+                        
                         # Bepaal status voor 1e scheidsrechter
                         status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
                         
                         # Bepaal status voor 2e scheidsrechter  
                         status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
                         
-                        # Fluitwedstrijd in lichtblauwe box
-                        st.info(f"🏀 **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
+                        # Fluitwedstrijd - prominenter als op eigen niveau
+                        if is_eigen_niveau:
+                            # Eigen niveau: groene success box met ster
+                            st.success(f"⭐ **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · **Niveau {wed['niveau']}** *(jouw niveau)*")
+                        else:
+                            # Onder eigen niveau: normale info box
+                            st.info(f"🏀 **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
                         
                         # Scheidsrechter opties
                         col_1e, col_2e = st.columns(2)
                         
                         with col_1e:
                             if status_1e["ingeschreven_zelf"]:
-                                st.success(f"✅ **1e scheids:** Jij")
+                                st.markdown(f"🙋 **1e scheids:** Jij")
                                 if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
                                     wedstrijden[wed["id"]]["scheids_1"] = None
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
                             elif status_1e["bezet"]:
-                                st.write(f"👤 **1e scheids:** {status_1e['naam']}")
+                                st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
                             elif status_1e["beschikbaar"]:
                                 if huidig_aantal < max_wed:
-                                    if st.button("✅ 1e scheids", key=f"1e_{wed['id']}"):
+                                    if st.button("📋 1e scheids", key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
                                         wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
@@ -720,16 +729,16 @@ def toon_speler_view(nbb_nummer: str):
                         
                         with col_2e:
                             if status_2e["ingeschreven_zelf"]:
-                                st.success(f"✅ **2e scheids:** Jij")
+                                st.markdown(f"🙋 **2e scheids:** Jij")
                                 if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
                                     wedstrijden[wed["id"]]["scheids_2"] = None
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
                             elif status_2e["bezet"]:
-                                st.write(f"👤 **2e scheids:** {status_2e['naam']}")
+                                st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
                             elif status_2e["beschikbaar"]:
                                 if huidig_aantal < max_wed:
-                                    if st.button("✅ 2e scheids", key=f"2e_{wed['id']}"):
+                                    if st.button("📋 2e scheids", key=f"2e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
