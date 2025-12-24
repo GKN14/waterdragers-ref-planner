@@ -51,18 +51,47 @@ DATA_DIR.mkdir(exist_ok=True)
 # ============================================================
 
 def laad_json(bestand: str) -> dict | list:
-    """Laad JSON bestand, retourneer lege dict/list als niet bestaat."""
+    """Laad JSON bestand, retourneer lege dict/list als niet bestaat of corrupt."""
     pad = DATA_DIR / bestand
     if pad.exists():
-        with open(pad, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(pad, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if not content:
+                    return {}
+                return json.loads(content)
+        except (json.JSONDecodeError, Exception) as e:
+            # Maak backup van corrupt bestand
+            backup_pad = DATA_DIR / f"{bestand}.corrupt.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            try:
+                import shutil
+                shutil.copy(pad, backup_pad)
+            except:
+                pass
+            # Log de fout
+            print(f"FOUT bij laden {bestand}: {e}")
+            return {}
     return {}
 
 def sla_json_op(bestand: str, data: dict | list):
-    """Sla data op als JSON."""
+    """Sla data op als JSON met backup."""
     pad = DATA_DIR / bestand
-    with open(pad, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    
+    # Maak eerst backup als bestand bestaat
+    if pad.exists():
+        backup_pad = DATA_DIR / f"{bestand}.backup"
+        try:
+            import shutil
+            shutil.copy(pad, backup_pad)
+        except:
+            pass
+    
+    # Schrijf nieuwe data
+    try:
+        with open(pad, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        print(f"FOUT bij opslaan {bestand}: {e}")
 
 def laad_scheidsrechters() -> dict:
     return laad_json("scheidsrechters.json")
