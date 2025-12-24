@@ -54,6 +54,20 @@ def inject_custom_css():
         margin: 0.5rem 0;
         border-radius: 0 0.5rem 0.5rem 0;
     }
+    /* Groene primary buttons - meerdere selectors voor compatibiliteit */
+    button[kind="primary"],
+    button[data-testid="baseButton-primary"],
+    .stButton button[kind="primary"] {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+        color: white !important;
+    }
+    button[kind="primary"]:hover,
+    button[data-testid="baseButton-primary"]:hover,
+    .stButton button[kind="primary"]:hover {
+        background-color: #218838 !important;
+        border-color: #1e7e34 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -698,8 +712,12 @@ def toon_speler_view(nbb_nummer: str):
                         
                         # Fluitwedstrijd - prominenter als op eigen niveau
                         if is_eigen_niveau:
-                            # Eigen niveau: groene success box met ster
-                            st.success(f"⭐ **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · **Niveau {wed['niveau']}** *(jouw niveau)*")
+                            # Eigen niveau: groene box met ster
+                            st.markdown(f"""
+                            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
+                                ⭐ <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <strong>Niveau {wed['niveau']}</strong> <em>(jouw niveau)</em>
+                            </div>
+                            """, unsafe_allow_html=True)
                         else:
                             # Onder eigen niveau: normale info box
                             st.info(f"🏀 **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
@@ -738,7 +756,7 @@ def toon_speler_view(nbb_nummer: str):
                                 st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
                             elif status_2e["beschikbaar"]:
                                 if huidig_aantal < max_wed:
-                                    if st.button("📋 2e scheids", key=f"2e_{wed['id']}"):
+                                    if st.button("📋 2e scheids", key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
                                         wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
