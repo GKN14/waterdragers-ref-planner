@@ -695,20 +695,78 @@ def toon_scheidsrechters_beheer():
         status = "⚠️" if tekort > 0 else "✅"
         
         with st.expander(f"{status} {scheids['naam']} - {huidig}/{min_wed}-{max_wed} wedstrijden"):
-            col1, col2 = st.columns(2)
+            # Bewerk modus toggle
+            edit_key = f"edit_{nbb}"
+            if edit_key not in st.session_state:
+                st.session_state[edit_key] = False
             
-            with col1:
-                st.write(f"**NBB-nummer:** {nbb}")
-                st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
-                st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
+            col_info, col_btn = st.columns([4, 1])
+            with col_btn:
+                if st.button("✏️ Bewerk" if not st.session_state[edit_key] else "❌ Annuleer", key=f"toggle_{nbb}"):
+                    st.session_state[edit_key] = not st.session_state[edit_key]
+                    st.rerun()
             
-            with col2:
-                st.write(f"**1e scheids t/m niveau:** {scheids.get('niveau_1e_scheids', '-')}")
-                st.write(f"**2e scheids t/m niveau:** {scheids.get('niveau_2e_scheids', '-')}")
-                st.write(f"**Eigen teams:** {', '.join(scheids.get('eigen_teams', [])) or '-'}")
-            
-            # Link voor inschrijving
-            st.code(f"/inschrijven/{nbb}")
+            if st.session_state[edit_key]:
+                # Bewerk formulier
+                with st.form(f"edit_form_{nbb}"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        nieuwe_naam = st.text_input("Naam", value=scheids.get("naam", ""), key=f"naam_{nbb}")
+                        bs2_diploma = st.checkbox("BS2 diploma", value=scheids.get("bs2_diploma", False), key=f"bs2_{nbb}")
+                        niet_op_zondag = st.checkbox("Niet op zondag", value=scheids.get("niet_op_zondag", False), key=f"zondag_{nbb}")
+                    with col2:
+                        niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], 
+                                                  index=scheids.get("niveau_1e_scheids", 1) - 1, key=f"niv1_{nbb}")
+                        niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], 
+                                                  index=scheids.get("niveau_2e_scheids", 5) - 1, key=f"niv2_{nbb}")
+                        min_w = st.number_input("Minimum wedstrijden", min_value=0, 
+                                                value=scheids.get("min_wedstrijden", 2), key=f"min_{nbb}")
+                        max_w = st.number_input("Maximum wedstrijden", min_value=1, 
+                                                value=scheids.get("max_wedstrijden", 5), key=f"max_{nbb}")
+                    
+                    eigen_teams_str = ", ".join(scheids.get("eigen_teams", []))
+                    eigen_teams = st.text_input("Eigen teams (komma-gescheiden)", value=eigen_teams_str, key=f"teams_{nbb}")
+                    
+                    col_save, col_delete = st.columns(2)
+                    with col_save:
+                        if st.form_submit_button("💾 Opslaan"):
+                            scheidsrechters[nbb] = {
+                                "naam": nieuwe_naam,
+                                "bs2_diploma": bs2_diploma,
+                                "niet_op_zondag": niet_op_zondag,
+                                "niveau_1e_scheids": niveau_1e,
+                                "niveau_2e_scheids": niveau_2e,
+                                "min_wedstrijden": min_w,
+                                "max_wedstrijden": max_w,
+                                "eigen_teams": [t.strip() for t in eigen_teams.split(",") if t.strip()]
+                            }
+                            sla_scheidsrechters_op(scheidsrechters)
+                            st.session_state[edit_key] = False
+                            st.success("Scheidsrechter bijgewerkt!")
+                            st.rerun()
+                    with col_delete:
+                        if st.form_submit_button("🗑️ Verwijderen", type="secondary"):
+                            del scheidsrechters[nbb]
+                            sla_scheidsrechters_op(scheidsrechters)
+                            st.session_state[edit_key] = False
+                            st.success("Scheidsrechter verwijderd!")
+                            st.rerun()
+            else:
+                # Weergave modus
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write(f"**NBB-nummer:** {nbb}")
+                    st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
+                    st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
+                
+                with col2:
+                    st.write(f"**1e scheids t/m niveau:** {scheids.get('niveau_1e_scheids', '-')}")
+                    st.write(f"**2e scheids t/m niveau:** {scheids.get('niveau_2e_scheids', '-')}")
+                    st.write(f"**Eigen teams:** {', '.join(scheids.get('eigen_teams', [])) or '-'}")
+                
+                # Link voor inschrijving
+                st.code(f"?nbb={nbb}")
     
     st.divider()
     
@@ -724,7 +782,7 @@ def toon_scheidsrechters_beheer():
             niet_op_zondag = st.checkbox("Niet op zondag")
         with col2:
             niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], index=1)
-            niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], index=2)
+            niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], index=4)
             min_wed = st.number_input("Minimum wedstrijden", min_value=0, value=2)
             max_wed = st.number_input("Maximum wedstrijden", min_value=1, value=5)
         
