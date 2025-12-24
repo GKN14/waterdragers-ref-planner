@@ -332,15 +332,23 @@ def toon_speler_view(nbb_nummer: str):
     elif huidig_aantal >= max_wed:
         st.success("✅ Je hebt je maximum bereikt.")
     
-    # Check deadline
+    # Check deadline en bepaal doelmaand
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     dagen_over = (deadline - datetime.now()).days
+    
+    # Bepaal doelmaand (zelfde logica als bij wedstrijden filter)
+    maand_namen = ["", "januari", "februari", "maart", "april", "mei", "juni", 
+                   "juli", "augustus", "september", "oktober", "november", "december"]
+    if deadline.day <= 15:
+        info_maand = maand_namen[deadline.month]
+    else:
+        info_maand = maand_namen[1 if deadline.month == 12 else deadline.month + 1]
     
     if dagen_over < 0:
         st.info(f"📅 De inschrijfperiode is gesloten. Je kunt je wedstrijden hieronder bekijken.")
         kan_inschrijven = False
     else:
-        st.info(f"📅 Inschrijven kan nog {dagen_over} dagen (tot {deadline.strftime('%d-%m-%Y')})")
+        st.info(f"📅 Inschrijven voor **{info_maand}** kan nog {dagen_over} dagen (tot {deadline.strftime('%d-%m-%Y')})")
         kan_inschrijven = True
     
     st.divider()
@@ -387,20 +395,41 @@ def toon_speler_view(nbb_nummer: str):
     # Beschikbare wedstrijden
     st.subheader("📝 Beschikbare wedstrijden")
     
-    # Filter optie
+    # Bepaal welke maand getoond moet worden op basis van deadline
+    # Als deadline vroeg in de maand (dag 1-15): toon wedstrijden van die maand
+    # Als deadline laat in de maand (dag 16+): toon wedstrijden van volgende maand
     deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    toon_alle = st.toggle("Toon ook wedstrijden na de deadline", value=False, 
-                          help="Standaard zie je alleen wedstrijden t/m de inschrijfdeadline. Zet aan om alle toekomstige wedstrijden te zien.")
+    
+    if deadline_dt.day <= 15:
+        # Deadline vroeg in de maand: toon deze maand
+        doel_maand = deadline_dt.month
+        doel_jaar = deadline_dt.year
+    else:
+        # Deadline laat in de maand: toon volgende maand
+        if deadline_dt.month == 12:
+            doel_maand = 1
+            doel_jaar = deadline_dt.year + 1
+        else:
+            doel_maand = deadline_dt.month + 1
+            doel_jaar = deadline_dt.year
+    
+    maand_namen = ["", "januari", "februari", "maart", "april", "mei", "juni", 
+                   "juli", "augustus", "september", "oktober", "november", "december"]
+    
+    # Filter optie
+    toon_alle = st.toggle(f"Toon ook wedstrijden buiten {maand_namen[doel_maand]}", value=False, 
+                          help=f"Standaard zie je alleen wedstrijden van {maand_namen[doel_maand]} {doel_jaar}. Zet aan om alle toekomstige wedstrijden te zien.")
     
     tab1, tab2 = st.tabs(["Als 1e scheidsrechter", "Als 2e scheidsrechter"])
     
     with tab1:
         beschikbaar_1e = get_beschikbare_wedstrijden(nbb_nummer, als_eerste=True)
         
-        # Filter op deadline indien nodig
+        # Filter op doelmaand indien nodig
         if not toon_alle:
             beschikbaar_1e = [w for w in beschikbaar_1e 
-                             if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M") <= deadline_dt + timedelta(days=1)]
+                             if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").month == doel_maand
+                             and datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").year == doel_jaar]
         
         if beschikbaar_1e:
             for wed in beschikbaar_1e:
@@ -408,14 +437,14 @@ def toon_speler_view(nbb_nummer: str):
                 dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
                 niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
                 
-                # Markeer wedstrijden na deadline
-                na_deadline = wed_datum > deadline_dt + timedelta(days=1)
+                # Markeer wedstrijden buiten doelmaand
+                buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
                 
                 with st.container():
                     col1, col2, col3 = st.columns([2, 3, 2])
                     with col1:
                         label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                        if na_deadline:
+                        if buiten_doelmaand:
                             label += " 📅"
                         st.write(label)
                     with col2:
@@ -435,10 +464,11 @@ def toon_speler_view(nbb_nummer: str):
     with tab2:
         beschikbaar_2e = get_beschikbare_wedstrijden(nbb_nummer, als_eerste=False)
         
-        # Filter op deadline indien nodig
+        # Filter op doelmaand indien nodig
         if not toon_alle:
             beschikbaar_2e = [w for w in beschikbaar_2e 
-                             if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M") <= deadline_dt + timedelta(days=1)]
+                             if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").month == doel_maand
+                             and datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").year == doel_jaar]
         
         if beschikbaar_2e:
             for wed in beschikbaar_2e:
@@ -446,14 +476,14 @@ def toon_speler_view(nbb_nummer: str):
                 dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
                 niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
                 
-                # Markeer wedstrijden na deadline
-                na_deadline = wed_datum > deadline_dt + timedelta(days=1)
+                # Markeer wedstrijden buiten doelmaand
+                buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
                 
                 with st.container():
                     col1, col2, col3 = st.columns([2, 3, 2])
                     with col1:
                         label = f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**"
-                        if na_deadline:
+                        if buiten_doelmaand:
                             label += " 📅"
                         st.write(label)
                     with col2:
@@ -771,6 +801,27 @@ def toon_scheidsrechters_beheer():
     deadline_verstreken = datetime.now() > deadline
     
     st.subheader("Scheidsrechtersoverzicht")
+    
+    # Overzicht per niveau
+    if scheidsrechters:
+        scheids_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        totaal_min = 0
+        totaal_max = 0
+        for nbb, scheids in scheidsrechters.items():
+            niveau = scheids.get("niveau_1e_scheids", 1)
+            scheids_per_niveau[niveau] = scheids_per_niveau.get(niveau, 0) + 1
+            totaal_min += scheids.get("min_wedstrijden", 0)
+            totaal_max += scheids.get("max_wedstrijden", 0)
+        
+        st.write("**Scheidsrechters per niveau (1e scheids):**")
+        cols = st.columns(6)
+        for i, niveau in enumerate([1, 2, 3, 4, 5]):
+            count = scheids_per_niveau.get(niveau, 0)
+            cols[i].metric(f"Niveau {niveau}", count)
+        cols[5].metric("Totaal", len(scheidsrechters))
+        
+        st.caption(f"Totale capaciteit: {totaal_min} - {totaal_max} wedstrijden | {len(scheidsrechters)} scheidsrechters")
+        st.divider()
     
     # Legenda
     if deadline_verstreken:
@@ -1114,6 +1165,38 @@ def toon_import_export():
                             for i, niveau in enumerate([1, 2, 3, 4, 5]):
                                 count = niveau_counts.get(niveau, 0)
                                 cols[i].metric(f"Niveau {niveau}", count)
+                        
+                        # Scheidsrechters per niveau
+                        scheidsrechters = laad_scheidsrechters()
+                        if scheidsrechters:
+                            st.write("**Scheidsrechters per niveau (1e scheids):**")
+                            scheids_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                            for nbb, scheids in scheidsrechters.items():
+                                niveau = scheids.get("niveau_1e_scheids", 1)
+                                scheids_per_niveau[niveau] = scheids_per_niveau.get(niveau, 0) + 1
+                            
+                            cols = st.columns(5)
+                            for i, niveau in enumerate([1, 2, 3, 4, 5]):
+                                count = scheids_per_niveau.get(niveau, 0)
+                                cols[i].metric(f"Niveau {niveau}", count)
+                            
+                            # Bereken benodigde inzet
+                            st.write("**Geschatte inzet per scheidsrechter:**")
+                            st.caption("Elke thuiswedstrijd heeft 2 scheidsrechters nodig. Scheidsrechters met hoger niveau kunnen ook lager fluiten.")
+                            
+                            # Cumulatief: niveau 5 kan alles, niveau 4 kan 1-4, etc.
+                            cols = st.columns(5)
+                            for i, niveau in enumerate([1, 2, 3, 4, 5]):
+                                wed_count = sum(niveau_counts.get(n, 0) for n in range(1, niveau + 1))
+                                scheids_count = sum(scheids_per_niveau.get(n, 0) for n in range(niveau, 6))
+                                
+                                if scheids_count > 0:
+                                    # 2 scheidsrechters per wedstrijd, 1e scheids moet niveau hebben
+                                    inzet = round(wed_count / scheids_count, 1)
+                                    cols[i].metric(f"t/m Niv {niveau}", f"{inzet}x", 
+                                                   help=f"{wed_count} wedstrijden, {scheids_count} scheidsrechters")
+                                else:
+                                    cols[i].metric(f"t/m Niv {niveau}", "-")
                         
                         if st.button("✅ Importeer deze wedstrijden"):
                             wedstrijden = laad_wedstrijden()
