@@ -392,6 +392,87 @@ def toon_speler_view(nbb_nummer: str):
     
     st.divider()
     
+    # Toon eigen wedstrijden (van eigen teams)
+    eigen_teams = scheids.get("eigen_teams", [])
+    if eigen_teams:
+        st.subheader("🏀 Jouw eigen wedstrijden")
+        st.caption("Wedstrijden van je eigen team(s) - hier kun je niet fluiten maar wel je planning op afstemmen")
+        
+        # Verzamel eigen wedstrijden
+        eigen_wedstrijden = []
+        for wed_id, wed in wedstrijden.items():
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            
+            # Check of dit een wedstrijd is van een eigen team
+            if wed.get("type") == "uit":
+                # Uitwedstrijd: thuisteam is eigen team dat uit speelt
+                if wed["thuisteam"] in eigen_teams:
+                    reistijd = wed.get("reistijd_minuten", 45)
+                    # Terugkomsttijd: starttijd + reistijd heen + wedstrijd (1.5u) + reistijd terug
+                    terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
+                    eigen_wedstrijden.append({
+                        **wed,
+                        "id": wed_id,
+                        "is_uit": True,
+                        "terug_tijd": terug_tijd
+                    })
+            else:
+                # Thuiswedstrijd
+                if wed["thuisteam"] in eigen_teams or wed["uitteam"] in eigen_teams:
+                    # Eindtijd: starttijd + wedstrijd (1.5u)
+                    eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
+                    eigen_wedstrijden.append({
+                        **wed,
+                        "id": wed_id,
+                        "is_uit": False,
+                        "eind_tijd": eind_tijd
+                    })
+        
+        # Filter op doelmaand indien nodig (gebruik dezelfde logica als beschikbare wedstrijden)
+        deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+        if deadline_dt.day <= 15:
+            doel_maand = deadline_dt.month
+            doel_jaar = deadline_dt.year
+        else:
+            if deadline_dt.month == 12:
+                doel_maand = 1
+                doel_jaar = deadline_dt.year + 1
+            else:
+                doel_maand = deadline_dt.month + 1
+                doel_jaar = deadline_dt.year
+        
+        # Sorteer op datum
+        eigen_wedstrijden = sorted(eigen_wedstrijden, key=lambda x: x["datum"])
+        
+        # Filter op doelmaand voor weergave
+        eigen_in_maand = [w for w in eigen_wedstrijden 
+                         if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").month == doel_maand
+                         and datetime.strptime(w["datum"], "%Y-%m-%d %H:%M").year == doel_jaar]
+        
+        if eigen_in_maand:
+            for wed in eigen_in_maand:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+                
+                with st.container():
+                    col1, col2, col3 = st.columns([2, 3, 2])
+                    with col1:
+                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
+                    with col2:
+                        if wed["is_uit"]:
+                            st.write(f"🚗 {wed['thuisteam']} @ {wed['uitteam']}")
+                        else:
+                            st.write(f"🏠 {wed['thuisteam']} - {wed['uitteam']}")
+                    with col3:
+                        if wed["is_uit"]:
+                            st.write(f"Terug ±{wed['terug_tijd'].strftime('%H:%M')}")
+                        else:
+                            st.write(f"Klaar ±{wed['eind_tijd'].strftime('%H:%M')}")
+        else:
+            st.write("*Geen eigen wedstrijden in deze periode.*")
+        
+        st.divider()
+    
     # Beschikbare wedstrijden
     st.subheader("📝 Beschikbare wedstrijden")
     
