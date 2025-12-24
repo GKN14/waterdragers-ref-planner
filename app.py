@@ -682,8 +682,19 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
 def toon_scheidsrechters_beheer():
     """Beheer scheidsrechters."""
     scheidsrechters = laad_scheidsrechters()
+    instellingen = laad_instellingen()
+    
+    # Check of deadline verstreken is
+    deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    deadline_verstreken = datetime.now() > deadline
     
     st.subheader("Scheidsrechtersoverzicht")
+    
+    # Legenda
+    if deadline_verstreken:
+        st.caption("✅ Voldoet aan minimum | ⚠️ Nog niet genoeg wedstrijden")
+    else:
+        st.caption("✅ Voldoet aan minimum | ⏳ Inschrijving loopt nog")
     
     # Statistieken
     for nbb, scheids in sorted(scheidsrechters.items(), key=lambda x: x[1]["naam"]):
@@ -691,8 +702,13 @@ def toon_scheidsrechters_beheer():
         min_wed = scheids.get("min_wedstrijden", 0)
         max_wed = scheids.get("max_wedstrijden", 99)
         
-        tekort = max(0, min_wed - huidig)
-        status = "⚠️" if tekort > 0 else "✅"
+        # Status bepalen
+        if huidig >= min_wed:
+            status = "✅"  # Voldoet aan minimum
+        elif deadline_verstreken:
+            status = "⚠️"  # Deadline verstreken en nog niet genoeg
+        else:
+            status = "⏳"  # Nog niet genoeg, maar deadline nog niet verstreken
         
         with st.expander(f"{status} {scheids['naam']} - {huidig}/{min_wed}-{max_wed} wedstrijden"):
             # Bewerk modus toggle
