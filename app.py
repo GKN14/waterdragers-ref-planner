@@ -18,8 +18,9 @@ import hashlib
 DATA_DIR = Path(__file__).parent / "data"
 BEHEERDER_WACHTWOORD = "waterdragers2025"  # Pas aan!
 
-# Teams waaruit scheidsrechters komen (vanaf U16)
+# Teams waaruit scheidsrechters komen (vanaf U16, plus coaches van lagere teams)
 SCHEIDSRECHTER_TEAMS = [
+    "X14-1",  # Voor coaches
     "M16-1", "M16-2",
     "V16-1", "V16-2",
     "M18-1", "M18-2", "M18-3",
