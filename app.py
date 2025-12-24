@@ -1884,10 +1884,10 @@ def toon_import_export():
                                     # Haal veld op indien beschikbaar
                                     veld_raw = row.get("Veld", "")
                                     veld = str(veld_raw).strip() if pd.notna(veld_raw) and veld_raw != "" else ""
-                                    # Soms is veld een nummer, soms "Veld 1" etc.
-                                    if veld and veld != "nan" and not veld.lower().startswith("veld"):
-                                        veld = f"Veld {veld}"
-                                    elif veld == "nan":
+                                    # Verwijder "Veld " prefix als aanwezig, houd alleen nummer
+                                    if veld and veld != "nan":
+                                        veld = veld.lower().replace("veld ", "").replace("veld", "").strip()
+                                    else:
                                         veld = ""
                                     
                                     wedstrijden[wed_id] = {
