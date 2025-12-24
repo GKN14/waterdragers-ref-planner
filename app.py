@@ -1096,132 +1096,166 @@ def toon_weekend_overzicht():
     wedstrijden = laad_wedstrijden()
     scheidsrechters = laad_scheidsrechters()
     
-    # Datum selectie
-    st.markdown("**Selecteer datum**")
-    
-    # Vind beschikbare datums
-    datums = set()
-    for wed_id, wed in wedstrijden.items():
-        if wed.get("type") == "uit":
-            continue
-        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-        if wed_datum > datetime.now() - timedelta(days=7):  # Afgelopen week + toekomst
-            datums.add(wed_datum.date())
-    
-    datums = sorted(datums)
-    
-    if not datums:
-        st.warning("Geen wedstrijden gevonden.")
-        return
-    
-    # Datum dropdown
-    dag_namen = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
-    datum_opties = {f"{dag_namen[d.weekday()]} {d.strftime('%d-%m-%Y')}": d for d in datums}
-    
-    gekozen_datum_str = st.selectbox("Kies een datum", list(datum_opties.keys()))
-    gekozen_datum = datum_opties[gekozen_datum_str]
-    
-    # Filter wedstrijden voor deze datum
-    dag_wedstrijden = []
+    # Vind beschikbare datums en groepeer per weekend
+    datums_met_wedstrijden = set()
     for wed_id, wed in wedstrijden.items():
         if wed.get("type") == "uit":
             continue
         try:
             wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            if wed_datum > datetime.now() - timedelta(days=7):  # Afgelopen week + toekomst
+                datums_met_wedstrijden.add(wed_datum.date())
         except:
-            continue  # Skip wedstrijden met ongeldige datum
-            
-        if wed_datum.date() == gekozen_datum:
-            # Haal scheidsrechter namen op
-            scheids_1_naam = "-"
-            scheids_2_naam = "-"
-            
-            if wed.get("scheids_1"):
-                scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
-                team_info = scheids_1.get("eigen_teams", [])
-                team_str = f"({team_info[0]})" if team_info else ""
-                scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}".strip()
-            
-            if wed.get("scheids_2"):
-                scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
-                team_info = scheids_2.get("eigen_teams", [])
-                team_str = f"({team_info[0]})" if team_info else ""
-                scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}".strip()
-            
-            dag_wedstrijden.append({
-                "tijd": wed_datum.strftime("%H:%M"),
-                "veld": wed.get("veld") or "-",
-                "thuisteam": wed["thuisteam"],
-                "uitteam": wed["uitteam"],
-                "scheids_1": scheids_1_naam,
-                "scheids_2": scheids_2_naam,
-                "datum": wed_datum
-            })
+            continue
     
-    # Sorteer op tijd
-    dag_wedstrijden.sort(key=lambda x: x["datum"])
-    
-    if not dag_wedstrijden:
-        st.warning(f"Geen thuiswedstrijden op {gekozen_datum_str}")
+    if not datums_met_wedstrijden:
+        st.warning("Geen wedstrijden gevonden.")
         return
     
-    # Gebruik dag_wedstrijden direct (één rij per wedstrijd)
-    overzicht_data = dag_wedstrijden
+    # Groepeer in weekenden (zaterdag + zondag)
+    weekenden = {}
+    for d in sorted(datums_met_wedstrijden):
+        # Vind de zaterdag van dit weekend
+        if d.weekday() == 5:  # Zaterdag
+            zaterdag = d
+        elif d.weekday() == 6:  # Zondag
+            zaterdag = d - timedelta(days=1)
+        else:
+            # Doordeweeks - toon als losse dag
+            weekenden[d.strftime('%d-%m-%Y')] = {"label": f"{['Ma','Di','Wo','Do','Vr','Za','Zo'][d.weekday()]} {d.strftime('%d-%m-%Y')}", "dagen": [d]}
+            continue
+        
+        zondag = zaterdag + timedelta(days=1)
+        weekend_key = f"{zaterdag.strftime('%d-%m')}"
+        
+        if weekend_key not in weekenden:
+            weekenden[weekend_key] = {
+                "label": f"Weekend {zaterdag.strftime('%d')}/{zondag.strftime('%d-%m-%Y')}",
+                "dagen": []
+            }
+        
+        if d not in weekenden[weekend_key]["dagen"]:
+            weekenden[weekend_key]["dagen"].append(d)
     
-    st.markdown("---")
+    # Sorteer weekenden
+    weekend_lijst = sorted(weekenden.items(), key=lambda x: min(x[1]["dagen"]))
+    weekend_opties = {v["label"]: v["dagen"] for k, v in weekend_lijst}
     
-    # Preview tabel
-    st.markdown("**Preview**")
+    # Weekend selectie
+    st.markdown("**Selecteer weekend**")
+    gekozen_weekend = st.selectbox("Kies een weekend", list(weekend_opties.keys()))
+    gekozen_dagen = sorted(weekend_opties[gekozen_weekend])
     
-    # HTML tabel preview
+    # Toon info over geselecteerde dagen
     dag_namen_lang = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
     maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december"]
     
-    # Bouw HTML string - één rij per wedstrijd met beide scheidsrechters
-    html_rows = []
-    for idx, wed in enumerate(overzicht_data):
-        bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
-        scheids_cel = f'1e: {wed["scheids_1"]}<br/>2e: {wed["scheids_2"]}'
-        html_rows.append(f'<tr style="background-color: {bg};"><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["veld"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{scheids_cel}</td></tr>')
-    
-    html_preview = f'''<div style="font-family: Arial, sans-serif; max-width: 750px;"><div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;"><h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2><p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]} {gekozen_datum.year}</p></div><table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;"><tr style="background-color: #4682B4; color: white;"><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th><th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th><th style="padding: 10px; border: 1px solid #ccc;">Scheidsrechters</th></tr>{''.join(html_rows)}</table></div>'''
-    
-    st.markdown(html_preview, unsafe_allow_html=True)
+    if len(gekozen_dagen) > 1:
+        st.info(f"📅 Dit weekend heeft wedstrijden op **{len(gekozen_dagen)} dagen**: {', '.join([dag_namen_lang[d.weekday()] for d in gekozen_dagen])}")
     
     st.markdown("---")
     
-    # Download knoppen
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Genereer PNG
-        if st.button("🖼️ Genereer PNG afbeelding", type="primary"):
+    # Helper functie om wedstrijden voor een dag op te halen
+    def get_wedstrijden_voor_dag(datum):
+        dag_wedstrijden = []
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type") == "uit":
+                continue
             try:
-                img_bytes = genereer_overzicht_afbeelding(
-                    datetime.combine(gekozen_datum, datetime.min.time()),
-                    overzicht_data,
-                    scheidsrechters
-                )
-                st.session_state.overzicht_png = img_bytes
-                st.session_state.overzicht_datum = gekozen_datum_str
-                st.success("Afbeelding gegenereerd!")
-            except Exception as e:
-                st.error(f"Fout bij genereren: {e}")
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            except:
+                continue
+                
+            if wed_datum.date() == datum:
+                scheids_1_naam = "-"
+                scheids_2_naam = "-"
+                
+                if wed.get("scheids_1"):
+                    scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
+                    team_info = scheids_1.get("eigen_teams", [])
+                    team_str = f"({team_info[0]})" if team_info else ""
+                    scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}".strip()
+                
+                if wed.get("scheids_2"):
+                    scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
+                    team_info = scheids_2.get("eigen_teams", [])
+                    team_str = f"({team_info[0]})" if team_info else ""
+                    scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}".strip()
+                
+                dag_wedstrijden.append({
+                    "tijd": wed_datum.strftime("%H:%M"),
+                    "veld": wed.get("veld") or "-",
+                    "thuisteam": wed["thuisteam"],
+                    "uitteam": wed["uitteam"],
+                    "scheids_1": scheids_1_naam,
+                    "scheids_2": scheids_2_naam,
+                    "datum": wed_datum
+                })
+        
+        dag_wedstrijden.sort(key=lambda x: x["datum"])
+        return dag_wedstrijden
     
-    # Download knop
-    if "overzicht_png" in st.session_state:
+    # Helper functie om HTML preview te maken
+    def maak_html_preview(datum, overzicht_data):
+        html_rows = []
+        for idx, wed in enumerate(overzicht_data):
+            bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
+            scheids_cel = f'1e: {wed["scheids_1"]}<br/>2e: {wed["scheids_2"]}'
+            html_rows.append(f'<tr style="background-color: {bg};"><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["veld"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{scheids_cel}</td></tr>')
+        
+        return f'''<div style="font-family: Arial, sans-serif; max-width: 750px; margin-bottom: 20px;"><div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;"><h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2><p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[datum.weekday()]} {datum.day} {maand_namen[datum.month-1]} {datum.year}</p></div><table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;"><tr style="background-color: #4682B4; color: white;"><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th><th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th><th style="padding: 10px; border: 1px solid #ccc;">Scheidsrechters</th></tr>{''.join(html_rows)}</table></div>'''
+    
+    # Toon overzicht voor elke dag in het weekend
+    for dag_idx, gekozen_datum in enumerate(gekozen_dagen):
+        dag_wedstrijden = get_wedstrijden_voor_dag(gekozen_datum)
+        
+        if not dag_wedstrijden:
+            st.warning(f"Geen thuiswedstrijden op {dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.strftime('%d-%m-%Y')}")
+            continue
+        
+        # Preview tabel
+        st.markdown(f"### {dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]}")
+        
+        html_preview = maak_html_preview(gekozen_datum, dag_wedstrijden)
+        st.markdown(html_preview, unsafe_allow_html=True)
+        
+        # Download knoppen per dag
+        col1, col2 = st.columns(2)
+        
+        dag_key = gekozen_datum.strftime("%Y%m%d")
+        
+        with col1:
+            if st.button(f"🖼️ Genereer PNG", key=f"gen_{dag_key}", type="primary"):
+                try:
+                    img_bytes = genereer_overzicht_afbeelding(
+                        datetime.combine(gekozen_datum, datetime.min.time()),
+                        dag_wedstrijden,
+                        scheidsrechters
+                    )
+                    st.session_state[f"overzicht_png_{dag_key}"] = img_bytes
+                    st.success("Afbeelding gegenereerd!")
+                except Exception as e:
+                    st.error(f"Fout bij genereren: {e}")
+        
         with col2:
-            datum_str = gekozen_datum.strftime("%Y-%m-%d")
-            st.download_button(
-                "⬇️ Download PNG",
-                data=st.session_state.overzicht_png,
-                file_name=f"scheidsrechter_overzicht_{datum_str}.png",
-                mime="image/png"
-            )
+            if f"overzicht_png_{dag_key}" in st.session_state:
+                datum_str = gekozen_datum.strftime("%Y-%m-%d")
+                dag_naam = dag_namen_lang[gekozen_datum.weekday()].lower()
+                st.download_button(
+                    f"⬇️ Download PNG",
+                    data=st.session_state[f"overzicht_png_{dag_key}"],
+                    file_name=f"scheidsrechter_overzicht_{dag_naam}_{datum_str}.png",
+                    mime="image/png",
+                    key=f"download_{dag_key}"
+                )
         
         # Toon gegenereerde afbeelding
-        st.markdown("**Gegenereerde afbeelding:**")
-        st.image(st.session_state.overzicht_png)
+        if f"overzicht_png_{dag_key}" in st.session_state:
+            with st.expander("Bekijk gegenereerde afbeelding", expanded=False):
+                st.image(st.session_state[f"overzicht_png_{dag_key}"])
+        
+        if dag_idx < len(gekozen_dagen) - 1:
+            st.markdown("---")
 
 def toon_wedstrijden_beheer():
     """Beheer wedstrijden en toewijzingen."""
