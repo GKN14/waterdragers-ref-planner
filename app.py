@@ -509,6 +509,59 @@ def toon_speler_view(nbb_nummer: str):
     wedstrijden = laad_wedstrijden()
     instellingen = laad_instellingen()
     
+    # Sidebar met legenda
+    with st.sidebar:
+        st.markdown("### 📋 Legenda")
+        
+        # Niveau uitleg
+        st.markdown("**Niveaus**")
+        niveaus = instellingen.get("niveaus", {})
+        for niveau in sorted(niveaus.keys(), key=int):
+            omschrijving = niveaus[niveau]
+            st.markdown(f"**{niveau}** - {omschrijving}")
+        
+        st.divider()
+        
+        # Kleuren uitleg
+        st.markdown("**Kleuren**")
+        st.markdown("""
+        <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            ⭐ <strong>Jouw niveau</strong>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            🏀 Onder jouw niveau
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            🏠🚗 Eigen wedstrijd
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Iconen uitleg
+        st.markdown("**Symbolen**")
+        st.markdown("🙋 Jij bent ingeschreven")
+        st.markdown("👤 Iemand anders")
+        st.markdown("📋 Beschikbaar")
+        
+        st.divider()
+        
+        # Jouw gegevens
+        st.markdown("**Jouw gegevens**")
+        eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+        st.markdown(f"1e scheids niveau: **{eigen_niveau}**")
+        niveau_2e = scheids.get("niveau_2e_scheids", 5)
+        st.markdown(f"2e scheids niveau: **{niveau_2e}**")
+        if scheids.get("bs2_diploma", False):
+            st.markdown("✅ BS2 diploma")
+        eigen_teams = scheids.get("eigen_teams", [])
+        if eigen_teams:
+            st.markdown(f"Teams: {', '.join(eigen_teams)}")
+    
     # Header met logo
     logo_path = Path(__file__).parent / "logo.png"
     if logo_path.exists():
