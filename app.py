@@ -54,11 +54,11 @@ def laad_instellingen() -> dict:
         instellingen = {
             "inschrijf_deadline": (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"),
             "niveaus": {
-                "1": "U10, U12",
-                "2": "U14, U16 recreatie", 
-                "3": "U16 hogere divisie, U18",
-                "4": "Senioren lager",
-                "5": "Senioren hoger, MSE"
+                "1": "X10-1, X10-2, X12-2, V12-2",
+                "2": "X12-1, V12-1, X14-2, M16-2", 
+                "3": "X14-1, M16-1, V16-2",
+                "4": "V16-1, M18-2, M18-3",
+                "5": "M18-1, M20-1, MSE (BS2 vereist)"
             }
         }
         sla_json_op("instellingen.json", instellingen)
@@ -779,24 +779,65 @@ def toon_instellingen_beheer():
         sla_instellingen_op(instellingen)
         st.success("Niveaus opgeslagen!")
 
+def bepaal_niveau_uit_team(teamnaam: str) -> int:
+    """Bepaal niveau 1-5 uit de teamnaam van Waterdragers."""
+    # Haal het team-deel uit de naam (bijv. "Waterdragers - X10-1" -> "X10-1")
+    if " - " in teamnaam:
+        team = teamnaam.split(" - ")[-1].strip().upper()
+    else:
+        team = teamnaam.strip().upper()
+    
+    # Verwijder eventuele asterisk (bijv. "M18-2*")
+    team = team.rstrip("*")
+    
+    # Niveau-indeling op basis van teamnaam
+    niveau_1 = ["X10-1", "X10-2", "X12-2", "V12-2"]
+    niveau_2 = ["X12-1", "V12-1", "X14-2", "M16-2"]
+    niveau_3 = ["X14-1", "M16-1", "V16-2"]
+    niveau_4 = ["V16-1", "M18-2", "M18-3"]
+    niveau_5 = ["M18-1", "M20-1", "MSE"]
+    
+    if team in niveau_1:
+        return 1
+    elif team in niveau_2:
+        return 2
+    elif team in niveau_3:
+        return 3
+    elif team in niveau_4:
+        return 4
+    elif team in niveau_5:
+        return 5
+    
+    # Fallback op basis van leeftijdscategorie als team niet bekend is
+    if "X10" in team or "X12" in team and "1" not in team:
+        return 1
+    elif "X12" in team or "V12" in team or "X14" in team:
+        return 2
+    elif "X14" in team or "M16" in team or "V16" in team:
+        return 3
+    elif "M18" in team or "V16-1" in team:
+        return 4
+    elif "M20" in team or "MSE" in team:
+        return 5
+    
+    return 2  # Default
+
+
 def bepaal_niveau_uit_competitie(competitie: str) -> int:
-    """Bepaal niveau 1-5 uit de NBB competitie string."""
+    """Fallback: bepaal niveau uit de NBB competitie string."""
     competitie = competitie.upper()
     
-    # Check leeftijdscategorie
     if "U10" in competitie or "U12" in competitie:
         return 1
     elif "U14" in competitie:
         return 2
     elif "U16" in competitie:
-        # Check divisie voor U16
-        if "3E DIVISIE" in competitie or "2E DIVISIE" in competitie or "1E DIVISIE" in competitie:
+        if "3E DIVISIE" in competitie or "2E DIVISIE" in competitie:
             return 3
         return 2
     elif "U18" in competitie or "U20" in competitie or "U22" in competitie:
         return 3
     elif "SENIOREN" in competitie or "MSE" in competitie:
-        # Check divisie voor senioren
         if "1E DIVISIE" in competitie or "2E DIVISIE" in competitie or "3E DIVISIE" in competitie:
             return 5
         return 4
@@ -808,7 +849,7 @@ def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📥 NBB Import", "📥 Import Scheidsrechters", "📥 Import Wedstrijden (CSV)", "📤 Export"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
     
     with tab1:
         st.write("**Import wedstrijden uit NBB export**")
@@ -872,13 +913,17 @@ def toon_import_export():
                                 plaatsnaam = str(row.get("Plaatsnaam", "")).upper()
                                 is_thuis = thuislocatie.upper() in plaatsnaam
                                 
-                                # Bepaal niveau
-                                competitie = str(row.get("Competitie", ""))
-                                niveau = bepaal_niveau_uit_competitie(competitie)
+                                # Bepaal niveau op basis van eigen team
+                                eigen_team_raw = ""
+                                if club_naam.lower() in str(row["Thuisteam"]).lower():
+                                    eigen_team_raw = row["Thuisteam"]
+                                else:
+                                    eigen_team_raw = row["Uitteam"]
+                                
+                                niveau = bepaal_niveau_uit_team(eigen_team_raw)
                                 
                                 # Check BS2 vereiste (MSE)
-                                vereist_bs2 = "MSE" in str(row.get("Thuisteam", "")).upper() or \
-                                             "MSE" in str(row.get("Poule", "")).upper()
+                                vereist_bs2 = "MSE" in str(eigen_team_raw).upper()
                                 
                                 wed_id = f"wed_{datum.replace('-','')}_{tijd.replace(':','')}_{idx}"
                                 
@@ -926,6 +971,126 @@ def toon_import_export():
                 st.error(f"Fout bij lezen bestand: {e}")
     
     with tab2:
+        st.write("**Import scheidsrechters uit NBB export**")
+        st.write("Upload het Excel-bestand met tags uit club.basketball.nl")
+        st.caption("Verwacht tags zoals 'Ref niveau 1' t/m 'Ref niveau 5', 'BS2', 'Niet zondag'")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            min_wedstrijden_default = st.number_input("Standaard minimum wedstrijden", min_value=0, value=2, key="min_wed_nbb")
+        with col2:
+            max_wedstrijden_default = st.number_input("Standaard maximum wedstrijden", min_value=1, value=5, key="max_wed_nbb")
+        
+        uploaded_nbb_scheids = st.file_uploader("Upload NBB Tags Excel", type=["xlsx", "xls"], key="import_nbb_scheids")
+        
+        if uploaded_nbb_scheids:
+            try:
+                import pandas as pd
+                df = pd.read_excel(uploaded_nbb_scheids)
+                
+                # Check of dit een NBB tags bestand is
+                required_cols = ["Lidnummer", "Naam"]
+                missing = [c for c in required_cols if c not in df.columns]
+                
+                if missing:
+                    st.error(f"Ontbrekende kolommen: {missing}. Verwacht: Lidnummer, Naam, Naam Tag/Kwalificatie")
+                else:
+                    # Filter lege rijen
+                    df = df.dropna(subset=["Lidnummer"])
+                    
+                    if len(df) == 0:
+                        st.warning("Geen scheidsrechters gevonden met Lidnummer. Controleer of de export correct is.")
+                    else:
+                        # Groepeer per persoon (kan meerdere tags hebben)
+                        scheids_data = {}
+                        
+                        for idx, row in df.iterrows():
+                            nbb = str(int(row["Lidnummer"])) if pd.notna(row["Lidnummer"]) else None
+                            if not nbb:
+                                continue
+                            
+                            if nbb not in scheids_data:
+                                scheids_data[nbb] = {
+                                    "naam": row.get("Naam", ""),
+                                    "email": row.get("E-mail", ""),
+                                    "niveau_1e": 1,  # Default
+                                    "bs2": False,
+                                    "niet_zondag": False,
+                                    "tags": []
+                                }
+                            
+                            # Parse tag
+                            tag = str(row.get("Naam Tag/Kwalificatie", "")).strip()
+                            if tag and tag != "nan":
+                                scheids_data[nbb]["tags"].append(tag)
+                                
+                                # Check voor niveau tag
+                                tag_upper = tag.upper()
+                                if "REF" in tag_upper or "NIVEAU" in tag_upper:
+                                    # Extract nummer
+                                    for i in range(5, 0, -1):
+                                        if str(i) in tag:
+                                            scheids_data[nbb]["niveau_1e"] = max(scheids_data[nbb]["niveau_1e"], i)
+                                            break
+                                
+                                # Check voor BS2
+                                if "BS2" in tag_upper or "BS-2" in tag_upper:
+                                    scheids_data[nbb]["bs2"] = True
+                                
+                                # Check voor zondag
+                                if "ZONDAG" in tag_upper or "SUNDAY" in tag_upper:
+                                    scheids_data[nbb]["niet_zondag"] = True
+                        
+                        st.write(f"**Gevonden: {len(scheids_data)} scheidsrechters**")
+                        
+                        # Preview tabel
+                        preview_data = []
+                        for nbb, data in scheids_data.items():
+                            preview_data.append({
+                                "NBB": nbb,
+                                "Naam": data["naam"],
+                                "1e scheids t/m": data["niveau_1e"],
+                                "BS2": "✓" if data["bs2"] else "",
+                                "Niet zo": "✓" if data["niet_zondag"] else "",
+                                "Tags": ", ".join(data["tags"])
+                            })
+                        
+                        st.dataframe(pd.DataFrame(preview_data))
+                        
+                        if st.button("✅ Importeer scheidsrechters"):
+                            scheidsrechters = laad_scheidsrechters()
+                            count_nieuw = 0
+                            count_update = 0
+                            
+                            for nbb, data in scheids_data.items():
+                                is_nieuw = nbb not in scheidsrechters
+                                
+                                scheidsrechters[nbb] = {
+                                    "naam": data["naam"],
+                                    "bs2_diploma": data["bs2"],
+                                    "niveau_1e_scheids": data["niveau_1e"],
+                                    "niveau_2e_scheids": 5,  # Altijd 5, want 2e scheids mag altijd naast hogere 1e scheids
+                                    "min_wedstrijden": scheidsrechters.get(nbb, {}).get("min_wedstrijden", min_wedstrijden_default),
+                                    "max_wedstrijden": scheidsrechters.get(nbb, {}).get("max_wedstrijden", max_wedstrijden_default),
+                                    "niet_op_zondag": data["niet_zondag"],
+                                    "eigen_teams": scheidsrechters.get(nbb, {}).get("eigen_teams", [])
+                                }
+                                
+                                if is_nieuw:
+                                    count_nieuw += 1
+                                else:
+                                    count_update += 1
+                            
+                            sla_scheidsrechters_op(scheidsrechters)
+                            st.success(f"✅ {count_nieuw} nieuwe scheidsrechters, {count_update} bijgewerkt")
+                            st.rerun()
+                            
+            except Exception as e:
+                st.error(f"Fout bij lezen bestand: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    with tab3:
         st.write("**Import scheidsrechters (CSV)**")
         st.write("Verwacht formaat:")
         st.code("nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams")
@@ -959,7 +1124,7 @@ def toon_import_export():
             sla_scheidsrechters_op(scheidsrechters)
             st.success(f"{count} scheidsrechters geïmporteerd!")
     
-    with tab3:
+    with tab4:
         st.write("**Import wedstrijden (CSV)**")
         st.write("Verwacht formaat:")
         st.code("datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten")
@@ -1005,7 +1170,7 @@ def toon_import_export():
             sla_wedstrijden_op(wedstrijden)
             st.success(f"{count} wedstrijden geïmporteerd!")
     
-    with tab4:
+    with tab5:
         st.write("**Export planning (CSV)**")
         
         col1, col2 = st.columns(2)
