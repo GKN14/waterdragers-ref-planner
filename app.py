@@ -14,6 +14,49 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import hashlib
 
+# Custom CSS voor afwisselende dag-achtergronden
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    .dag-even {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .dag-oneven {
+        background-color: #ffffff;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .dag-header {
+        font-size: 1.2rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.3rem;
+        border-bottom: 2px solid #ff6b35;
+    }
+    .dag-header-even {
+        border-bottom-color: #1e88e5;
+    }
+    .eigen-wedstrijd {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        border-radius: 0 0.5rem 0.5rem 0;
+    }
+    .fluit-wedstrijd {
+        background-color: #e3f2fd;
+        border-left: 4px solid #1e88e5;
+        padding: 0.75rem;
+        margin: 0.5rem 0;
+        border-radius: 0 0.5rem 0.5rem 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # Configuratie
 DATA_DIR = Path(__file__).parent / "data"
 BEHEERDER_WACHTWOORD = "waterdragers2025"  # Pas aan!
@@ -591,90 +634,109 @@ def toon_speler_view(nbb_nummer: str):
     if not alle_items:
         st.write("*Geen wedstrijden in deze periode.*")
     else:
-        huidige_dag = None
-        
+        # Groepeer items per dag
+        dagen = {}
         for item in alle_items:
-            wed_datum = item["wed_datum"]
+            dag_key = item["wed_datum"].strftime("%Y-%m-%d")
+            if dag_key not in dagen:
+                dagen[dag_key] = []
+            dagen[dag_key].append(item)
+        
+        dag_nummer = 0
+        for dag_key, dag_items in dagen.items():
+            dag_nummer += 1
+            eerste_item = dag_items[0]
+            wed_datum = eerste_item["wed_datum"]
             dag_naam = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"][wed_datum.weekday()]
-            dag_kort = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
-            dag_key = wed_datum.strftime("%Y-%m-%d")
             buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
             
-            # Toon dag-header als nieuwe dag
-            if dag_key != huidige_dag:
-                huidige_dag = dag_key
-                dag_label = f"### 📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}"
-                if buiten_doelmaand:
-                    dag_label += " *(buiten periode)*"
-                st.markdown(dag_label)
-            
-            if item["type"] == "eigen_uit":
-                # Eigen uitwedstrijd - opvallend blok
-                st.warning(f"🚗 **{wed_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
-                    
-            elif item["type"] == "eigen_thuis":
-                # Eigen thuiswedstrijd - opvallend blok
-                st.warning(f"🏠 **{wed_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
-                    
+            # Afwisselende kleuren voor dag-headers
+            if dag_nummer % 2 == 1:
+                header_kleur = "#1e88e5"  # Blauw
+                bg_kleur = "#e3f2fd"
             else:
-                # Wedstrijd om te fluiten
-                wed = item
-                niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
-                
-                # Bepaal status voor 1e scheidsrechter
-                status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
-                
-                # Bepaal status voor 2e scheidsrechter  
-                status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
-                
-                with st.container():
-                    # Compacte header
-                    st.markdown(f"**{wed_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
+                header_kleur = "#ff6b35"  # Oranje
+                bg_kleur = "#fff3e0"
+            
+            # Dag header met gekleurde balk
+            buiten_tekst = " *(buiten periode)*" if buiten_doelmaand else ""
+            st.markdown(f"""
+            <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem;">
+                <strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}
+            </div>
+            <div style="background-color: {bg_kleur}; padding: 0.5rem; border-radius: 0 0 0.5rem 0.5rem; margin-bottom: 1rem;">
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Container voor dag-inhoud
+            with st.container():
+                for item in dag_items:
+                    item_datum = item["wed_datum"]
                     
-                    # Scheidsrechter opties
-                    col_1e, col_2e = st.columns(2)
-                    
-                    with col_1e:
-                        if status_1e["ingeschreven_zelf"]:
-                            st.success(f"✅ **1e scheids:** Jij")
-                            if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_1"] = None
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
-                        elif status_1e["bezet"]:
-                            st.info(f"👤 **1e scheids:** {status_1e['naam']}")
-                        elif status_1e["beschikbaar"]:
-                            if huidig_aantal < max_wed:
-                                if st.button("✅ 1e scheids", key=f"1e_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                    if item["type"] == "eigen_uit":
+                        # Eigen uitwedstrijd - opvallend blok
+                        st.warning(f"🚗 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
+                            
+                    elif item["type"] == "eigen_thuis":
+                        # Eigen thuiswedstrijd - opvallend blok
+                        st.warning(f"🏠 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
+                            
+                    else:
+                        # Wedstrijd om te fluiten
+                        wed = item
+                        niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
+                        
+                        # Bepaal status voor 1e scheidsrechter
+                        status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
+                        
+                        # Bepaal status voor 2e scheidsrechter  
+                        status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
+                        
+                        # Fluitwedstrijd in lichtblauwe box
+                        st.info(f"🏀 **{item_datum.strftime('%H:%M')}** · {wed['thuisteam']} - {wed['uitteam']} · *Niveau {wed['niveau']}*")
+                        
+                        # Scheidsrechter opties
+                        col_1e, col_2e = st.columns(2)
+                        
+                        with col_1e:
+                            if status_1e["ingeschreven_zelf"]:
+                                st.success(f"✅ **1e scheids:** Jij")
+                                if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_1"] = None
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
+                            elif status_1e["bezet"]:
+                                st.write(f"👤 **1e scheids:** {status_1e['naam']}")
+                            elif status_1e["beschikbaar"]:
+                                if huidig_aantal < max_wed:
+                                    if st.button("✅ 1e scheids", key=f"1e_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                                else:
+                                    st.caption("~~1e scheids~~ *(max bereikt)*")
                             else:
-                                st.caption("~~1e scheids~~ *(max bereikt)*")
-                        else:
-                            st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
-                    
-                    with col_2e:
-                        if status_2e["ingeschreven_zelf"]:
-                            st.success(f"✅ **2e scheids:** Jij")
-                            if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_2"] = None
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
-                        elif status_2e["bezet"]:
-                            st.info(f"👤 **2e scheids:** {status_2e['naam']}")
-                        elif status_2e["beschikbaar"]:
-                            if huidig_aantal < max_wed:
-                                if st.button("✅ 2e scheids", key=f"2e_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
+                        
+                        with col_2e:
+                            if status_2e["ingeschreven_zelf"]:
+                                st.success(f"✅ **2e scheids:** Jij")
+                                if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_2"] = None
                                     sla_wedstrijden_op(wedstrijden)
                                     st.rerun()
+                            elif status_2e["bezet"]:
+                                st.write(f"👤 **2e scheids:** {status_2e['naam']}")
+                            elif status_2e["beschikbaar"]:
+                                if huidig_aantal < max_wed:
+                                    if st.button("✅ 2e scheids", key=f"2e_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                                else:
+                                    st.caption("~~2e scheids~~ *(max bereikt)*")
                             else:
-                                st.caption("~~2e scheids~~ *(max bereikt)*")
-                        else:
-                            st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
-                    
-                    st.markdown("---")
+                                st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
 
 # ============================================================
 # BEHEERDER VIEW
@@ -1705,6 +1767,9 @@ def main():
         page_icon="🏀",
         layout="wide"
     )
+    
+    # Injecteer custom CSS
+    inject_custom_css()
     
     # Logo laden indien aanwezig
     logo_path = Path(__file__).parent / "logo.png"
