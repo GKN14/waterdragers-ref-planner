@@ -420,17 +420,74 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         x["datum"]  # Dan op datum
     ))
 
-def tel_wedstrijden_scheidsrechter(nbb_nummer: str) -> int:
-    """Tel aantal wedstrijden waar scheidsrechter is ingeschreven/toegewezen."""
+def tel_wedstrijden_scheidsrechter(nbb_nummer: str, alleen_niveau: int = None) -> int:
+    """
+    Tel aantal wedstrijden waar scheidsrechter is ingeschreven/toegewezen.
+    
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        alleen_niveau: Indien opgegeven, tel alleen wedstrijden van exact dit niveau
+    """
     wedstrijden = laad_wedstrijden()
-    inschrijvingen = laad_inschrijvingen()
     
     count = 0
     for wed_id, wed in wedstrijden.items():
+        # Skip geannuleerde wedstrijden
+        if wed.get("geannuleerd", False):
+            continue
+            
         if wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
-            count += 1
+            if alleen_niveau is not None:
+                # Tel alleen wedstrijden van exact dit niveau
+                if wed.get("niveau", 1) == alleen_niveau:
+                    count += 1
+            else:
+                count += 1
     
     return count
+
+def tel_wedstrijden_op_eigen_niveau(nbb_nummer: str) -> dict:
+    """
+    Tel wedstrijden op eigen niveau voor minimum check.
+    
+    Returns dict met:
+    - totaal: totaal aantal wedstrijden
+    - op_niveau: aantal wedstrijden op eigen niveau (niveau van 1e scheids)
+    - niveau: het eigen niveau van de scheidsrechter
+    - min_wedstrijden: minimum aantal dat op eigen niveau moet
+    - voldaan: of aan minimum is voldaan
+    """
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    
+    if nbb_nummer not in scheidsrechters:
+        return {"totaal": 0, "op_niveau": 0, "niveau": 1, "min_wedstrijden": 0, "voldaan": True}
+    
+    scheids = scheidsrechters[nbb_nummer]
+    eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+    min_wed = scheids.get("min_wedstrijden", 0)
+    
+    totaal = 0
+    op_niveau = 0
+    
+    for wed_id, wed in wedstrijden.items():
+        # Skip geannuleerde wedstrijden
+        if wed.get("geannuleerd", False):
+            continue
+            
+        if wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
+            totaal += 1
+            # Tel als "op niveau" als wedstrijd niveau == eigen niveau
+            if wed.get("niveau", 1) == eigen_niveau:
+                op_niveau += 1
+    
+    return {
+        "totaal": totaal,
+        "op_niveau": op_niveau,
+        "niveau": eigen_niveau,
+        "min_wedstrijden": min_wed,
+        "voldaan": op_niveau >= min_wed
+    }
 
 def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     """Haal geschikte kandidaten op voor een wedstrijd (voor beheerder)."""
@@ -442,10 +499,12 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     
     wed = wedstrijden[wed_id]
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    wed_niveau = wed.get("niveau", 1)
     
     kandidaten = []
     for nbb, scheids in scheidsrechters.items():
         max_niveau = scheids["niveau_1e_scheids"] if als_eerste else scheids["niveau_2e_scheids"]
+        eigen_niveau = scheids.get("niveau_1e_scheids", 1)
         
         # Check niveau
         if wed["niveau"] > max_niveau:
@@ -470,9 +529,9 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
             continue
         
-        # Check maximum
-        huidig_aantal = tel_wedstrijden_scheidsrechter(nbb)
-        if huidig_aantal >= scheids.get("max_wedstrijden", 99):
+        # Check maximum (totaal aantal wedstrijden)
+        huidig_totaal = tel_wedstrijden_scheidsrechter(nbb)
+        if huidig_totaal >= scheids.get("max_wedstrijden", 99):
             continue
         
         # Check of niet al andere positie bij deze wedstrijd
@@ -484,20 +543,34 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if heeft_overlappende_fluitwedstrijd(nbb, wed_id, wed_datum, wedstrijden):
             continue
         
-        # Bereken "urgentie" - wie moet nog het meest?
+        # Bereken "urgentie" op basis van niveau
+        # Tekort = hoeveel wedstrijden op eigen niveau nog nodig
+        niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
         min_wed = scheids.get("min_wedstrijden", 0)
-        tekort = max(0, min_wed - huidig_aantal)
+        op_niveau = niveau_stats["op_niveau"]
+        
+        # Is deze wedstrijd op eigen niveau?
+        is_op_eigen_niveau = wed_niveau == eigen_niveau
+        
+        # Tekort berekenen: alleen relevant als wedstrijd op eigen niveau is
+        if is_op_eigen_niveau:
+            tekort = max(0, min_wed - op_niveau)
+        else:
+            tekort = 0  # Wedstrijd niet op eigen niveau telt niet mee voor minimum
         
         kandidaten.append({
             "nbb_nummer": nbb,
             "naam": scheids["naam"],
-            "huidig_aantal": huidig_aantal,
+            "huidig_aantal": huidig_totaal,
+            "op_niveau": op_niveau,
+            "eigen_niveau": eigen_niveau,
             "min_wedstrijden": min_wed,
             "max_wedstrijden": scheids.get("max_wedstrijden", 99),
-            "tekort": tekort
+            "tekort": tekort,
+            "is_op_eigen_niveau": is_op_eigen_niveau
         })
     
-    # Sorteer: eerst wie tekort heeft, dan op minste wedstrijden
+    # Sorteer: eerst wie tekort heeft op eigen niveau, dan op minste wedstrijden
     return sorted(kandidaten, key=lambda x: (-x["tekort"], x["huidig_aantal"]))
 
 # ============================================================
@@ -582,23 +655,33 @@ def toon_speler_view(nbb_nummer: str):
         st.title("🏀 Scheidsrechter Inschrijving")
         st.subheader(f"Welkom, {scheids['naam']}")
     
-    # Status
-    huidig_aantal = tel_wedstrijden_scheidsrechter(nbb_nummer)
+    # Status - niveau-gebaseerde telling
+    niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb_nummer)
+    huidig_aantal = niveau_stats["totaal"]
+    op_niveau = niveau_stats["op_niveau"]
+    eigen_niveau = niveau_stats["niveau"]
     min_wed = scheids.get("min_wedstrijden", 0)
     max_wed = scheids.get("max_wedstrijden", 99)
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Ingeschreven", huidig_aantal)
+        st.metric("Totaal", huidig_aantal)
     with col2:
-        st.metric("Minimum", min_wed)
+        st.metric(f"Op niveau {eigen_niveau}", op_niveau, 
+                  help=f"Wedstrijden op jouw niveau ({eigen_niveau}) tellen mee voor je minimum")
     with col3:
+        st.metric("Minimum", min_wed)
+    with col4:
         st.metric("Maximum", max_wed)
     
-    if huidig_aantal < min_wed:
-        st.warning(f"⚠️ Je moet nog minimaal {min_wed - huidig_aantal} wedstrijd(en) kiezen.")
+    # Check of aan minimum is voldaan (op eigen niveau)
+    if op_niveau < min_wed:
+        tekort = min_wed - op_niveau
+        st.warning(f"⚠️ Je moet nog **{tekort}** wedstrijd(en) kiezen op niveau {eigen_niveau}.")
     elif huidig_aantal >= max_wed:
         st.success("✅ Je hebt je maximum bereikt.")
+    else:
+        st.success(f"✅ Je hebt aan je minimum voldaan ({op_niveau}/{min_wed} wedstrijden op niveau {eigen_niveau}).")
     
     # Check deadline en bepaal doelmaand
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
@@ -691,6 +774,10 @@ def toon_speler_view(nbb_nummer: str):
     
     for wed_id, wed in wedstrijden.items():
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        
+        # Skip geannuleerde wedstrijden
+        if wed.get("geannuleerd", False):
+            continue
         
         # Filter op toekomst
         if wed_datum < datetime.now():
@@ -1029,8 +1116,13 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     # Data rijen
     y += rij_hoogte
     for idx, wed in enumerate(wedstrijden_data):
+        geannuleerd = wed.get("geannuleerd", False)
+        
         # Achtergrond kleur
-        bg_kleur = rij_even if idx % 2 == 0 else rij_oneven
+        if geannuleerd:
+            bg_kleur = (255, 204, 204)  # Licht rood voor geannuleerd
+        else:
+            bg_kleur = rij_even if idx % 2 == 0 else rij_oneven
         draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=bg_kleur)
         
         # Horizontale lijn
@@ -1055,15 +1147,20 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
         # Wedstrijd (2 regels)
         wed_tekst1 = wed["thuisteam"]
         wed_tekst2 = wed["uitteam"]
-        draw.text((x + 8, y + 8), wed_tekst1, fill=tekst_kleur, font=font_normaal)
-        draw.text((x + 8, y + 28), wed_tekst2, fill=tekst_kleur, font=font_normaal)
+        wed_tekst_kleur = (136, 136, 136) if geannuleerd else tekst_kleur  # Grijs als geannuleerd
+        draw.text((x + 8, y + 8), wed_tekst1, fill=wed_tekst_kleur, font=font_normaal)
+        draw.text((x + 8, y + 28), wed_tekst2, fill=wed_tekst_kleur, font=font_normaal)
         x += kolom_breedtes[2]
         
-        # Scheidsrechters (2 regels: 1e en 2e)
-        scheids_1 = wed.get("scheids_1", "-")
-        scheids_2 = wed.get("scheids_2", "-")
-        draw.text((x + 8, y + 8), f"1e: {scheids_1}", fill=tekst_kleur, font=font_klein)
-        draw.text((x + 8, y + 28), f"2e: {scheids_2}", fill=tekst_kleur, font=font_klein)
+        # Scheidsrechters (2 regels: 1e en 2e) of GEANNULEERD
+        if geannuleerd:
+            annuleer_kleur = (204, 0, 0)  # Rood
+            draw.text((x + 8, y + 18), "GEANNULEERD", fill=annuleer_kleur, font=font_bold)
+        else:
+            scheids_1 = wed.get("scheids_1", "-")
+            scheids_2 = wed.get("scheids_2", "-")
+            draw.text((x + 8, y + 8), f"1e: {scheids_1}", fill=tekst_kleur, font=font_klein)
+            draw.text((x + 8, y + 28), f"2e: {scheids_2}", fill=tekst_kleur, font=font_klein)
         
         y += rij_hoogte
     
@@ -1167,20 +1264,26 @@ def toon_weekend_overzicht():
                 continue
                 
             if wed_datum.date() == datum:
-                scheids_1_naam = "-"
-                scheids_2_naam = "-"
+                geannuleerd = wed.get("geannuleerd", False)
                 
-                if wed.get("scheids_1"):
-                    scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
-                    team_info = scheids_1.get("eigen_teams", [])
-                    team_str = f"({team_info[0]})" if team_info else ""
-                    scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}".strip()
-                
-                if wed.get("scheids_2"):
-                    scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
-                    team_info = scheids_2.get("eigen_teams", [])
-                    team_str = f"({team_info[0]})" if team_info else ""
-                    scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}".strip()
+                if geannuleerd:
+                    scheids_1_naam = "GEANNULEERD"
+                    scheids_2_naam = "GEANNULEERD"
+                else:
+                    scheids_1_naam = "-"
+                    scheids_2_naam = "-"
+                    
+                    if wed.get("scheids_1"):
+                        scheids_1 = scheidsrechters.get(wed["scheids_1"], {})
+                        team_info = scheids_1.get("eigen_teams", [])
+                        team_str = f"({team_info[0]})" if team_info else ""
+                        scheids_1_naam = f"{scheids_1.get('naam', 'Onbekend')} {team_str}".strip()
+                    
+                    if wed.get("scheids_2"):
+                        scheids_2 = scheidsrechters.get(wed["scheids_2"], {})
+                        team_info = scheids_2.get("eigen_teams", [])
+                        team_str = f"({team_info[0]})" if team_info else ""
+                        scheids_2_naam = f"{scheids_2.get('naam', 'Onbekend')} {team_str}".strip()
                 
                 dag_wedstrijden.append({
                     "tijd": wed_datum.strftime("%H:%M"),
@@ -1189,6 +1292,7 @@ def toon_weekend_overzicht():
                     "uitteam": wed["uitteam"],
                     "scheids_1": scheids_1_naam,
                     "scheids_2": scheids_2_naam,
+                    "geannuleerd": geannuleerd,
                     "datum": wed_datum
                 })
         
@@ -1199,9 +1303,16 @@ def toon_weekend_overzicht():
     def maak_html_preview(datum, overzicht_data):
         html_rows = []
         for idx, wed in enumerate(overzicht_data):
-            bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
-            scheids_cel = f'1e: {wed["scheids_1"]}<br/>2e: {wed["scheids_2"]}'
-            html_rows.append(f'<tr style="background-color: {bg};"><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["veld"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{scheids_cel}</td></tr>')
+            geannuleerd = wed.get("geannuleerd", False)
+            if geannuleerd:
+                bg = "#ffcccc"  # Licht rood voor geannuleerd
+                scheids_cel = '<span style="color: #cc0000; font-weight: bold;">GEANNULEERD</span>'
+                wed_cel = f'<span style="text-decoration: line-through; color: #888;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</span>'
+            else:
+                bg = "#f5f5f5" if idx % 2 == 0 else "#ffffff"
+                scheids_cel = f'1e: {wed["scheids_1"]}<br/>2e: {wed["scheids_2"]}'
+                wed_cel = f'{wed["thuisteam"]}<br/>{wed["uitteam"]}'
+            html_rows.append(f'<tr style="background-color: {bg};"><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td><td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["veld"]}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed_cel}</td><td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{scheids_cel}</td></tr>')
         
         return f'''<div style="font-family: Arial, sans-serif; max-width: 750px; margin-bottom: 20px;"><div style="background-color: #4682B4; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;"><h2 style="margin: 0;">SCHEIDSRECHTEROVERZICHT</h2><p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[datum.weekday()]} {datum.day} {maand_namen[datum.month-1]} {datum.year}</p></div><table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;"><tr style="background-color: #4682B4; color: white;"><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th><th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Veld</th><th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th><th style="padding: 10px; border: 1px solid #ccc;">Scheidsrechters</th></tr>{''.join(html_rows)}</table></div>'''
     
@@ -1358,10 +1469,12 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
         
         compleet = bool(wed.get("scheids_1") and wed.get("scheids_2"))
+        geannuleerd = wed.get("geannuleerd", False)
         
-        if filter_status == "Nog in te vullen" and compleet:
+        # Filter op status
+        if filter_status == "Nog in te vullen" and (compleet or geannuleerd):
             continue
-        if filter_status == "Compleet" and not compleet:
+        if filter_status == "Compleet" and (not compleet or geannuleerd):
             continue
         
         wed_lijst.append({
@@ -1375,7 +1488,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
             "scheids_2": wed.get("scheids_2"),
             "scheids_2_naam": scheids_2_naam,
             "compleet": compleet,
-            "reistijd": wed.get("reistijd_minuten", 0)
+            "geannuleerd": geannuleerd,
+            "reistijd": wed.get("reistijd_minuten", 0),
+            "veld": wed.get("veld", "")
         })
     
     if sorteer == "Datum":
@@ -1396,73 +1511,97 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
         
         if type_filter == "thuis":
-            status_icon = "✅" if wed["compleet"] else "⚠️"
-            label = f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']})"
+            if wed["geannuleerd"]:
+                status_icon = "❌"
+                label = f"{status_icon} ~~{dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']}~~ **GEANNULEERD**"
+            else:
+                status_icon = "✅" if wed["compleet"] else "⚠️"
+                label = f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']})"
         else:
             label = f"🚗 {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} @ {wed['uitteam']} ({wed['reistijd']} min reistijd)"
         
         with st.expander(label):
             if type_filter == "thuis":
-                col1, col2, col3 = st.columns([2, 2, 1])
-                
-                with col1:
-                    st.write("**1e Scheidsrechter:**")
-                    if wed["scheids_1_naam"]:
-                        st.write(f"✓ {wed['scheids_1_naam']}")
-                        if st.button("Verwijderen", key=f"del1_{wed['id']}"):
-                            wedstrijden[wed["id"]]["scheids_1"] = None
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
-                    else:
-                        kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
-                        if kandidaten:
-                            keuzes = ["-- Selecteer --"] + [
-                                f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" + 
-                                (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
-                                for k in kandidaten
-                            ]
-                            selectie = st.selectbox("Kies 1e scheids", keuzes, key=f"sel1_{wed['id']}")
-                            if selectie != "-- Selecteer --":
-                                idx = keuzes.index(selectie) - 1
-                                if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_1"] = kandidaten[idx]["nbb_nummer"]
-                                    sla_wedstrijden_op(wedstrijden)
-                                    st.rerun()
-                        else:
-                            st.warning("Geen geschikte kandidaten")
-                
-                with col2:
-                    st.write("**2e Scheidsrechter:**")
-                    if wed["scheids_2_naam"]:
-                        st.write(f"✓ {wed['scheids_2_naam']}")
-                        if st.button("Verwijderen", key=f"del2_{wed['id']}"):
-                            wedstrijden[wed["id"]]["scheids_2"] = None
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
-                    else:
-                        kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
-                        if kandidaten:
-                            keuzes = ["-- Selecteer --"] + [
-                                f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" +
-                                (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
-                                for k in kandidaten
-                            ]
-                            selectie = st.selectbox("Kies 2e scheids", keuzes, key=f"sel2_{wed['id']}")
-                            if selectie != "-- Selecteer --":
-                                idx = keuzes.index(selectie) - 1
-                                if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_2"] = kandidaten[idx]["nbb_nummer"]
-                                    sla_wedstrijden_op(wedstrijden)
-                                    st.rerun()
-                        else:
-                            st.warning("Geen geschikte kandidaten")
-                
-                with col3:
-                    st.write("**Acties:**")
-                    if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
-                        del wedstrijden[wed["id"]]
+                # Annuleer toggle bovenaan
+                col_annuleer, col_veld = st.columns([1, 1])
+                with col_annuleer:
+                    is_geannuleerd = st.checkbox(
+                        "❌ Wedstrijd geannuleerd", 
+                        value=wed["geannuleerd"],
+                        key=f"annuleer_{wed['id']}"
+                    )
+                    if is_geannuleerd != wed["geannuleerd"]:
+                        wedstrijden[wed["id"]]["geannuleerd"] = is_geannuleerd
                         sla_wedstrijden_op(wedstrijden)
                         st.rerun()
+                
+                with col_veld:
+                    if wed["veld"]:
+                        st.write(f"📍 Veld: **{wed['veld']}**")
+                
+                if wed["geannuleerd"]:
+                    st.warning("Deze wedstrijd is geannuleerd. Scheidsrechters worden niet meegerekend.")
+                else:
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    
+                    with col1:
+                        st.write("**1e Scheidsrechter:**")
+                        if wed["scheids_1_naam"]:
+                            st.write(f"✓ {wed['scheids_1_naam']}")
+                            if st.button("Verwijderen", key=f"del1_{wed['id']}"):
+                                wedstrijden[wed["id"]]["scheids_1"] = None
+                                sla_wedstrijden_op(wedstrijden)
+                                st.rerun()
+                        else:
+                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
+                            if kandidaten:
+                                keuzes = ["-- Selecteer --"] + [
+                                    f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" + 
+                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                    for k in kandidaten
+                                ]
+                                selectie = st.selectbox("Kies 1e scheids", keuzes, key=f"sel1_{wed['id']}")
+                                if selectie != "-- Selecteer --":
+                                    idx = keuzes.index(selectie) - 1
+                                    if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_1"] = kandidaten[idx]["nbb_nummer"]
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                            else:
+                                st.warning("Geen geschikte kandidaten")
+                    
+                    with col2:
+                        st.write("**2e Scheidsrechter:**")
+                        if wed["scheids_2_naam"]:
+                            st.write(f"✓ {wed['scheids_2_naam']}")
+                            if st.button("Verwijderen", key=f"del2_{wed['id']}"):
+                                wedstrijden[wed["id"]]["scheids_2"] = None
+                                sla_wedstrijden_op(wedstrijden)
+                                st.rerun()
+                        else:
+                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
+                            if kandidaten:
+                                keuzes = ["-- Selecteer --"] + [
+                                    f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" +
+                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                    for k in kandidaten
+                                ]
+                                selectie = st.selectbox("Kies 2e scheids", keuzes, key=f"sel2_{wed['id']}")
+                                if selectie != "-- Selecteer --":
+                                    idx = keuzes.index(selectie) - 1
+                                    if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_2"] = kandidaten[idx]["nbb_nummer"]
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                            else:
+                                st.warning("Geen geschikte kandidaten")
+                    
+                    with col3:
+                        st.write("**Acties:**")
+                        if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
+                            del wedstrijden[wed["id"]]
+                            sla_wedstrijden_op(wedstrijden)
+                            st.rerun()
             else:
                 # Uitwedstrijd - alleen info en delete
                 col1, col2 = st.columns([3, 1])
@@ -1509,25 +1648,31 @@ def toon_scheidsrechters_beheer():
     
     # Legenda
     if deadline_verstreken:
-        st.caption("✅ Voldoet aan minimum | ⚠️ Nog niet genoeg wedstrijden")
+        st.caption("✅ Voldoet aan minimum op eigen niveau | ⚠️ Nog niet genoeg wedstrijden op eigen niveau")
     else:
-        st.caption("✅ Voldoet aan minimum | ⏳ Inschrijving loopt nog")
+        st.caption("✅ Voldoet aan minimum op eigen niveau | ⏳ Inschrijving loopt nog")
+    
+    st.info("ℹ️ Het minimum aantal wedstrijden moet op het **eigen niveau** gefluiten worden. Wedstrijden op een lager niveau tellen niet mee voor het minimum.")
     
     # Statistieken
     for nbb, scheids in sorted(scheidsrechters.items(), key=lambda x: x[1]["naam"]):
-        huidig = tel_wedstrijden_scheidsrechter(nbb)
+        niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
+        huidig = niveau_stats["totaal"]
+        op_niveau = niveau_stats["op_niveau"]
+        eigen_niveau = niveau_stats["niveau"]
         min_wed = scheids.get("min_wedstrijden", 0)
         max_wed = scheids.get("max_wedstrijden", 99)
         
-        # Status bepalen
-        if huidig >= min_wed:
+        # Status bepalen op basis van wedstrijden op eigen niveau
+        if op_niveau >= min_wed:
             status = "✅"  # Voldoet aan minimum
         elif deadline_verstreken:
             status = "⚠️"  # Deadline verstreken en nog niet genoeg
         else:
             status = "⏳"  # Nog niet genoeg, maar deadline nog niet verstreken
         
-        with st.expander(f"{status} {scheids['naam']} - {huidig}/{min_wed}-{max_wed} wedstrijden"):
+        label = f"{status} {scheids['naam']} - {op_niveau}/{min_wed} op niv.{eigen_niveau} (totaal: {huidig})"
+        with st.expander(label):
             # Bewerk modus toggle
             edit_key = f"edit_{nbb}"
             if edit_key not in st.session_state:
