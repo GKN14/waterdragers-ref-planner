@@ -1150,7 +1150,7 @@ def toon_weekend_overzicht():
             
             dag_wedstrijden.append({
                 "tijd": wed_datum.strftime("%H:%M"),
-                "veld": wed.get("veld", "-"),
+                "veld": wed.get("veld") or "-",
                 "thuisteam": wed["thuisteam"],
                 "uitteam": wed["uitteam"],
                 "scheids_1": scheids_1_naam,
@@ -1803,8 +1803,11 @@ def toon_import_export():
                             axis=1
                         )
                         
-                        # Preview
-                        st.dataframe(df_preview[["Datum", "Tijd", "Thuisteam", "Uitteam", "Type", "Niveau"]].head(20))
+                        # Preview - inclusief Veld als beschikbaar
+                        preview_cols = ["Datum", "Tijd", "Thuisteam", "Uitteam", "Type", "Niveau"]
+                        if "Veld" in df_preview.columns:
+                            preview_cols.insert(2, "Veld")
+                        st.dataframe(df_preview[preview_cols].head(20))
                         
                         # Samenvatting per niveau
                         thuis_df = df_preview[df_preview["Type"] == "Thuis"]
@@ -1878,6 +1881,15 @@ def toon_import_export():
                                 
                                 if is_thuis:
                                     # Thuiswedstrijd - scheidsrechters nodig
+                                    # Haal veld op indien beschikbaar
+                                    veld_raw = row.get("Veld", "")
+                                    veld = str(veld_raw).strip() if pd.notna(veld_raw) and veld_raw != "" else ""
+                                    # Soms is veld een nummer, soms "Veld 1" etc.
+                                    if veld and veld != "nan" and not veld.lower().startswith("veld"):
+                                        veld = f"Veld {veld}"
+                                    elif veld == "nan":
+                                        veld = ""
+                                    
                                     wedstrijden[wed_id] = {
                                         "datum": f"{datum} {tijd}",
                                         "thuisteam": row["Thuisteam"],
@@ -1885,6 +1897,7 @@ def toon_import_export():
                                         "niveau": niveau,
                                         "type": "thuis",
                                         "vereist_bs2": vereist_bs2,
+                                        "veld": veld,
                                         "scheids_1": None,
                                         "scheids_2": None
                                     }
