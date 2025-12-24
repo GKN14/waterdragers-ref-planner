@@ -86,6 +86,60 @@ def is_inschrijving_open() -> bool:
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     return datetime.now() <= deadline
 
+def heeft_eigen_wedstrijd(nbb_nummer: str, datum_tijd: datetime, wedstrijden: dict, scheidsrechters: dict) -> bool:
+    """
+    Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft.
+    Houdt rekening met reistijd bij uitwedstrijden.
+    """
+    scheids = scheidsrechters.get(nbb_nummer, {})
+    eigen_teams = scheids.get("eigen_teams", [])
+    
+    if not eigen_teams:
+        return False
+    
+    for wed_id, wed in wedstrijden.items():
+        # Check of dit een wedstrijd is van een eigen team
+        is_eigen_wed = False
+        
+        if wed.get("type") == "uit":
+            # Bij uitwedstrijd: thuisteam is het eigen team dat uit speelt
+            if wed["thuisteam"] in eigen_teams:
+                is_eigen_wed = True
+        else:
+            # Bij thuiswedstrijd: check beide teams
+            if wed["thuisteam"] in eigen_teams or wed["uitteam"] in eigen_teams:
+                is_eigen_wed = True
+        
+        if not is_eigen_wed:
+            continue
+        
+        # Bereken tijdsvenster van deze wedstrijd
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        
+        # Wedstrijd duurt ongeveer 1,5 uur
+        wed_duur = timedelta(hours=1, minutes=30)
+        
+        # Bij uitwedstrijden: reistijd ervoor en erna
+        if wed.get("type") == "uit":
+            reistijd = timedelta(minutes=wed.get("reistijd_minuten", 60))
+            wed_start = wed_datum - reistijd
+            wed_eind = wed_datum + wed_duur + reistijd
+        else:
+            # Thuiswedstrijd: 30 min ervoor aanwezig
+            wed_start = wed_datum - timedelta(minutes=30)
+            wed_eind = wed_datum + wed_duur
+        
+        # Check overlap: kan niet fluiten als eigen wedstrijd overlapt
+        # Fluitwedstrijd duurt ook ~1,5 uur, moet 30 min van tevoren aanwezig zijn
+        fluit_start = datum_tijd - timedelta(minutes=30)
+        fluit_eind = datum_tijd + wed_duur
+        
+        # Overlap als: fluit_start < wed_eind AND fluit_eind > wed_start
+        if fluit_start < wed_eind and fluit_eind > wed_start:
+            return True
+    
+    return False
+
 def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
     """
     Haal wedstrijden op waar deze scheidsrechter zich voor kan inschrijven.
@@ -103,6 +157,10 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
     
     beschikbaar = []
     for wed_id, wed in wedstrijden.items():
+        # Alleen thuiswedstrijden tonen (uitwedstrijden zijn alleen voor blokkade)
+        if wed.get("type") == "uit":
+            continue
+        
         # Check niveau
         if wed["niveau"] > max_niveau:
             continue
@@ -111,7 +169,7 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
         
-        # Check eigen team
+        # Check eigen team (thuiswedstrijd van eigen team)
         if wed["thuisteam"] in scheids.get("eigen_teams", []) or \
            wed["uitteam"] in scheids.get("eigen_teams", []):
             continue
@@ -119,6 +177,10 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         # Check zondag
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
+            continue
+        
+        # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
+        if heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
             continue
         
         # Check of al ingeschreven of toegewezen
@@ -168,13 +230,17 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
         
-        # Check eigen team
+        # Check eigen team (thuiswedstrijd van eigen team)
         if wed["thuisteam"] in scheids.get("eigen_teams", []) or \
            wed["uitteam"] in scheids.get("eigen_teams", []):
             continue
         
         # Check zondag
         if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
+            continue
+        
+        # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
+        if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
             continue
         
         # Check maximum
@@ -384,16 +450,95 @@ def toon_wedstrijden_beheer():
     
     st.subheader("Wedstrijdoverzicht")
     
+    # Bulk acties
+    col1, col2, col3 = st.columns([2, 2, 2])
+    with col1:
+        if st.button("🗑️ Alle wedstrijden verwijderen", type="secondary"):
+            st.session_state.bevestig_delete_all = True
+    
+    if st.session_state.get("bevestig_delete_all"):
+        st.warning("⚠️ Weet je zeker dat je ALLE wedstrijden wilt verwijderen?")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Ja, verwijderen"):
+                sla_wedstrijden_op({})
+                st.session_state.bevestig_delete_all = False
+                st.success("Alle wedstrijden verwijderd!")
+                st.rerun()
+        with col2:
+            if st.button("❌ Annuleren"):
+                st.session_state.bevestig_delete_all = False
+                st.rerun()
+    
+    # Tabs voor thuis en uit
+    tab_thuis, tab_uit = st.tabs(["🏠 Thuiswedstrijden (scheids nodig)", "🚗 Uitwedstrijden (blokkades)"])
+    
+    with tab_thuis:
+        toon_wedstrijden_lijst(wedstrijden, scheidsrechters, instellingen, type_filter="thuis")
+    
+    with tab_uit:
+        toon_wedstrijden_lijst(wedstrijden, scheidsrechters, instellingen, type_filter="uit")
+    
+    st.divider()
+    
+    # Nieuwe wedstrijd toevoegen
+    st.subheader("➕ Nieuwe wedstrijd toevoegen")
+    
+    with st.form("nieuwe_wedstrijd"):
+        col1, col2 = st.columns(2)
+        with col1:
+            wed_type = st.selectbox("Type", ["thuis", "uit"], format_func=lambda x: "🏠 Thuiswedstrijd" if x == "thuis" else "🚗 Uitwedstrijd")
+            datum = st.date_input("Datum")
+            tijd = st.time_input("Tijd")
+            thuisteam = st.text_input("Thuisteam" if wed_type == "thuis" else "Eigen team")
+        with col2:
+            uitteam = st.text_input("Uitteam" if wed_type == "thuis" else "Tegenstander")
+            niveau = st.selectbox("Niveau", [1, 2, 3, 4, 5])
+            vereist_bs2 = st.checkbox("BS2 vereist")
+            reistijd = st.number_input("Reistijd (minuten, alleen voor uit)", min_value=0, value=60)
+        
+        if st.form_submit_button("Toevoegen"):
+            wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            nieuwe_wed = {
+                "datum": f"{datum} {tijd.strftime('%H:%M')}",
+                "thuisteam": thuisteam,
+                "uitteam": uitteam,
+                "niveau": niveau,
+                "vereist_bs2": vereist_bs2,
+                "type": wed_type,
+                "scheids_1": None,
+                "scheids_2": None
+            }
+            if wed_type == "uit":
+                nieuwe_wed["reistijd_minuten"] = reistijd
+            
+            wedstrijden[wed_id] = nieuwe_wed
+            sla_wedstrijden_op(wedstrijden)
+            st.success("Wedstrijd toegevoegd!")
+            st.rerun()
+
+
+def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellingen: dict, type_filter: str):
+    """Toon lijst van wedstrijden gefilterd op type."""
+    
     # Filter opties
     col1, col2 = st.columns(2)
     with col1:
-        filter_status = st.selectbox("Filter", ["Alle", "Nog in te vullen", "Compleet"])
+        if type_filter == "thuis":
+            filter_status = st.selectbox("Filter", ["Alle", "Nog in te vullen", "Compleet"], key=f"filter_{type_filter}")
+        else:
+            filter_status = "Alle"
     with col2:
-        sorteer = st.selectbox("Sorteer op", ["Datum", "Niveau"])
+        sorteer = st.selectbox("Sorteer op", ["Datum", "Niveau"], key=f"sort_{type_filter}")
     
     # Wedstrijden lijst
     wed_lijst = []
     for wed_id, wed in wedstrijden.items():
+        # Filter op type (default is thuis voor oude data)
+        wed_type = wed.get("type", "thuis")
+        if wed_type != type_filter:
+            continue
+        
         scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
         scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
         
@@ -414,7 +559,8 @@ def toon_wedstrijden_beheer():
             "scheids_1_naam": scheids_1_naam,
             "scheids_2": wed.get("scheids_2"),
             "scheids_2_naam": scheids_2_naam,
-            "compleet": compleet
+            "compleet": compleet,
+            "reistijd": wed.get("reistijd_minuten", 0)
         })
     
     if sorteer == "Datum":
@@ -422,99 +568,97 @@ def toon_wedstrijden_beheer():
     else:
         wed_lijst.sort(key=lambda x: (x["niveau"], x["datum"]))
     
+    if not wed_lijst:
+        st.info("Geen wedstrijden gevonden.")
+        return
+    
+    st.write(f"**{len(wed_lijst)} wedstrijden**")
+    
     # Toon wedstrijden
     for wed in wed_lijst:
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
         niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
         
-        status_icon = "✅" if wed["compleet"] else "⚠️"
+        if type_filter == "thuis":
+            status_icon = "✅" if wed["compleet"] else "⚠️"
+            label = f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']})"
+        else:
+            label = f"🚗 {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} @ {wed['uitteam']} ({wed['reistijd']} min reistijd)"
         
-        with st.expander(f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']})"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**1e Scheidsrechter:**")
-                if wed["scheids_1_naam"]:
-                    st.write(f"✓ {wed['scheids_1_naam']}")
-                    if st.button("Verwijderen", key=f"del1_{wed['id']}"):
-                        wedstrijden[wed["id"]]["scheids_1"] = None
+        with st.expander(label):
+            if type_filter == "thuis":
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    st.write("**1e Scheidsrechter:**")
+                    if wed["scheids_1_naam"]:
+                        st.write(f"✓ {wed['scheids_1_naam']}")
+                        if st.button("Verwijderen", key=f"del1_{wed['id']}"):
+                            wedstrijden[wed["id"]]["scheids_1"] = None
+                            sla_wedstrijden_op(wedstrijden)
+                            st.rerun()
+                    else:
+                        kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
+                        if kandidaten:
+                            keuzes = ["-- Selecteer --"] + [
+                                f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" + 
+                                (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                for k in kandidaten
+                            ]
+                            selectie = st.selectbox("Kies 1e scheids", keuzes, key=f"sel1_{wed['id']}")
+                            if selectie != "-- Selecteer --":
+                                idx = keuzes.index(selectie) - 1
+                                if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_1"] = kandidaten[idx]["nbb_nummer"]
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                        else:
+                            st.warning("Geen geschikte kandidaten")
+                
+                with col2:
+                    st.write("**2e Scheidsrechter:**")
+                    if wed["scheids_2_naam"]:
+                        st.write(f"✓ {wed['scheids_2_naam']}")
+                        if st.button("Verwijderen", key=f"del2_{wed['id']}"):
+                            wedstrijden[wed["id"]]["scheids_2"] = None
+                            sla_wedstrijden_op(wedstrijden)
+                            st.rerun()
+                    else:
+                        kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
+                        if kandidaten:
+                            keuzes = ["-- Selecteer --"] + [
+                                f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" +
+                                (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                for k in kandidaten
+                            ]
+                            selectie = st.selectbox("Kies 2e scheids", keuzes, key=f"sel2_{wed['id']}")
+                            if selectie != "-- Selecteer --":
+                                idx = keuzes.index(selectie) - 1
+                                if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_2"] = kandidaten[idx]["nbb_nummer"]
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                        else:
+                            st.warning("Geen geschikte kandidaten")
+                
+                with col3:
+                    st.write("**Acties:**")
+                    if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
+                        del wedstrijden[wed["id"]]
                         sla_wedstrijden_op(wedstrijden)
                         st.rerun()
-                else:
-                    kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
-                    if kandidaten:
-                        keuzes = ["-- Selecteer --"] + [
-                            f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" + 
-                            (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
-                            for k in kandidaten
-                        ]
-                        selectie = st.selectbox("Kies 1e scheids", keuzes, key=f"sel1_{wed['id']}")
-                        if selectie != "-- Selecteer --":
-                            idx = keuzes.index(selectie) - 1
-                            if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_1"] = kandidaten[idx]["nbb_nummer"]
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
-                    else:
-                        st.warning("Geen geschikte kandidaten")
-            
-            with col2:
-                st.write("**2e Scheidsrechter:**")
-                if wed["scheids_2_naam"]:
-                    st.write(f"✓ {wed['scheids_2_naam']}")
-                    if st.button("Verwijderen", key=f"del2_{wed['id']}"):
-                        wedstrijden[wed["id"]]["scheids_2"] = None
+            else:
+                # Uitwedstrijd - alleen info en delete
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"**Team:** {wed['thuisteam']}")
+                    st.write(f"**Reistijd:** {wed['reistijd']} minuten")
+                with col2:
+                    if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
+                        del wedstrijden[wed["id"]]
                         sla_wedstrijden_op(wedstrijden)
                         st.rerun()
-                else:
-                    kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
-                    if kandidaten:
-                        keuzes = ["-- Selecteer --"] + [
-                            f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" +
-                            (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
-                            for k in kandidaten
-                        ]
-                        selectie = st.selectbox("Kies 2e scheids", keuzes, key=f"sel2_{wed['id']}")
-                        if selectie != "-- Selecteer --":
-                            idx = keuzes.index(selectie) - 1
-                            if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_2"] = kandidaten[idx]["nbb_nummer"]
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
-                    else:
-                        st.warning("Geen geschikte kandidaten")
-    
-    st.divider()
-    
-    # Nieuwe wedstrijd toevoegen
-    st.subheader("➕ Nieuwe wedstrijd toevoegen")
-    
-    with st.form("nieuwe_wedstrijd"):
-        col1, col2 = st.columns(2)
-        with col1:
-            datum = st.date_input("Datum")
-            tijd = st.time_input("Tijd")
-            thuisteam = st.text_input("Thuisteam")
-        with col2:
-            uitteam = st.text_input("Uitteam")
-            niveau = st.selectbox("Niveau", [1, 2, 3, 4, 5])
-            vereist_bs2 = st.checkbox("BS2 vereist")
-        
-        if st.form_submit_button("Toevoegen"):
-            wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            wedstrijden[wed_id] = {
-                "datum": f"{datum} {tijd.strftime('%H:%M')}",
-                "thuisteam": thuisteam,
-                "uitteam": uitteam,
-                "niveau": niveau,
-                "vereist_bs2": vereist_bs2,
-                "scheids_1": None,
-                "scheids_2": None
-            }
-            sla_wedstrijden_op(wedstrijden)
-            st.success("Wedstrijd toegevoegd!")
-            st.rerun()
 
 def toon_scheidsrechters_beheer():
     """Beheer scheidsrechters."""
@@ -620,11 +764,12 @@ def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    col1, col2 = st.columns(2)
+    tab1, tab2, tab3 = st.tabs(["📥 Import Scheidsrechters", "📥 Import Wedstrijden", "📤 Export"])
     
-    with col1:
+    with tab1:
         st.write("**Import scheidsrechters (CSV)**")
-        st.write("Verwacht formaat: nbb_nummer, naam, bs2_diploma, niveau_1e, niveau_2e, min, max, niet_zondag, eigen_teams")
+        st.write("Verwacht formaat:")
+        st.code("nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams")
         
         uploaded_scheids = st.file_uploader("Upload CSV", type="csv", key="import_scheids")
         if uploaded_scheids:
@@ -655,29 +800,101 @@ def toon_import_export():
             sla_scheidsrechters_op(scheidsrechters)
             st.success(f"{count} scheidsrechters geïmporteerd!")
     
-    with col2:
+    with tab2:
+        st.write("**Import wedstrijden (CSV)**")
+        st.write("Verwacht formaat:")
+        st.code("datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten")
+        st.caption("type = 'thuis' of 'uit', reistijd_minuten alleen voor uitwedstrijden")
+        
+        uploaded_wed = st.file_uploader("Upload CSV", type="csv", key="import_wed")
+        if uploaded_wed:
+            import csv
+            import io
+            
+            content = uploaded_wed.read().decode('utf-8')
+            reader = csv.DictReader(io.StringIO(content))
+            
+            wedstrijden = laad_wedstrijden()
+            count = 0
+            
+            for row in reader:
+                datum = row.get("datum", "").strip()
+                tijd = row.get("tijd", "").strip()
+                thuisteam = row.get("thuisteam", "").strip()
+                
+                if datum and thuisteam:
+                    wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{count}"
+                    wed_type = row.get("type", "thuis").strip().lower()
+                    
+                    nieuwe_wed = {
+                        "datum": f"{datum} {tijd}",
+                        "thuisteam": thuisteam,
+                        "uitteam": row.get("uitteam", "").strip(),
+                        "niveau": int(row.get("niveau", 1)),
+                        "type": wed_type,
+                        "vereist_bs2": row.get("vereist_bs2", "").lower() in ["ja", "yes", "true", "1"],
+                        "scheids_1": None,
+                        "scheids_2": None
+                    }
+                    
+                    if wed_type == "uit":
+                        nieuwe_wed["reistijd_minuten"] = int(row.get("reistijd_minuten", 60))
+                    
+                    wedstrijden[wed_id] = nieuwe_wed
+                    count += 1
+            
+            sla_wedstrijden_op(wedstrijden)
+            st.success(f"{count} wedstrijden geïmporteerd!")
+    
+    with tab3:
         st.write("**Export planning (CSV)**")
         
-        if st.button("Download planning"):
-            wedstrijden = laad_wedstrijden()
-            scheidsrechters = laad_scheidsrechters()
-            
-            output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2\n"
-            for wed_id, wed in sorted(wedstrijden.items(), key=lambda x: x[1]["datum"]):
-                datum_obj = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-                scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
-                scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Download thuiswedstrijden + planning"):
+                wedstrijden = laad_wedstrijden()
+                scheidsrechters = laad_scheidsrechters()
                 
-                output += f"{datum_obj.strftime('%Y-%m-%d')},{datum_obj.strftime('%H:%M')},"
-                output += f"{wed['thuisteam']},{wed['uitteam']},{wed['niveau']},"
-                output += f"{scheids_1_naam},{scheids_2_naam}\n"
-            
-            st.download_button(
-                "📥 Download CSV",
-                output,
-                file_name="scheidsrechter_planning.csv",
-                mime="text/csv"
-            )
+                output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2\n"
+                for wed_id, wed in sorted(wedstrijden.items(), key=lambda x: x[1]["datum"]):
+                    if wed.get("type", "thuis") != "thuis":
+                        continue
+                    datum_obj = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
+                    scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
+                    
+                    output += f"{datum_obj.strftime('%Y-%m-%d')},{datum_obj.strftime('%H:%M')},"
+                    output += f"{wed['thuisteam']},{wed['uitteam']},{wed['niveau']},"
+                    output += f"{scheids_1_naam},{scheids_2_naam}\n"
+                
+                st.download_button(
+                    "📥 Download CSV",
+                    output,
+                    file_name="scheidsrechter_planning.csv",
+                    mime="text/csv"
+                )
+        
+        with col2:
+            if st.button("📥 Download alle wedstrijden"):
+                wedstrijden = laad_wedstrijden()
+                
+                output = "datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten\n"
+                for wed_id, wed in sorted(wedstrijden.items(), key=lambda x: x[1]["datum"]):
+                    datum_obj = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    wed_type = wed.get("type", "thuis")
+                    
+                    output += f"{datum_obj.strftime('%Y-%m-%d')},{datum_obj.strftime('%H:%M')},"
+                    output += f"{wed['thuisteam']},{wed['uitteam']},{wed['niveau']},"
+                    output += f"{wed_type},{'ja' if wed.get('vereist_bs2') else 'nee'},"
+                    output += f"{wed.get('reistijd_minuten', 0)}\n"
+                
+                st.download_button(
+                    "📥 Download CSV",
+                    output,
+                    file_name="alle_wedstrijden.csv",
+                    mime="text/csv"
+                )
 
 # ============================================================
 # MAIN ROUTING

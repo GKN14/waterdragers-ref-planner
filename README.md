@@ -60,6 +60,22 @@ nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams
 
 Let op: eigen_teams zijn gescheiden met puntkomma (;)
 
+### Wedstrijden
+
+```csv
+datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten
+2025-01-11,14:00,U12-1,Grasshoppers U12,1,thuis,nee,0
+2025-01-11,10:00,HS1,Rotterdam,4,uit,nee,45
+```
+
+**Velden:**
+- `type`: "thuis" (scheidsrechters nodig) of "uit" (alleen blokkade)
+- `reistijd_minuten`: alleen relevant voor uitwedstrijden
+- Bij uitwedstrijden is "thuisteam" het eigen team dat uit speelt
+
+**Blokkade-logica:** 
+Spelers kunnen niet fluiten wanneer hun eigen team speelt (thuis of uit). Bij uitwedstrijden wordt de reistijd meegenomen in de blokkade.
+
 ## Deployen naar Streamlit Community Cloud
 
 1. Maak een GitHub repository aan
