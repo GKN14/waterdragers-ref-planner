@@ -809,23 +809,27 @@ def toon_scheidsrechters_beheer():
                 with st.form(f"edit_form_{nbb}"):
                     col1, col2 = st.columns(2)
                     with col1:
-                        nieuwe_naam = st.text_input("Naam", value=scheids.get("naam", ""), key=f"naam_{nbb}")
-                        bs2_diploma = st.checkbox("BS2 diploma", value=scheids.get("bs2_diploma", False), key=f"bs2_{nbb}")
-                        niet_op_zondag = st.checkbox("Niet op zondag", value=scheids.get("niet_op_zondag", False), key=f"zondag_{nbb}")
+                        nieuwe_naam = st.text_input("Naam", value=str(scheids.get("naam", "") or ""), key=f"naam_{nbb}")
+                        bs2_diploma = st.checkbox("BS2 diploma", value=bool(scheids.get("bs2_diploma", False)), key=f"bs2_{nbb}")
+                        niet_op_zondag = st.checkbox("Niet op zondag", value=bool(scheids.get("niet_op_zondag", False)), key=f"zondag_{nbb}")
                     with col2:
+                        # Zorg voor geldige index (0-4)
+                        idx_1e = max(0, min(4, scheids.get("niveau_1e_scheids", 1) - 1))
+                        idx_2e = max(0, min(4, scheids.get("niveau_2e_scheids", 5) - 1))
+                        
                         niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], 
-                                                  index=scheids.get("niveau_1e_scheids", 1) - 1, key=f"niv1_{nbb}")
+                                                  index=idx_1e, key=f"niv1_{nbb}")
                         niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], 
-                                                  index=scheids.get("niveau_2e_scheids", 5) - 1, key=f"niv2_{nbb}")
+                                                  index=idx_2e, key=f"niv2_{nbb}")
                         min_w = st.number_input("Minimum wedstrijden", min_value=0, 
-                                                value=scheids.get("min_wedstrijden", 2), key=f"min_{nbb}")
+                                                value=int(scheids.get("min_wedstrijden", 2) or 2), key=f"min_{nbb}")
                         max_w = st.number_input("Maximum wedstrijden", min_value=1, 
-                                                value=scheids.get("max_wedstrijden", 5), key=f"max_{nbb}")
+                                                value=int(scheids.get("max_wedstrijden", 5) or 5), key=f"max_{nbb}")
                     
                     eigen_teams = st.multiselect(
                         "Eigen teams", 
                         options=SCHEIDSRECHTER_TEAMS,
-                        default=scheids.get("eigen_teams", []),
+                        default=[t for t in scheids.get("eigen_teams", []) if t in SCHEIDSRECHTER_TEAMS],
                         key=f"teams_{nbb}"
                     )
                     
