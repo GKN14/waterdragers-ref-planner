@@ -292,6 +292,88 @@ def heeft_overlappende_fluitwedstrijd(nbb_nummer: str, huidige_wed_id: str, datu
     
     return False
 
+def analyseer_scheids_conflicten(nbb_nummer: str, wed_id: str, nieuwe_datum_tijd: datetime, 
+                                   wedstrijden: dict, scheidsrechters: dict) -> list:
+    """
+    Analyseer mogelijke conflicten voor een scheidsrechter bij een nieuwe datum/tijd.
+    
+    Returns: Lijst van conflict beschrijvingen
+    """
+    conflicten = []
+    scheids = scheidsrechters.get(nbb_nummer, {})
+    eigen_teams = scheids.get("eigen_teams", [])
+    
+    wed_duur = timedelta(hours=1, minutes=30)
+    aanwezig_voor = timedelta(minutes=30)
+    
+    # Tijdsvenster van de nieuwe tijd
+    nieuwe_start = nieuwe_datum_tijd - aanwezig_voor
+    nieuwe_eind = nieuwe_datum_tijd + wed_duur
+    
+    # Check zondag restrictie
+    if scheids.get("niet_op_zondag", False) and nieuwe_datum_tijd.weekday() == 6:
+        conflicten.append({
+            "type": "zondag",
+            "beschrijving": f"{scheids.get('naam', 'Onbekend')} kan niet op zondag fluiten"
+        })
+    
+    # Check eigen wedstrijden
+    for other_wed_id, wed in wedstrijden.items():
+        if other_wed_id == wed_id:
+            continue
+            
+        # Skip geannuleerde wedstrijden
+        if wed.get("geannuleerd", False):
+            continue
+        
+        # Check of dit een eigen wedstrijd is
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        
+        is_eigen_wed = False
+        if wed.get("type") == "uit":
+            if is_eigen_thuis:
+                is_eigen_wed = True
+        else:
+            if is_eigen_thuis or is_eigen_uit:
+                is_eigen_wed = True
+        
+        if is_eigen_wed:
+            # Bereken tijdsvenster van deze wedstrijd
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            
+            if wed.get("type") == "uit":
+                reistijd = timedelta(minutes=wed.get("reistijd_minuten", 60))
+                wed_start = wed_datum - reistijd
+                wed_eind = wed_datum + wed_duur + reistijd
+            else:
+                wed_start = wed_datum - timedelta(minutes=30)
+                wed_eind = wed_datum + wed_duur
+            
+            # Check overlap
+            if nieuwe_start < wed_eind and nieuwe_eind > wed_start:
+                dag = ["ma", "di", "wo", "do", "vr", "za", "zo"][wed_datum.weekday()]
+                conflicten.append({
+                    "type": "eigen_wedstrijd",
+                    "beschrijving": f"{scheids.get('naam', 'Onbekend')} speelt zelf: {wed['thuisteam']} - {wed['uitteam']} ({dag} {wed_datum.strftime('%H:%M')})"
+                })
+        
+        # Check andere fluitwedstrijden
+        elif wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            bestaande_start = wed_datum - aanwezig_voor
+            bestaande_eind = wed_datum + wed_duur
+            
+            if nieuwe_start < bestaande_eind and nieuwe_eind > bestaande_start:
+                dag = ["ma", "di", "wo", "do", "vr", "za", "zo"][wed_datum.weekday()]
+                positie = "1e" if wed.get("scheids_1") == nbb_nummer else "2e"
+                conflicten.append({
+                    "type": "andere_fluitwedstrijd",
+                    "beschrijving": f"{scheids.get('naam', 'Onbekend')} fluit al ({positie}): {wed['thuisteam']} - {wed['uitteam']} ({dag} {wed_datum.strftime('%H:%M')})"
+                })
+    
+    return conflicten
+
 def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden: dict, scheidsrechters: dict, als_eerste: bool) -> dict:
     """
     Bepaal de status van een scheidsrechter positie voor een wedstrijd.
@@ -1444,6 +1526,108 @@ def toon_wedstrijden_beheer():
             st.rerun()
 
 
+def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict):
+    """Toon het bewerk formulier voor een wedstrijd."""
+    st.markdown("---")
+    st.markdown("**📝 Wedstrijd bewerken**")
+    
+    wed_data = wedstrijden[wed["id"]]
+    huidige_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    
+    with st.form(f"bewerk_form_{wed['id']}"):
+        col_d, col_t, col_v = st.columns(3)
+        
+        with col_d:
+            nieuwe_datum = st.date_input(
+                "Datum", 
+                value=huidige_datum.date(),
+                key=f"edit_datum_{wed['id']}"
+            )
+        
+        with col_t:
+            nieuwe_tijd = st.time_input(
+                "Tijd",
+                value=huidige_datum.time(),
+                key=f"edit_tijd_{wed['id']}"
+            )
+        
+        with col_v:
+            huidig_veld = wed_data.get("veld", "")
+            nieuw_veld = st.text_input(
+                "Veld",
+                value=huidig_veld,
+                key=f"edit_veld_{wed['id']}",
+                placeholder="bijv. 1, 2, 3..."
+            )
+        
+        col_niveau, col_bs2 = st.columns(2)
+        with col_niveau:
+            nieuw_niveau = st.selectbox(
+                "Niveau",
+                options=[1, 2, 3, 4, 5],
+                index=wed_data.get("niveau", 1) - 1,
+                key=f"edit_niveau_{wed['id']}"
+            )
+        with col_bs2:
+            nieuw_bs2 = st.checkbox(
+                "Vereist BS2",
+                value=wed_data.get("vereist_bs2", False),
+                key=f"edit_bs2_{wed['id']}"
+            )
+        
+        submitted = st.form_submit_button("💾 Opslaan", type="primary")
+        
+        if submitted:
+            nieuwe_datum_tijd = datetime.combine(nieuwe_datum, nieuwe_tijd)
+            datum_gewijzigd = nieuwe_datum_tijd != huidige_datum
+            
+            # Check conflicten als datum/tijd is gewijzigd
+            alle_conflicten = []
+            if datum_gewijzigd:
+                # Check 1e scheidsrechter
+                if wed_data.get("scheids_1"):
+                    conflicten_1 = analyseer_scheids_conflicten(
+                        wed_data["scheids_1"], wed["id"], nieuwe_datum_tijd,
+                        wedstrijden, scheidsrechters
+                    )
+                    alle_conflicten.extend(conflicten_1)
+                
+                # Check 2e scheidsrechter
+                if wed_data.get("scheids_2"):
+                    conflicten_2 = analyseer_scheids_conflicten(
+                        wed_data["scheids_2"], wed["id"], nieuwe_datum_tijd,
+                        wedstrijden, scheidsrechters
+                    )
+                    alle_conflicten.extend(conflicten_2)
+            
+            # Sla de wijzigingen op
+            wedstrijden[wed["id"]]["datum"] = nieuwe_datum_tijd.strftime("%Y-%m-%d %H:%M")
+            wedstrijden[wed["id"]]["veld"] = nieuw_veld
+            wedstrijden[wed["id"]]["niveau"] = nieuw_niveau
+            wedstrijden[wed["id"]]["vereist_bs2"] = nieuw_bs2
+            sla_wedstrijden_op(wedstrijden)
+            
+            # Toon resultaat
+            if alle_conflicten:
+                st.session_state[f"conflicten_{wed['id']}"] = alle_conflicten
+            
+            st.session_state[f"bewerk_{wed['id']}"] = False
+            st.success("✅ Wedstrijd bijgewerkt!")
+            st.rerun()
+    
+    # Toon eventuele conflicten van vorige save
+    if f"conflicten_{wed['id']}" in st.session_state:
+        conflicten = st.session_state[f"conflicten_{wed['id']}"]
+        if conflicten:
+            st.error("⚠️ **Let op! Conflicten gedetecteerd:**")
+            for conflict in conflicten:
+                st.warning(f"• {conflict['beschrijving']}")
+            st.info("💡 Overweeg de scheidsrechter(s) te verwijderen of een andere tijd te kiezen.")
+            if st.button("Conflicten sluiten", key=f"close_conflict_{wed['id']}"):
+                del st.session_state[f"conflicten_{wed['id']}"]
+                st.rerun()
+
+
 def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellingen: dict, type_filter: str):
     """Toon lijst van wedstrijden gefilterd op type."""
     
@@ -1541,6 +1725,28 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                 
                 if wed["geannuleerd"]:
                     st.warning("Deze wedstrijd is geannuleerd. Scheidsrechters worden niet meegerekend.")
+                    
+                    # Acties voor geannuleerde wedstrijd
+                    col_acties = st.columns([4, 1])[1]
+                    with col_acties:
+                        bewerk_key = f"bewerk_{wed['id']}"
+                        if bewerk_key not in st.session_state:
+                            st.session_state[bewerk_key] = False
+                        
+                        col_edit, col_del = st.columns(2)
+                        with col_edit:
+                            if st.button("✏️", key=f"toggle_edit_{wed['id']}", help="Bewerk wedstrijd"):
+                                st.session_state[bewerk_key] = not st.session_state[bewerk_key]
+                                st.rerun()
+                        with col_del:
+                            if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                                del wedstrijden[wed["id"]]
+                                sla_wedstrijden_op(wedstrijden)
+                                st.rerun()
+                    
+                    # Bewerk formulier voor geannuleerde wedstrijd
+                    if st.session_state.get(f"bewerk_{wed['id']}", False):
+                        toon_bewerk_formulier(wed, wedstrijden, scheidsrechters)
                 else:
                     col1, col2, col3 = st.columns([2, 2, 1])
                     
@@ -1598,21 +1804,94 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     
                     with col3:
                         st.write("**Acties:**")
-                        if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
-                            del wedstrijden[wed["id"]]
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
+                        
+                        # Bewerk toggle
+                        bewerk_key = f"bewerk_{wed['id']}"
+                        if bewerk_key not in st.session_state:
+                            st.session_state[bewerk_key] = False
+                        
+                        col_edit, col_del = st.columns(2)
+                        with col_edit:
+                            if st.button("✏️", key=f"toggle_edit_{wed['id']}", help="Bewerk wedstrijd"):
+                                st.session_state[bewerk_key] = not st.session_state[bewerk_key]
+                                st.rerun()
+                        with col_del:
+                            if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                                del wedstrijden[wed["id"]]
+                                sla_wedstrijden_op(wedstrijden)
+                                st.rerun()
+                
+                # Bewerk formulier (buiten de columns, volledige breedte)
+                if st.session_state.get(f"bewerk_{wed['id']}", False):
+                    toon_bewerk_formulier(wed, wedstrijden, scheidsrechters)
             else:
-                # Uitwedstrijd - alleen info en delete
+                # Uitwedstrijd - info, bewerk en delete
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.write(f"**Team:** {wed['thuisteam']}")
                     st.write(f"**Reistijd:** {wed['reistijd']} minuten")
                 with col2:
-                    if st.button("🗑️ Verwijder", key=f"delwed_{wed['id']}"):
-                        del wedstrijden[wed["id"]]
-                        sla_wedstrijden_op(wedstrijden)
-                        st.rerun()
+                    bewerk_key = f"bewerk_{wed['id']}"
+                    if bewerk_key not in st.session_state:
+                        st.session_state[bewerk_key] = False
+                    
+                    col_edit, col_del = st.columns(2)
+                    with col_edit:
+                        if st.button("✏️", key=f"toggle_edit_{wed['id']}", help="Bewerk wedstrijd"):
+                            st.session_state[bewerk_key] = not st.session_state[bewerk_key]
+                            st.rerun()
+                    with col_del:
+                        if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                            del wedstrijden[wed["id"]]
+                            sla_wedstrijden_op(wedstrijden)
+                            st.rerun()
+                
+                # Bewerk formulier voor uitwedstrijd
+                if st.session_state.get(f"bewerk_{wed['id']}", False):
+                    st.markdown("---")
+                    st.markdown("**📝 Uitwedstrijd bewerken**")
+                    
+                    wed_data = wedstrijden[wed["id"]]
+                    huidige_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    
+                    with st.form(f"bewerk_uit_form_{wed['id']}"):
+                        col_d, col_t, col_r = st.columns(3)
+                        
+                        with col_d:
+                            nieuwe_datum = st.date_input(
+                                "Datum", 
+                                value=huidige_datum.date(),
+                                key=f"edit_uit_datum_{wed['id']}"
+                            )
+                        
+                        with col_t:
+                            nieuwe_tijd = st.time_input(
+                                "Tijd",
+                                value=huidige_datum.time(),
+                                key=f"edit_uit_tijd_{wed['id']}"
+                            )
+                        
+                        with col_r:
+                            nieuwe_reistijd = st.number_input(
+                                "Reistijd (min)",
+                                min_value=0,
+                                max_value=180,
+                                value=wed_data.get("reistijd_minuten", 60),
+                                key=f"edit_uit_reistijd_{wed['id']}"
+                            )
+                        
+                        submitted = st.form_submit_button("💾 Opslaan", type="primary")
+                        
+                        if submitted:
+                            nieuwe_datum_tijd = datetime.combine(nieuwe_datum, nieuwe_tijd)
+                            
+                            wedstrijden[wed["id"]]["datum"] = nieuwe_datum_tijd.strftime("%Y-%m-%d %H:%M")
+                            wedstrijden[wed["id"]]["reistijd_minuten"] = nieuwe_reistijd
+                            sla_wedstrijden_op(wedstrijden)
+                            
+                            st.session_state[f"bewerk_{wed['id']}"] = False
+                            st.success("✅ Uitwedstrijd bijgewerkt!")
+                            st.rerun()
 
 def toon_scheidsrechters_beheer():
     """Beheer scheidsrechters."""
