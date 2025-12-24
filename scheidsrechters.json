@@ -1,0 +1,52 @@
+{
+  "12345678": {
+    "naam": "Jan de Vries",
+    "bs2_diploma": true,
+    "niveau_1e_scheids": 4,
+    "niveau_2e_scheids": 5,
+    "min_wedstrijden": 2,
+    "max_wedstrijden": 5,
+    "niet_op_zondag": false,
+    "eigen_teams": ["HS1", "U18-1"]
+  },
+  "23456789": {
+    "naam": "Karin Bakker",
+    "bs2_diploma": true,
+    "niveau_1e_scheids": 5,
+    "niveau_2e_scheids": 5,
+    "min_wedstrijden": 2,
+    "max_wedstrijden": 4,
+    "niet_op_zondag": false,
+    "eigen_teams": ["DS1"]
+  },
+  "34567890": {
+    "naam": "Piet Jansen",
+    "bs2_diploma": false,
+    "niveau_1e_scheids": 2,
+    "niveau_2e_scheids": 3,
+    "min_wedstrijden": 2,
+    "max_wedstrijden": 5,
+    "niet_op_zondag": true,
+    "eigen_teams": ["HS2"]
+  },
+  "45678901": {
+    "naam": "Lisa van Dijk",
+    "bs2_diploma": false,
+    "niveau_1e_scheids": 1,
+    "niveau_2e_scheids": 2,
+    "min_wedstrijden": 1,
+    "max_wedstrijden": 3,
+    "niet_op_zondag": false,
+    "eigen_teams": ["U16-1"]
+  },
+  "56789012": {
+    "naam": "Mo el Amrani",
+    "bs2_diploma": false,
+    "niveau_1e_scheids": 2,
+    "niveau_2e_scheids": 4,
+    "min_wedstrijden": 2,
+    "max_wedstrijden": 5,
+    "niet_op_zondag": false,
+    "eigen_teams": ["U18-2"]
+  }
+}

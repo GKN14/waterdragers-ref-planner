@@ -1,0 +1,74 @@
+{
+  "wed_001": {
+    "datum": "2025-01-11 14:00",
+    "thuisteam": "U12-1",
+    "uitteam": "Grasshoppers U12",
+    "niveau": 1,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_002": {
+    "datum": "2025-01-11 16:00",
+    "thuisteam": "U14-1",
+    "uitteam": "Rotterdam U14",
+    "niveau": 2,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_003": {
+    "datum": "2025-01-12 10:30",
+    "thuisteam": "U16-1",
+    "uitteam": "Leiden U16",
+    "niveau": 3,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_004": {
+    "datum": "2025-01-12 14:00",
+    "thuisteam": "U18-1",
+    "uitteam": "Den Haag U18",
+    "niveau": 3,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_005": {
+    "datum": "2025-01-18 19:00",
+    "thuisteam": "HS1",
+    "uitteam": "Amsterdam HS",
+    "niveau": 4,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_006": {
+    "datum": "2025-01-19 14:30",
+    "thuisteam": "DS1",
+    "uitteam": "Utrecht DS",
+    "niveau": 4,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_007": {
+    "datum": "2025-01-25 20:00",
+    "thuisteam": "MSE",
+    "uitteam": "Almere MSE",
+    "niveau": 5,
+    "vereist_bs2": true,
+    "scheids_1": null,
+    "scheids_2": null
+  },
+  "wed_008": {
+    "datum": "2025-01-26 12:00",
+    "thuisteam": "U10-1",
+    "uitteam": "Dordrecht U10",
+    "niveau": 1,
+    "vereist_bs2": false,
+    "scheids_1": null,
+    "scheids_2": null
+  }
+}
