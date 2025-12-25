@@ -252,20 +252,23 @@ def get_speler_stats(nbb_nummer: str) -> dict:
         "strike_log": speler_data.get("strike_log", [])
     }
 
-def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None):
-    """Voeg punten toe aan een speler."""
+def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None, berekening: dict = None):
+    """Voeg punten toe aan een speler met volledige berekening voor transparantie."""
     beloningen = laad_beloningen()
     if nbb_nummer not in beloningen["spelers"]:
         beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": []}
     
     beloningen["spelers"][nbb_nummer]["punten"] += punten
     if wed_id:
-        beloningen["spelers"][nbb_nummer]["gefloten_wedstrijden"].append({
+        registratie = {
             "wed_id": wed_id,
             "punten": punten,
             "reden": reden,
-            "datum": datetime.now().isoformat()
-        })
+            "geregistreerd_op": datetime.now().isoformat()
+        }
+        if berekening:
+            registratie["berekening"] = berekening
+        beloningen["spelers"][nbb_nummer]["gefloten_wedstrijden"].append(registratie)
     sla_beloningen_op(beloningen)
 
 def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
@@ -366,10 +369,15 @@ def is_last_minute_inval(wed_id: str, wed_datum: datetime) -> dict:
 def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> dict:
     """
     Bereken hoeveel punten een speler krijgt voor een wedstrijd.
-    Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str}
+    Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str, "berekening": dict}
     """
     wed = wedstrijden.get(wed_id, {})
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    nu = datetime.now()
+    
+    # Bereken uren tot wedstrijd
+    verschil = wed_datum - nu
+    uren_tot_wedstrijd = verschil.total_seconds() / 3600
     
     # Basis: 1 punt
     basis = 1
@@ -390,12 +398,25 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     if inval_bonus:
         details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
     
+    # Gedetailleerde berekening voor transparantie
+    berekening = {
+        "inschrijf_moment": nu.isoformat(),
+        "inschrijf_moment_leesbaar": nu.strftime("%d-%m-%Y %H:%M"),
+        "wedstrijd_datum": wed_datum.isoformat(),
+        "wedstrijd_datum_leesbaar": wed_datum.strftime("%d-%m-%Y %H:%M"),
+        "uren_tot_wedstrijd": round(uren_tot_wedstrijd, 1),
+        "is_inval_48u": uren_tot_wedstrijd < 48,
+        "is_inval_24u": uren_tot_wedstrijd < 24,
+        "is_lastig_tijdstip": lastig == 1
+    }
+    
     return {
         "basis": basis,
         "lastig_tijdstip": lastig,
         "inval_bonus": inval_bonus,
         "totaal": totaal,
-        "details": ", ".join(details)
+        "details": ", ".join(details),
+        "berekening": berekening
     }
 
 def get_ranglijst() -> list:
@@ -892,6 +913,9 @@ def toon_speler_view(nbb_nummer: str):
     wedstrijden = laad_wedstrijden()
     instellingen = laad_instellingen()
     
+    # Haal speler stats vroeg op voor gebruik in sidebar
+    speler_stats = get_speler_stats(nbb_nummer)
+    
     # Sidebar met legenda
     with st.sidebar:
         st.markdown("### 📋 Legenda")
@@ -961,7 +985,7 @@ def toon_speler_view(nbb_nummer: str):
         
         *Lastig = apart terugkomen om te fluiten
         
-        **15 punten** = clinic naar keuze!
+        **15 punten** = voucher Clinic!
         """)
         
         st.divider()
@@ -982,6 +1006,29 @@ def toon_speler_view(nbb_nummer: str):
         - Extra wedstrijd (-1)
         - Invallen <48u (-2)
         """)
+        
+        # Toon eigen puntenhistorie als er punten zijn
+        if speler_stats["punten"] > 0 or speler_stats["strikes"] > 0:
+            st.divider()
+            st.markdown("### 📊 Jouw historie")
+            
+            if speler_stats["gefloten_wedstrijden"]:
+                with st.expander(f"🏆 Punten ({speler_stats['punten']} totaal)"):
+                    for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
+                        berekening = wed_reg.get("berekening", {})
+                        if berekening:
+                            st.markdown(f"""
+                            **+{wed_reg['punten']}** op {berekening.get('inschrijf_moment_leesbaar', '?')}  
+                            *{berekening.get('uren_tot_wedstrijd', '?')}u tot wedstrijd*
+                            """)
+                        else:
+                            st.markdown(f"**+{wed_reg['punten']}** - {wed_reg.get('reden', '')}")
+            
+            if speler_stats["strike_log"]:
+                with st.expander(f"⚠️ Strikes ({speler_stats['strikes']} actief)"):
+                    for strike in reversed(speler_stats["strike_log"][-5:]):
+                        teken = "+" if strike["strikes"] > 0 else ""
+                        st.markdown(f"**{teken}{strike['strikes']}** - {strike['reden']}")
     
     # Header met logo
     logo_path = Path(__file__).parent / "logo.png"
@@ -1003,9 +1050,6 @@ def toon_speler_view(nbb_nummer: str):
     eigen_niveau = niveau_stats["niveau"]
     min_wed = scheids.get("min_wedstrijden", 0)
     max_wed = scheids.get("max_wedstrijden", 99)
-    
-    # Punten en strikes ophalen
-    speler_stats = get_speler_stats(nbb_nummer)
     
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
@@ -1080,18 +1124,29 @@ def toon_speler_view(nbb_nummer: str):
                 📅 **{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']}  
                 👕 {verzoek['positie']}  
                 🏆 **{punten_info['totaal']} punten** ({punten_info['details']})
+                
+                📊 *Berekening: inschrijving om {punten_info['berekening']['inschrijf_moment_leesbaar']}, wedstrijd om {punten_info['berekening']['wedstrijd_datum_leesbaar']} = {punten_info['berekening']['uren_tot_wedstrijd']} uur van tevoren*
                 """)
                 
                 col_accept, col_reject = st.columns(2)
                 with col_accept:
                     if st.button("✅ Accepteren", key=f"accept_{verzoek['id']}", type="primary"):
+                        # Herbereken punten op exact moment van acceptatie
+                        punten_info_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, verzoek["wed_id"], wedstrijden, scheidsrechters)
+                        
                         # Verzoek accepteren
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
                         wedstrijden[verzoek["wed_id"]][positie_key] = nbb_nummer
                         sla_wedstrijden_op(wedstrijden)
                         
-                        # Ken punten toe (dit is altijd een inval, dus krijgt punten)
-                        voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], verzoek["wed_id"])
+                        # Ken punten toe met volledige berekening voor transparantie
+                        voeg_punten_toe(
+                            nbb_nummer, 
+                            punten_info_definitief['totaal'], 
+                            punten_info_definitief['details'], 
+                            verzoek["wed_id"],
+                            punten_info_definitief['berekening']
+                        )
                         
                         # Originele aanvrager afmelden
                         if verzoek["positie"] == "1e scheidsrechter":
@@ -1100,12 +1155,21 @@ def toon_speler_view(nbb_nummer: str):
                             wedstrijden[verzoek["wed_id"]]["scheids_2"] = nbb_nummer
                         sla_wedstrijden_op(wedstrijden)
                         
-                        # Verzoek status updaten
+                        # Verzoek status updaten met registratie details
                         verzoeken[verzoek["id"]]["status"] = "accepted"
                         verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
+                        verzoeken[verzoek["id"]]["punten_berekening"] = punten_info_definitief['berekening']
                         sla_vervangingsverzoeken_op(verzoeken)
                         
-                        st.success(f"Je hebt de vervanging geaccepteerd en {punten_info['totaal']} punten verdiend!")
+                        # Toon gedetailleerde bevestiging
+                        st.success(f"""
+                        ✅ **Vervanging geaccepteerd!**  
+                        
+                        🕐 Geregistreerd: **{punten_info_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                        📅 Wedstrijd: **{punten_info_definitief['berekening']['wedstrijd_datum_leesbaar']}**  
+                        ⏱️ Tijd tot wedstrijd: **{punten_info_definitief['berekening']['uren_tot_wedstrijd']} uur**  
+                        🏆 Punten: **{punten_info_definitief['totaal']}** ({punten_info_definitief['details']})
+                        """)
                         st.rerun()
                 
                 with col_reject:
@@ -1451,12 +1515,30 @@ def toon_speler_view(nbb_nummer: str):
                                         button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
                                     
                                     if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                        # Herbereken punten op exact moment van inschrijving
+                                        punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                        
                                         wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
                                         
-                                        # Ken punten toe als boven minimum
-                                        if punten_info:
-                                            voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], wed['id'])
+                                        # Ken punten toe als boven minimum, met berekening
+                                        if punten_definitief:
+                                            voeg_punten_toe(
+                                                nbb_nummer, 
+                                                punten_definitief['totaal'], 
+                                                punten_definitief['details'], 
+                                                wed['id'],
+                                                punten_definitief['berekening']
+                                            )
+                                            
+                                            # Toon bevestiging met details bij inval bonus
+                                            if punten_definitief['inval_bonus'] > 0:
+                                                st.success(f"""
+                                                ✅ **Ingeschreven!**  
+                                                🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                """)
                                         
                                         st.rerun()
                                 else:
@@ -1485,12 +1567,30 @@ def toon_speler_view(nbb_nummer: str):
                                         button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
                                     
                                     if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                        # Herbereken punten op exact moment van inschrijving
+                                        punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                        
                                         wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
                                         
-                                        # Ken punten toe als boven minimum
-                                        if punten_info:
-                                            voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], wed['id'])
+                                        # Ken punten toe als boven minimum, met berekening
+                                        if punten_definitief:
+                                            voeg_punten_toe(
+                                                nbb_nummer, 
+                                                punten_definitief['totaal'], 
+                                                punten_definitief['details'], 
+                                                wed['id'],
+                                                punten_definitief['berekening']
+                                            )
+                                            
+                                            # Toon bevestiging met details bij inval bonus
+                                            if punten_definitief['inval_bonus'] > 0:
+                                                st.success(f"""
+                                                ✅ **Ingeschreven!**  
+                                                🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                """)
                                         
                                         st.rerun()
                                 else:
@@ -2577,19 +2677,39 @@ def toon_beloningen_beheer():
                 elif speler["strikes"] >= 3:
                     strikes_indicator = " ⚠️"
                 
-                col1, col2, col3 = st.columns([1, 3, 2])
-                with col1:
-                    st.write(f"**{medaille}**")
-                with col2:
-                    st.write(f"{speler['naam']}")
-                with col3:
-                    st.write(f"🏆 {speler['punten']} punten | ⚠️ {speler['strikes']} strikes{strikes_indicator}")
+                with st.expander(f"{medaille} {speler['naam']} — 🏆 {speler['punten']} punten | ⚠️ {speler['strikes']} strikes{strikes_indicator}"):
+                    # Haal gedetailleerde stats op
+                    speler_details = get_speler_stats(speler["nbb_nummer"])
+                    
+                    if speler_details["gefloten_wedstrijden"]:
+                        st.write("**Puntenhistorie:**")
+                        wedstrijden_data = laad_wedstrijden()
+                        for wed_reg in reversed(speler_details["gefloten_wedstrijden"][-10:]):  # Laatste 10
+                            wed = wedstrijden_data.get(wed_reg.get("wed_id", ""), {})
+                            wed_naam = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}" if wed else "Onbekende wedstrijd"
+                            
+                            berekening = wed_reg.get("berekening", {})
+                            if berekening:
+                                st.markdown(f"""
+                                - **+{wed_reg['punten']}** - {wed_naam}  
+                                  *Geregistreerd: {berekening.get('inschrijf_moment_leesbaar', '?')} | {berekening.get('uren_tot_wedstrijd', '?')} uur tot wedstrijd*
+                                """)
+                            else:
+                                st.markdown(f"- **+{wed_reg['punten']}** - {wed_naam} ({wed_reg.get('reden', '')})")
+                    else:
+                        st.caption("Nog geen wedstrijden geregistreerd.")
+                    
+                    if speler_details["strike_log"]:
+                        st.write("**Strike historie:**")
+                        for strike in reversed(speler_details["strike_log"][-5:]):  # Laatste 5
+                            teken = "+" if strike["strikes"] > 0 else ""
+                            st.markdown(f"- **{teken}{strike['strikes']}** - {strike['reden']}")
             
             # Clinic drempel info
             st.divider()
             clinic_kandidaten = [s for s in ranglijst if s["punten"] >= 15]
             if clinic_kandidaten:
-                st.success(f"**{len(clinic_kandidaten)} speler(s)** hebben 15+ punten en kunnen een clinic claimen!")
+                st.success(f"**{len(clinic_kandidaten)} speler(s)** hebben 15+ punten en kunnen een voucher Clinic claimen!")
                 for k in clinic_kandidaten:
                     st.write(f"  • {k['naam']} ({k['punten']} punten)")
     
