@@ -15,6 +15,25 @@ from pathlib import Path
 import hashlib
 from io import BytesIO
 
+# Versie informatie
+APP_VERSIE = "1.0.0"
+APP_VERSIE_DATUM = "2025-12-25"
+APP_CHANGELOG = """
+### v1.0.0 (2025-12-25)
+**Nieuwe features:**
+- ⚡ Bulk bewerking voor scheidsrechters (niveau/minimum aanpassen)
+- 🏀 BS2/MSE capaciteitsanalyse met prioriteitsbewaking
+- 💡 Nudge systeem: waarschuwing bij 2+ niveaus onder eigen niveau
+- ⭐ Positieve nudge: stimulans voor 2e scheids op hoger niveau
+- 📊 Verbeterde capaciteitsmonitor met uitleg cumulatieve berekening
+- 🔄 Session state caching voor betere performance
+- 📋 Overzichtstabel scheidsrechters met sorteeropties
+- 🏷️ Versiebeheer met changelog
+
+**Verwijderd:**
+- Maximum wedstrijden limiet (conflicteerde met puntensysteem)
+"""
+
 try:
     from PIL import Image, ImageDraw, ImageFont
     PIL_AVAILABLE = True
@@ -1209,6 +1228,10 @@ def toon_speler_view(nbb_nummer: str):
                     for strike in reversed(speler_stats["strike_log"][-5:]):
                         teken = "+" if strike["strikes"] > 0 else ""
                         st.markdown(f"**{teken}{strike['strikes']}** - {strike['reden']}")
+        
+        # Versie info onderaan sidebar
+        st.divider()
+        st.caption(f"Ref Planner v{APP_VERSIE}")
     
     # Header met logo
     logo_path = Path(__file__).parent / "logo.png"
@@ -1900,8 +1923,10 @@ def toon_beheerder_view():
             st.image(str(logo_path), width=100)
         with col_title:
             st.title("Beheerder - Scheidsrechter Planning")
+            st.caption(f"Ref Planner v{APP_VERSIE}")
     else:
         st.title("🔧 Beheerder - Scheidsrechter Planning")
+        st.caption(f"Ref Planner v{APP_VERSIE}")
     
     # Statistieken berekenen
     wedstrijden = laad_wedstrijden()
@@ -3842,6 +3867,16 @@ def toon_instellingen_beheer():
     if st.button("Niveaus opslaan"):
         sla_instellingen_op(instellingen)
         st.success("Niveaus opgeslagen!")
+    
+    st.divider()
+    
+    # Versie en changelog
+    st.subheader("ℹ️ Over Ref Planner")
+    st.write(f"**Versie:** {APP_VERSIE}")
+    st.write(f"**Datum:** {APP_VERSIE_DATUM}")
+    
+    with st.expander("📋 Changelog"):
+        st.markdown(APP_CHANGELOG)
 
 def bepaal_niveau_uit_team(teamnaam: str) -> int:
     """Bepaal niveau 1-5 uit de teamnaam van Waterdragers."""
