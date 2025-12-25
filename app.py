@@ -194,6 +194,218 @@ def sla_inschrijvingen_op(data: dict):
 def sla_instellingen_op(data: dict):
     sla_json_op("instellingen.json", data)
 
+def laad_beloningen() -> dict:
+    """Laad beloningen (punten, strikes per speler)."""
+    beloningen = laad_json("beloningen.json")
+    if not beloningen:
+        beloningen = {
+            "seizoen": "2024-2025",
+            "spelers": {}
+        }
+        sla_json_op("beloningen.json", beloningen)
+    return beloningen
+
+def sla_beloningen_op(data: dict):
+    sla_json_op("beloningen.json", data)
+
+def laad_klusjes() -> dict:
+    """Laad klusjes (toegewezen aan spelers)."""
+    return laad_json("klusjes.json")
+
+def sla_klusjes_op(data: dict):
+    sla_json_op("klusjes.json", data)
+
+def laad_vervangingsverzoeken() -> dict:
+    """Laad openstaande vervangingsverzoeken."""
+    return laad_json("vervangingsverzoeken.json")
+
+def sla_vervangingsverzoeken_op(data: dict):
+    sla_json_op("vervangingsverzoeken.json", data)
+
+# Beschikbare klusjes
+BESCHIKBARE_KLUSJES = [
+    {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
+    {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
+]
+
+# ============================================================
+# BELONINGSSYSTEEM FUNCTIES
+# ============================================================
+
+def get_speler_stats(nbb_nummer: str) -> dict:
+    """Haal punten en strikes op voor een speler."""
+    beloningen = laad_beloningen()
+    speler_data = beloningen.get("spelers", {}).get(nbb_nummer, {})
+    return {
+        "punten": speler_data.get("punten", 0),
+        "strikes": speler_data.get("strikes", 0),
+        "gefloten_wedstrijden": speler_data.get("gefloten_wedstrijden", []),
+        "strike_log": speler_data.get("strike_log", [])
+    }
+
+def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None):
+    """Voeg punten toe aan een speler."""
+    beloningen = laad_beloningen()
+    if nbb_nummer not in beloningen["spelers"]:
+        beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": []}
+    
+    beloningen["spelers"][nbb_nummer]["punten"] += punten
+    if wed_id:
+        beloningen["spelers"][nbb_nummer]["gefloten_wedstrijden"].append({
+            "wed_id": wed_id,
+            "punten": punten,
+            "reden": reden,
+            "datum": datetime.now().isoformat()
+        })
+    sla_beloningen_op(beloningen)
+
+def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
+    """Voeg strikes toe aan een speler."""
+    beloningen = laad_beloningen()
+    if nbb_nummer not in beloningen["spelers"]:
+        beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": []}
+    
+    beloningen["spelers"][nbb_nummer]["strikes"] += strikes
+    beloningen["spelers"][nbb_nummer]["strike_log"].append({
+        "strikes": strikes,
+        "reden": reden,
+        "datum": datetime.now().isoformat()
+    })
+    sla_beloningen_op(beloningen)
+
+def verwijder_strike(nbb_nummer: str, strikes: int, reden: str):
+    """Verwijder strikes van een speler (door klusje of extra wedstrijd)."""
+    beloningen = laad_beloningen()
+    if nbb_nummer in beloningen["spelers"]:
+        beloningen["spelers"][nbb_nummer]["strikes"] = max(0, beloningen["spelers"][nbb_nummer]["strikes"] - strikes)
+        beloningen["spelers"][nbb_nummer]["strike_log"].append({
+            "strikes": -strikes,
+            "reden": reden,
+            "datum": datetime.now().isoformat()
+        })
+        sla_beloningen_op(beloningen)
+
+def is_lastig_tijdstip(nbb_nummer: str, wed_datum: datetime, wedstrijden: dict, scheidsrechters: dict) -> bool:
+    """
+    Check of dit een 'lastig tijdstip' is voor de speler.
+    Lastig = >2u na eigen wedstrijd, >4u voor eigen thuiswedstrijd, of dag zonder eigen wedstrijd.
+    """
+    scheids = scheidsrechters.get(nbb_nummer, {})
+    eigen_teams = scheids.get("eigen_teams", [])
+    
+    if not eigen_teams:
+        return True  # Geen eigen wedstrijden = altijd lastig (moet apart komen)
+    
+    wed_dag = wed_datum.date()
+    
+    eigen_wedstrijden_vandaag = []
+    for wed_id, wed in wedstrijden.items():
+        # Check of dit een eigen wedstrijd is
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        
+        is_eigen_wed = False
+        if wed.get("type") == "uit" and is_eigen_thuis:
+            is_eigen_wed = True
+        elif wed.get("type") != "uit" and (is_eigen_thuis or is_eigen_uit):
+            is_eigen_wed = True
+        
+        if is_eigen_wed:
+            eigen_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            if eigen_datum.date() == wed_dag:
+                eigen_wedstrijden_vandaag.append({
+                    "datum": eigen_datum,
+                    "type": wed.get("type", "thuis"),
+                    "thuis": wed.get("type") != "uit"
+                })
+    
+    # Geen eigen wedstrijd op deze dag = lastig tijdstip (moet apart komen)
+    if not eigen_wedstrijden_vandaag:
+        return True
+    
+    # Check elke eigen wedstrijd
+    for eigen_wed in eigen_wedstrijden_vandaag:
+        eigen_datum = eigen_wed["datum"]
+        
+        # Fluitwedstrijd is >2u NA eigen wedstrijd einde
+        eigen_eind = eigen_datum + timedelta(hours=1, minutes=30)
+        if wed_datum > eigen_eind + timedelta(hours=2):
+            return True
+        
+        # Fluitwedstrijd is >4u VOOR eigen thuiswedstrijd
+        if eigen_wed["thuis"] and wed_datum < eigen_datum - timedelta(hours=4):
+            return True
+    
+    return False
+
+def is_last_minute_inval(wed_id: str, wed_datum: datetime) -> dict:
+    """
+    Check of dit een last-minute inval is.
+    Returns: {"is_inval": bool, "bonus": int, "uren": int}
+    """
+    nu = datetime.now()
+    verschil = wed_datum - nu
+    uren = verschil.total_seconds() / 3600
+    
+    if uren < 24:
+        return {"is_inval": True, "bonus": 5, "uren": 24}
+    elif uren < 48:
+        return {"is_inval": True, "bonus": 3, "uren": 48}
+    else:
+        return {"is_inval": False, "bonus": 0, "uren": 0}
+
+def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> dict:
+    """
+    Bereken hoeveel punten een speler krijgt voor een wedstrijd.
+    Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str}
+    """
+    wed = wedstrijden.get(wed_id, {})
+    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    
+    # Basis: 1 punt
+    basis = 1
+    
+    # Lastig tijdstip: +1
+    lastig = 1 if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
+    
+    # Last-minute inval: +3 of +5
+    inval_info = is_last_minute_inval(wed_id, wed_datum)
+    inval_bonus = inval_info["bonus"]
+    
+    totaal = basis + lastig + inval_bonus
+    
+    details = []
+    details.append("1 basis")
+    if lastig:
+        details.append("+1 lastig tijdstip")
+    if inval_bonus:
+        details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
+    
+    return {
+        "basis": basis,
+        "lastig_tijdstip": lastig,
+        "inval_bonus": inval_bonus,
+        "totaal": totaal,
+        "details": ", ".join(details)
+    }
+
+def get_ranglijst() -> list:
+    """Haal ranglijst op (gesorteerd op punten, aflopend)."""
+    beloningen = laad_beloningen()
+    scheidsrechters = laad_scheidsrechters()
+    
+    ranglijst = []
+    for nbb, data in beloningen.get("spelers", {}).items():
+        scheids = scheidsrechters.get(nbb, {})
+        ranglijst.append({
+            "nbb_nummer": nbb,
+            "naam": scheids.get("naam", "Onbekend"),
+            "punten": data.get("punten", 0),
+            "strikes": data.get("strikes", 0)
+        })
+    
+    return sorted(ranglijst, key=lambda x: (-x["punten"], x["strikes"]))
+
 # ============================================================
 # HELPER FUNCTIES
 # ============================================================
@@ -745,7 +957,10 @@ def toon_speler_view(nbb_nummer: str):
     min_wed = scheids.get("min_wedstrijden", 0)
     max_wed = scheids.get("max_wedstrijden", 99)
     
-    col1, col2, col3, col4 = st.columns(4)
+    # Punten en strikes ophalen
+    speler_stats = get_speler_stats(nbb_nummer)
+    
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
         st.metric("Totaal", huidig_aantal)
     with col2:
@@ -755,6 +970,16 @@ def toon_speler_view(nbb_nummer: str):
         st.metric("Minimum", min_wed)
     with col4:
         st.metric("Maximum", max_wed)
+    with col5:
+        st.metric("🏆 Punten", speler_stats["punten"], help="Punten voor wedstrijden boven je minimum")
+    with col6:
+        strikes = speler_stats["strikes"]
+        if strikes >= 5:
+            st.metric("⚠️ Strikes", strikes, delta="Gesprek TC", delta_color="inverse")
+        elif strikes >= 3:
+            st.metric("⚠️ Strikes", strikes, delta="Waarschuwing", delta_color="inverse")
+        else:
+            st.metric("Strikes", strikes)
     
     # Check of aan minimum is voldaan (op eigen niveau)
     if op_niveau < min_wed:
@@ -764,6 +989,83 @@ def toon_speler_view(nbb_nummer: str):
         st.success("✅ Je hebt je maximum bereikt.")
     else:
         st.success(f"✅ Je hebt aan je minimum voldaan ({op_niveau}/{min_wed} wedstrijden op niveau {eigen_niveau}).")
+    
+    # Toon open klusjes indien aanwezig
+    klusjes = laad_klusjes()
+    mijn_klusjes = [k for k_id, k in klusjes.items() if k.get("nbb_nummer") == nbb_nummer and not k.get("afgerond", False)]
+    
+    if mijn_klusjes:
+        st.divider()
+        st.subheader("🔧 Open klusjes")
+        for klusje in mijn_klusjes:
+            with st.container():
+                st.warning(f"""
+                **{klusje['naam']}**  
+                {klusje['omschrijving']}  
+                *Levert {klusje['strikes_waarde']} strike(s) kwijtschelding op*
+                """)
+                st.caption("Meld je bij de TC als je dit klusje hebt afgerond.")
+    
+    # Toon inkomende vervangingsverzoeken
+    verzoeken = laad_vervangingsverzoeken()
+    inkomende_verzoeken = [v for v_id, v in verzoeken.items() 
+                          if v.get("vervanger_nbb") == nbb_nummer 
+                          and v.get("status") == "pending"]
+    
+    if inkomende_verzoeken:
+        st.divider()
+        st.subheader("📨 Vervangingsverzoeken")
+        for verzoek in inkomende_verzoeken:
+            wed = wedstrijden.get(verzoek["wed_id"], {})
+            if not wed:
+                continue
+            
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            aanvrager = scheidsrechters.get(verzoek["aanvrager_nbb"], {}).get("naam", "Onbekend")
+            
+            # Bereken potentiële punten
+            punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, verzoek["wed_id"], wedstrijden, scheidsrechters)
+            
+            with st.container():
+                st.info(f"""
+                **{aanvrager}** vraagt of jij kunt invallen:  
+                📅 **{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']}  
+                👕 {verzoek['positie']}  
+                🏆 **{punten_info['totaal']} punten** ({punten_info['details']})
+                """)
+                
+                col_accept, col_reject = st.columns(2)
+                with col_accept:
+                    if st.button("✅ Accepteren", key=f"accept_{verzoek['id']}", type="primary"):
+                        # Verzoek accepteren
+                        positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
+                        wedstrijden[verzoek["wed_id"]][positie_key] = nbb_nummer
+                        sla_wedstrijden_op(wedstrijden)
+                        
+                        # Ken punten toe (dit is altijd een inval, dus krijgt punten)
+                        voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], verzoek["wed_id"])
+                        
+                        # Originele aanvrager afmelden
+                        if verzoek["positie"] == "1e scheidsrechter":
+                            wedstrijden[verzoek["wed_id"]]["scheids_1"] = nbb_nummer
+                        else:
+                            wedstrijden[verzoek["wed_id"]]["scheids_2"] = nbb_nummer
+                        sla_wedstrijden_op(wedstrijden)
+                        
+                        # Verzoek status updaten
+                        verzoeken[verzoek["id"]]["status"] = "accepted"
+                        verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
+                        sla_vervangingsverzoeken_op(verzoeken)
+                        
+                        st.success(f"Je hebt de vervanging geaccepteerd en {punten_info['totaal']} punten verdiend!")
+                        st.rerun()
+                
+                with col_reject:
+                    if st.button("❌ Weigeren", key=f"reject_{verzoek['id']}"):
+                        verzoeken[verzoek["id"]]["status"] = "rejected"
+                        sla_vervangingsverzoeken_op(verzoeken)
+                        st.rerun()
     
     # Check deadline en bepaal doelmaand
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
@@ -801,6 +1103,15 @@ def toon_speler_view(nbb_nummer: str):
             wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
             dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
             
+            # Check of er al een openstaand vervangingsverzoek is
+            verzoeken = laad_vervangingsverzoeken()
+            heeft_openstaand_verzoek = any(
+                v.get("wed_id") == wed["id"] and 
+                v.get("aanvrager_nbb") == nbb_nummer and 
+                v.get("status") == "pending"
+                for v in verzoeken.values()
+            )
+            
             with st.container():
                 col1, col2, col3 = st.columns([2, 3, 2])
                 with col1:
@@ -810,13 +1121,86 @@ def toon_speler_view(nbb_nummer: str):
                 with col3:
                     st.write(f"*{wed['rol']}*")
                 
-                # Afmelden alleen tijdens inschrijfperiode
-                if kan_inschrijven:
-                    if st.button("❌ Afmelden", key=f"afmeld_{wed['id']}"):
-                        positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
-                        wedstrijden[wed["id"]][positie] = None
-                        sla_wedstrijden_op(wedstrijden)
-                        st.rerun()
+                if heeft_openstaand_verzoek:
+                    st.warning("⏳ Wacht op bevestiging van vervanger...")
+                elif kan_inschrijven:
+                    # Afmelden met expander voor opties
+                    with st.expander("❌ Afmelden"):
+                        st.write("**Hoe wil je afmelden?**")
+                        
+                        # Bereken hoeveel uur tot de wedstrijd
+                        uren_tot_wed = (wed_datum - datetime.now()).total_seconds() / 3600
+                        
+                        if uren_tot_wed < 48:
+                            if uren_tot_wed < 24:
+                                st.error("⚠️ **Let op:** Afmelden zonder vervanging binnen 24 uur geeft **2 strikes**.")
+                            else:
+                                st.warning("⚠️ **Let op:** Afmelden zonder vervanging binnen 48 uur geeft **1 strike**.")
+                        
+                        col_zonder, col_met = st.columns(2)
+                        
+                        with col_zonder:
+                            st.write("**Zonder vervanging**")
+                            strikes_tekst = ""
+                            if uren_tot_wed < 24:
+                                strikes_tekst = " (2 strikes)"
+                            elif uren_tot_wed < 48:
+                                strikes_tekst = " (1 strike)"
+                            
+                            if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
+                                positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
+                                wedstrijden[wed["id"]][positie] = None
+                                sla_wedstrijden_op(wedstrijden)
+                                
+                                # Strikes toekennen indien nodig
+                                if uren_tot_wed < 24:
+                                    voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                elif uren_tot_wed < 48:
+                                    voeg_strike_toe(nbb_nummer, 1, f"Afmelding <48u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                
+                                st.rerun()
+                        
+                        with col_met:
+                            st.write("**Met vervanging** (geen strike)")
+                            
+                            # Haal geschikte vervangers op
+                            positie = wed["rol"]
+                            als_eerste = positie == "1e scheidsrechter"
+                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste)
+                            
+                            # Filter jezelf eruit
+                            kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
+                            
+                            if kandidaten:
+                                vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']} wed)": k['nbb_nummer'] for k in kandidaten}
+                                
+                                geselecteerde = st.selectbox(
+                                    "Selecteer vervanger",
+                                    options=list(vervanger_opties.keys()),
+                                    key=f"vervanger_{wed['id']}"
+                                )
+                                
+                                if st.button("📤 Verstuur verzoek", key=f"verzoek_{wed['id']}", type="primary"):
+                                    vervanger_nbb = vervanger_opties[geselecteerde]
+                                    
+                                    # Maak vervangingsverzoek aan
+                                    verzoek_id = f"verz_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                                    verzoeken[verzoek_id] = {
+                                        "id": verzoek_id,
+                                        "wed_id": wed["id"],
+                                        "aanvrager_nbb": nbb_nummer,
+                                        "vervanger_nbb": vervanger_nbb,
+                                        "positie": positie,
+                                        "status": "pending",
+                                        "aangemaakt_op": datetime.now().isoformat()
+                                    }
+                                    sla_vervangingsverzoeken_op(verzoeken)
+                                    
+                                    vervanger_naam = scheidsrechters.get(vervanger_nbb, {}).get("naam", "")
+                                    st.success(f"Verzoek verstuurd naar {vervanger_naam}. Zorg dat die persoon het bevestigt!")
+                                    st.rerun()
+                            else:
+                                st.caption("*Geen geschikte vervangers beschikbaar*")
     else:
         st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
     
@@ -1010,9 +1394,23 @@ def toon_speler_view(nbb_nummer: str):
                                 st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
                             elif status_1e["beschikbaar"]:
                                 if huidig_aantal < max_wed:
-                                    if st.button("📋 1e scheids", key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                    # Bereken potentiële punten als boven minimum
+                                    punten_info = None
+                                    if op_niveau >= min_wed:
+                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                    
+                                    button_label = "📋 1e scheids"
+                                    if punten_info:
+                                        button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
+                                    
+                                    if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
                                         wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
+                                        
+                                        # Ken punten toe als boven minimum
+                                        if punten_info:
+                                            voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], wed['id'])
+                                        
                                         st.rerun()
                                 else:
                                     st.caption("~~1e scheids~~ *(max bereikt)*")
@@ -1030,9 +1428,23 @@ def toon_speler_view(nbb_nummer: str):
                                 st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
                             elif status_2e["beschikbaar"]:
                                 if huidig_aantal < max_wed:
-                                    if st.button("📋 2e scheids", key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                    # Bereken potentiële punten als boven minimum
+                                    punten_info = None
+                                    if op_niveau >= min_wed:
+                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                    
+                                    button_label = "📋 2e scheids"
+                                    if punten_info:
+                                        button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
+                                    
+                                    if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
                                         wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
                                         sla_wedstrijden_op(wedstrijden)
+                                        
+                                        # Ken punten toe als boven minimum
+                                        if punten_info:
+                                            voeg_punten_toe(nbb_nummer, punten_info['totaal'], punten_info['details'], wed['id'])
+                                        
                                         st.rerun()
                                 else:
                                     st.caption("~~2e scheids~~ *(max bereikt)*")
@@ -1093,9 +1505,10 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
+        "🏆 Beloningen",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
         "📊 Import/Export"
@@ -1108,12 +1521,15 @@ def toon_beheerder_view():
         toon_scheidsrechters_beheer()
     
     with tab3:
-        toon_weekend_overzicht()
+        toon_beloningen_beheer()
     
     with tab4:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab5:
+        toon_instellingen_beheer()
+    
+    with tab6:
         toon_import_export()
 
 def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, scheidsrechters: dict) -> bytes:
@@ -2070,6 +2486,251 @@ def toon_scheidsrechters_beheer():
                 st.rerun()
             else:
                 st.error("NBB-nummer en naam zijn verplicht")
+
+def toon_beloningen_beheer():
+    """Beheer beloningen: ranglijst, strikes, klusjes."""
+    scheidsrechters = laad_scheidsrechters()
+    beloningen = laad_beloningen()
+    klusjes = laad_klusjes()
+    verzoeken = laad_vervangingsverzoeken()
+    
+    st.subheader("🏆 Beloningen & Strikes Beheer")
+    
+    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+        "📊 Ranglijst", 
+        "⚠️ Strikes Toekennen", 
+        "🔧 Klusjes Beheer",
+        "🔄 Vervangingsverzoeken"
+    ])
+    
+    with subtab1:
+        st.write("**Ranglijst (gesorteerd op punten)**")
+        
+        ranglijst = get_ranglijst()
+        
+        if not ranglijst:
+            st.info("Nog geen punten geregistreerd.")
+        else:
+            for idx, speler in enumerate(ranglijst, 1):
+                # Bepaal medaille
+                if idx == 1:
+                    medaille = "🥇"
+                elif idx == 2:
+                    medaille = "🥈"
+                elif idx == 3:
+                    medaille = "🥉"
+                else:
+                    medaille = f"#{idx}"
+                
+                # Toon strikes indicator
+                strikes_indicator = ""
+                if speler["strikes"] >= 5:
+                    strikes_indicator = " ⚠️ (gesprek TC)"
+                elif speler["strikes"] >= 3:
+                    strikes_indicator = " ⚠️"
+                
+                col1, col2, col3 = st.columns([1, 3, 2])
+                with col1:
+                    st.write(f"**{medaille}**")
+                with col2:
+                    st.write(f"{speler['naam']}")
+                with col3:
+                    st.write(f"🏆 {speler['punten']} punten | ⚠️ {speler['strikes']} strikes{strikes_indicator}")
+            
+            # Clinic drempel info
+            st.divider()
+            clinic_kandidaten = [s for s in ranglijst if s["punten"] >= 15]
+            if clinic_kandidaten:
+                st.success(f"**{len(clinic_kandidaten)} speler(s)** hebben 15+ punten en kunnen een clinic claimen!")
+                for k in clinic_kandidaten:
+                    st.write(f"  • {k['naam']} ({k['punten']} punten)")
+    
+    with subtab2:
+        st.write("**Strikes toekennen**")
+        st.caption("Gebruik dit voor no-shows of late afmeldingen die niet via de app zijn gegaan.")
+        
+        # Selecteer speler
+        speler_opties = {f"{s['naam']} (NBB: {nbb})": nbb for nbb, s in scheidsrechters.items()}
+        
+        if speler_opties:
+            geselecteerde_speler = st.selectbox("Selecteer speler", options=list(speler_opties.keys()))
+            geselecteerde_nbb = speler_opties[geselecteerde_speler]
+            
+            # Toon huidige status
+            stats = get_speler_stats(geselecteerde_nbb)
+            st.info(f"Huidige status: {stats['punten']} punten, {stats['strikes']} strikes")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Strike toevoegen**")
+                strike_reden = st.selectbox("Reden", [
+                    "No-show (5 strikes)",
+                    "Afmelding <24 uur (2 strikes)",
+                    "Afmelding <48 uur (1 strike)",
+                    "Overig"
+                ])
+                
+                if strike_reden == "No-show (5 strikes)":
+                    strike_aantal = 5
+                elif strike_reden == "Afmelding <24 uur (2 strikes)":
+                    strike_aantal = 2
+                elif strike_reden == "Afmelding <48 uur (1 strike)":
+                    strike_aantal = 1
+                else:
+                    strike_aantal = st.number_input("Aantal strikes", min_value=1, max_value=10, value=1)
+                
+                opmerking = st.text_input("Opmerking (optioneel)")
+                
+                if st.button("⚠️ Strike toekennen", type="primary"):
+                    reden_tekst = f"{strike_reden}"
+                    if opmerking:
+                        reden_tekst += f" - {opmerking}"
+                    voeg_strike_toe(geselecteerde_nbb, strike_aantal, reden_tekst)
+                    st.success(f"{strike_aantal} strike(s) toegekend!")
+                    st.rerun()
+            
+            with col2:
+                st.write("**Strike verwijderen**")
+                st.caption("Voor correcties of na het voltooien van een klusje buiten de app om.")
+                
+                verwijder_aantal = st.number_input("Aantal strikes verwijderen", min_value=1, max_value=10, value=1)
+                verwijder_reden = st.text_input("Reden voor verwijdering")
+                
+                if st.button("✅ Strike verwijderen"):
+                    if verwijder_reden:
+                        verwijder_strike(geselecteerde_nbb, verwijder_aantal, verwijder_reden)
+                        st.success(f"{verwijder_aantal} strike(s) verwijderd!")
+                        st.rerun()
+                    else:
+                        st.error("Vul een reden in")
+    
+    with subtab3:
+        st.write("**Klusjes beheer**")
+        
+        # Openstaande klusjes
+        open_klusjes = {k_id: k for k_id, k in klusjes.items() if not k.get("afgerond", False)}
+        
+        if open_klusjes:
+            st.write("**Openstaande klusjes:**")
+            for k_id, klusje in open_klusjes.items():
+                speler = scheidsrechters.get(klusje["nbb_nummer"], {})
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 2, 1])
+                    with col1:
+                        st.write(f"**{speler.get('naam', 'Onbekend')}**: {klusje['naam']}")
+                    with col2:
+                        st.write(f"*{klusje['omschrijving'][:50]}...*" if len(klusje.get('omschrijving', '')) > 50 else klusje.get('omschrijving', ''))
+                    with col3:
+                        if st.button("✅ Afronden", key=f"afrond_{k_id}"):
+                            klusjes[k_id]["afgerond"] = True
+                            klusjes[k_id]["afgerond_op"] = datetime.now().isoformat()
+                            sla_klusjes_op(klusjes)
+                            
+                            # Strike verwijderen
+                            verwijder_strike(klusje["nbb_nummer"], klusje["strikes_waarde"], f"Klusje afgerond: {klusje['naam']}")
+                            st.success(f"Klusje afgerond, {klusje['strikes_waarde']} strike(s) verwijderd!")
+                            st.rerun()
+        else:
+            st.info("Geen openstaande klusjes.")
+        
+        st.divider()
+        
+        # Nieuw klusje toewijzen
+        st.write("**Nieuw klusje toewijzen**")
+        
+        # Filter spelers met strikes
+        spelers_met_strikes = []
+        for nbb, s in scheidsrechters.items():
+            stats = get_speler_stats(nbb)
+            if stats["strikes"] > 0:
+                spelers_met_strikes.append({
+                    "nbb": nbb,
+                    "naam": s["naam"],
+                    "strikes": stats["strikes"]
+                })
+        
+        if spelers_met_strikes:
+            speler_opties = {f"{s['naam']} ({s['strikes']} strikes)": s['nbb'] for s in spelers_met_strikes}
+            geselecteerde_speler = st.selectbox("Selecteer speler met strikes", options=list(speler_opties.keys()), key="klusje_speler")
+            geselecteerde_nbb = speler_opties[geselecteerde_speler]
+            
+            klusje_opties = {k["naam"]: k for k in BESCHIKBARE_KLUSJES}
+            geselecteerde_klusje = st.selectbox("Selecteer klusje", options=list(klusje_opties.keys()))
+            klusje_data = klusje_opties[geselecteerde_klusje]
+            
+            st.info(f"**{klusje_data['naam']}**: {klusje_data['omschrijving']} (levert {klusje_data['strikes_waarde']} strike kwijtschelding op)")
+            
+            if st.button("📋 Klusje toewijzen", type="primary"):
+                klusje_id = f"klusje_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                klusjes[klusje_id] = {
+                    "id": klusje_id,
+                    "nbb_nummer": geselecteerde_nbb,
+                    "naam": klusje_data["naam"],
+                    "omschrijving": klusje_data["omschrijving"],
+                    "strikes_waarde": klusje_data["strikes_waarde"],
+                    "afgerond": False,
+                    "toegewezen_op": datetime.now().isoformat()
+                }
+                sla_klusjes_op(klusjes)
+                st.success("Klusje toegewezen!")
+                st.rerun()
+        else:
+            st.info("Geen spelers met strikes.")
+    
+    with subtab4:
+        st.write("**Openstaande vervangingsverzoeken**")
+        
+        open_verzoeken = {v_id: v for v_id, v in verzoeken.items() if v.get("status") == "pending"}
+        
+        if open_verzoeken:
+            wedstrijden = laad_wedstrijden()
+            
+            for v_id, verzoek in open_verzoeken.items():
+                wed = wedstrijden.get(verzoek["wed_id"], {})
+                if not wed:
+                    continue
+                
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                aanvrager = scheidsrechters.get(verzoek["aanvrager_nbb"], {}).get("naam", "Onbekend")
+                vervanger = scheidsrechters.get(verzoek["vervanger_nbb"], {}).get("naam", "Onbekend")
+                
+                # Check of wedstrijd al voorbij is
+                is_verlopen = wed_datum < datetime.now()
+                
+                with st.container():
+                    st.write(f"**{wed['thuisteam']} vs {wed['uitteam']}** ({wed_datum.strftime('%d-%m %H:%M')})")
+                    st.write(f"Aanvrager: {aanvrager} → Vervanger: {vervanger}")
+                    
+                    if is_verlopen:
+                        st.error("⚠️ Wedstrijd is voorbij zonder bevestiging!")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(f"Strike toekennen aan {aanvrager}", key=f"strike_{v_id}"):
+                                # Bereken strikes
+                                uren_tot_wed = (wed_datum - datetime.fromisoformat(verzoek["aangemaakt_op"])).total_seconds() / 3600
+                                if uren_tot_wed < 24:
+                                    strikes = 2
+                                elif uren_tot_wed < 48:
+                                    strikes = 1
+                                else:
+                                    strikes = 0
+                                
+                                if strikes > 0:
+                                    voeg_strike_toe(verzoek["aanvrager_nbb"], strikes, f"Vervangingsverzoek niet bevestigd: {wed['thuisteam']} vs {wed['uitteam']}")
+                                
+                                verzoeken[v_id]["status"] = "expired"
+                                sla_vervangingsverzoeken_op(verzoeken)
+                                st.rerun()
+                        with col2:
+                            if st.button("Verzoek verwijderen", key=f"verwijder_{v_id}"):
+                                verzoeken[v_id]["status"] = "cancelled"
+                                sla_vervangingsverzoeken_op(verzoeken)
+                                st.rerun()
+                    else:
+                        st.caption(f"Wacht op bevestiging van {vervanger}")
+        else:
+            st.info("Geen openstaande vervangingsverzoeken.")
 
 def toon_instellingen_beheer():
     """Beheer instellingen."""
