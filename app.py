@@ -908,10 +908,8 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
             continue
         
-        # Check maximum (totaal aantal wedstrijden)
+        # Tel huidig aantal wedstrijden
         huidig_totaal = tel_wedstrijden_scheidsrechter(nbb)
-        if huidig_totaal >= scheids.get("max_wedstrijden", 99):
-            continue
         
         # Check of niet al andere positie bij deze wedstrijd
         andere_positie = "scheids_2" if als_eerste else "scheids_1"
@@ -944,7 +942,6 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "op_niveau": op_niveau,
             "eigen_niveau": eigen_niveau,
             "min_wedstrijden": min_wed,
-            "max_wedstrijden": scheids.get("max_wedstrijden", 99),
             "tekort": tekort,
             "is_op_eigen_niveau": is_op_eigen_niveau
         })
@@ -1124,9 +1121,8 @@ def toon_speler_view(nbb_nummer: str):
     op_niveau = niveau_stats["op_niveau"]
     eigen_niveau = niveau_stats["niveau"]
     min_wed = scheids.get("min_wedstrijden", 0)
-    max_wed = scheids.get("max_wedstrijden", 99)
     
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Totaal", huidig_aantal)
     with col2:
@@ -1135,10 +1131,8 @@ def toon_speler_view(nbb_nummer: str):
     with col3:
         st.metric("Minimum", min_wed)
     with col4:
-        st.metric("Maximum", max_wed)
-    with col5:
         st.metric("🏆 Punten", speler_stats["punten"], help="Punten voor wedstrijden boven je minimum")
-    with col6:
+    with col5:
         strikes = speler_stats["strikes"]
         if strikes >= 5:
             st.metric("⚠️ Strikes", strikes, delta="Gesprek TC", delta_color="inverse")
@@ -1151,8 +1145,6 @@ def toon_speler_view(nbb_nummer: str):
     if op_niveau < min_wed:
         tekort = min_wed - op_niveau
         st.warning(f"⚠️ Je moet nog **{tekort}** wedstrijd(en) kiezen op niveau {eigen_niveau}.")
-    elif huidig_aantal >= max_wed:
-        st.success("✅ Je hebt je maximum bereikt.")
     else:
         st.success(f"✅ Je hebt aan je minimum voldaan ({op_niveau}/{min_wed} wedstrijden op niveau {eigen_niveau}).")
     
@@ -1358,7 +1350,7 @@ def toon_speler_view(nbb_nummer: str):
                             kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
                             
                             if kandidaten:
-                                vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']} wed)": k['nbb_nummer'] for k in kandidaten}
+                                vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] for k in kandidaten}
                                 
                                 geselecteerde = st.selectbox(
                                     "Selecteer vervanger",
@@ -1579,45 +1571,42 @@ def toon_speler_view(nbb_nummer: str):
                             elif status_1e["bezet"]:
                                 st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
                             elif status_1e["beschikbaar"]:
-                                if huidig_aantal < max_wed:
-                                    # Bereken potentiële punten als boven minimum
-                                    punten_info = None
-                                    if op_niveau >= min_wed:
-                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                # Bereken potentiële punten als boven minimum
+                                punten_info = None
+                                if op_niveau >= min_wed:
+                                    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                
+                                button_label = "📋 1e scheids"
+                                if punten_info:
+                                    button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
+                                
+                                if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                    # Herbereken punten op exact moment van inschrijving
+                                    punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
                                     
-                                    button_label = "📋 1e scheids"
-                                    if punten_info:
-                                        button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
+                                    wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                    sla_wedstrijden_op(wedstrijden)
                                     
-                                    if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
-                                        # Herbereken punten op exact moment van inschrijving
-                                        punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                    # Ken punten toe als boven minimum, met berekening
+                                    if punten_definitief:
+                                        voeg_punten_toe(
+                                            nbb_nummer, 
+                                            punten_definitief['totaal'], 
+                                            punten_definitief['details'], 
+                                            wed['id'],
+                                            punten_definitief['berekening']
+                                        )
                                         
-                                        wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                        sla_wedstrijden_op(wedstrijden)
-                                        
-                                        # Ken punten toe als boven minimum, met berekening
-                                        if punten_definitief:
-                                            voeg_punten_toe(
-                                                nbb_nummer, 
-                                                punten_definitief['totaal'], 
-                                                punten_definitief['details'], 
-                                                wed['id'],
-                                                punten_definitief['berekening']
-                                            )
-                                            
-                                            # Toon bevestiging met details bij inval bonus
-                                            if punten_definitief['inval_bonus'] > 0:
-                                                st.success(f"""
-                                                ✅ **Ingeschreven!**  
-                                                🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                """)
-                                        
-                                        st.rerun()
-                                else:
-                                    st.caption("~~1e scheids~~ *(max bereikt)*")
+                                        # Toon bevestiging met details bij inval bonus
+                                        if punten_definitief['inval_bonus'] > 0:
+                                            st.success(f"""
+                                            ✅ **Ingeschreven!**  
+                                            🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                            ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                            🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                            """)
+                                    
+                                    st.rerun()
                             else:
                                 st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
                         
@@ -1631,45 +1620,42 @@ def toon_speler_view(nbb_nummer: str):
                             elif status_2e["bezet"]:
                                 st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
                             elif status_2e["beschikbaar"]:
-                                if huidig_aantal < max_wed:
-                                    # Bereken potentiële punten als boven minimum
-                                    punten_info = None
-                                    if op_niveau >= min_wed:
-                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                # Bereken potentiële punten als boven minimum
+                                punten_info = None
+                                if op_niveau >= min_wed:
+                                    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                
+                                button_label = "📋 2e scheids"
+                                if punten_info:
+                                    button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
+                                
+                                if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                    # Herbereken punten op exact moment van inschrijving
+                                    punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
                                     
-                                    button_label = "📋 2e scheids"
-                                    if punten_info:
-                                        button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
+                                    wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                    sla_wedstrijden_op(wedstrijden)
                                     
-                                    if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
-                                        # Herbereken punten op exact moment van inschrijving
-                                        punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                    # Ken punten toe als boven minimum, met berekening
+                                    if punten_definitief:
+                                        voeg_punten_toe(
+                                            nbb_nummer, 
+                                            punten_definitief['totaal'], 
+                                            punten_definitief['details'], 
+                                            wed['id'],
+                                            punten_definitief['berekening']
+                                        )
                                         
-                                        wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                        sla_wedstrijden_op(wedstrijden)
-                                        
-                                        # Ken punten toe als boven minimum, met berekening
-                                        if punten_definitief:
-                                            voeg_punten_toe(
-                                                nbb_nummer, 
-                                                punten_definitief['totaal'], 
-                                                punten_definitief['details'], 
-                                                wed['id'],
-                                                punten_definitief['berekening']
-                                            )
-                                            
-                                            # Toon bevestiging met details bij inval bonus
-                                            if punten_definitief['inval_bonus'] > 0:
-                                                st.success(f"""
-                                                ✅ **Ingeschreven!**  
-                                                🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                """)
-                                        
-                                        st.rerun()
-                                else:
-                                    st.caption("~~2e scheids~~ *(max bereikt)*")
+                                        # Toon bevestiging met details bij inval bonus
+                                        if punten_definitief['inval_bonus'] > 0:
+                                            st.success(f"""
+                                            ✅ **Ingeschreven!**  
+                                            🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                            ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                            🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                            """)
+                                    
+                                    st.rerun()
                             else:
                                 st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
 
@@ -2404,7 +2390,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
-                                    f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" + 
+                                    f"{k['naam']} ({k['huidig_aantal']} wed)" + 
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
                                     for k in kandidaten
                                 ]
@@ -2430,7 +2416,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
-                                    f"{k['naam']} ({k['huidig_aantal']}/{k['max_wedstrijden']})" +
+                                    f"{k['naam']} ({k['huidig_aantal']} wed)" +
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
                                     for k in kandidaten
                                 ]
@@ -2550,12 +2536,10 @@ def toon_scheidsrechters_beheer():
     if scheidsrechters:
         scheids_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
         totaal_min = 0
-        totaal_max = 0
         for nbb, scheids in scheidsrechters.items():
             niveau = scheids.get("niveau_1e_scheids", 1)
             scheids_per_niveau[niveau] = scheids_per_niveau.get(niveau, 0) + 1
             totaal_min += scheids.get("min_wedstrijden", 0)
-            totaal_max += scheids.get("max_wedstrijden", 0)
         
         st.write("**Scheidsrechters per niveau (1e scheids):**")
         cols = st.columns(6)
@@ -2564,7 +2548,7 @@ def toon_scheidsrechters_beheer():
             cols[i].metric(f"Niveau {niveau}", count)
         cols[5].metric("Totaal", len(scheidsrechters))
         
-        st.caption(f"Totale capaciteit: {totaal_min} - {totaal_max} wedstrijden | {len(scheidsrechters)} scheidsrechters")
+        st.caption(f"Minimale capaciteit: {totaal_min} wedstrijden | {len(scheidsrechters)} scheidsrechters")
         st.divider()
     
     # Legenda
@@ -2631,14 +2615,59 @@ def toon_scheidsrechters_beheer():
     # Toon aantal resultaten
     st.caption(f"*{len(gefilterde_scheidsrechters)} van {len(scheidsrechters)} scheidsrechters*")
     
-    # Statistieken
+    # Overzicht tabel met wedstrijden, punten en strikes
+    st.divider()
+    st.write("### 📊 Overzicht")
+    
+    # Verzamel data voor tabel
+    overzicht_data = []
+    for nbb, scheids in sorted(gefilterde_scheidsrechters.items(), key=lambda x: x[1]["naam"]):
+        niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
+        speler_stats = get_speler_stats(nbb)
+        
+        overzicht_data.append({
+            "Naam": scheids.get("naam", "?"),
+            "Niveau": scheids.get("niveau_1e_scheids", 1),
+            "Wedstrijden": niveau_stats["totaal"],
+            "Op niveau": f"{niveau_stats['op_niveau']}/{scheids.get('min_wedstrijden', 0)}",
+            "🏆 Punten": speler_stats["punten"],
+            "⚠️ Strikes": speler_stats["strikes"],
+            "BS2": "✓" if scheids.get("bs2_diploma", False) else "",
+        })
+    
+    if overzicht_data:
+        # Toon als tabel
+        import pandas as pd
+        df = pd.DataFrame(overzicht_data)
+        
+        # Sorteer opties
+        sorteer_optie = st.selectbox(
+            "Sorteer op",
+            ["Naam", "Niveau (hoog→laag)", "Wedstrijden (veel→weinig)", "Punten (hoog→laag)", "Strikes (hoog→laag)"],
+            key="sorteer_overzicht"
+        )
+        
+        if sorteer_optie == "Niveau (hoog→laag)":
+            df = df.sort_values("Niveau", ascending=False)
+        elif sorteer_optie == "Wedstrijden (veel→weinig)":
+            df = df.sort_values("Wedstrijden", ascending=False)
+        elif sorteer_optie == "Punten (hoog→laag)":
+            df = df.sort_values("🏆 Punten", ascending=False)
+        elif sorteer_optie == "Strikes (hoog→laag)":
+            df = df.sort_values("⚠️ Strikes", ascending=False)
+        
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    
+    st.divider()
+    st.write("### 📝 Details per scheidsrechter")
+    
+    # Statistieken (expanders)
     for nbb, scheids in sorted(gefilterde_scheidsrechters.items(), key=lambda x: x[1]["naam"]):
         niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
         huidig = niveau_stats["totaal"]
         op_niveau = niveau_stats["op_niveau"]
         eigen_niveau = niveau_stats["niveau"]
         min_wed = scheids.get("min_wedstrijden", 0)
-        max_wed = scheids.get("max_wedstrijden", 99)
         
         # Status bepalen op basis van wedstrijden op eigen niveau
         if op_niveau >= min_wed:
@@ -2680,8 +2709,6 @@ def toon_scheidsrechters_beheer():
                                                   index=idx_2e, key=f"niv2_{nbb}")
                         min_w = st.number_input("Minimum wedstrijden", min_value=0, 
                                                 value=int(scheids.get("min_wedstrijden", 2) or 2), key=f"min_{nbb}")
-                        max_w = st.number_input("Maximum wedstrijden", min_value=1, 
-                                                value=int(scheids.get("max_wedstrijden", 5) or 5), key=f"max_{nbb}")
                     
                     eigen_teams = st.multiselect(
                         "Eigen teams", 
@@ -2700,7 +2727,6 @@ def toon_scheidsrechters_beheer():
                                 "niveau_1e_scheids": niveau_1e,
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
-                                "max_wedstrijden": max_w,
                                 "eigen_teams": eigen_teams
                             }
                             sla_scheidsrechters_op(scheidsrechters)
@@ -2747,7 +2773,6 @@ def toon_scheidsrechters_beheer():
             niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], index=1)
             niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], index=4)
             min_wed = st.number_input("Minimum wedstrijden", min_value=0, value=2)
-            max_wed = st.number_input("Maximum wedstrijden", min_value=1, value=5)
         
         eigen_teams = st.multiselect("Eigen teams", options=SCHEIDSRECHTER_TEAMS)
         
@@ -2760,7 +2785,6 @@ def toon_scheidsrechters_beheer():
                     "niveau_1e_scheids": niveau_1e,
                     "niveau_2e_scheids": niveau_2e,
                     "min_wedstrijden": min_wed,
-                    "max_wedstrijden": max_wed,
                     "eigen_teams": eigen_teams
                 }
                 sla_scheidsrechters_op(scheidsrechters)
@@ -2803,48 +2827,34 @@ def toon_capaciteit_monitor():
         if wed.get("scheids_2"):
             ingevuld_per_niveau[niveau] += 1
     
-    # Bereken capaciteit per niveau (scheidsrechters die dit niveau KUNNEN fluiten)
-    # Minimum capaciteit = som van alle minimum wedstrijden
-    # Maximum capaciteit = som van alle maximum wedstrijden
+    # Bereken minimumcapaciteit per niveau
     capaciteit_min_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    capaciteit_max_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     scheids_per_niveau = {1: [], 2: [], 3: [], 4: [], 5: []}
     
     for nbb, scheids in scheidsrechters.items():
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
-        niveau_2e = scheids.get("niveau_2e_scheids", 5)
         min_wed = scheids.get("min_wedstrijden", 0)
-        max_wed = scheids.get("max_wedstrijden", 5)
         
         # Scheidsrechter kan alle niveaus t/m hun niveau fluiten
-        # We tellen capaciteit bij het HOOGSTE niveau dat ze kunnen (waar ze het meest nodig zijn)
         for niveau in range(1, niveau_1e + 1):
             scheids_per_niveau[niveau].append({
                 "nbb": nbb,
                 "naam": scheids.get("naam", "?"),
                 "min": min_wed,
-                "max": max_wed,
                 "eigen_niveau": niveau_1e
             })
         
         # Tel capaciteit alleen bij eigen niveau (voorkomt dubbeltelling)
         capaciteit_min_per_niveau[niveau_1e] += min_wed
-        capaciteit_max_per_niveau[niveau_1e] += max_wed
     
     # Bereken cumulatieve capaciteit (niveau 5 scheids kan ook niveau 1-4)
-    # Van hoog naar laag: overschot van hoger niveau kan lager opvangen
     cumulatief_min = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    cumulatief_max = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    
     running_min = 0
-    running_max = 0
     for niveau in range(5, 0, -1):
         running_min += capaciteit_min_per_niveau[niveau]
-        running_max += capaciteit_max_per_niveau[niveau]
         cumulatief_min[niveau] = running_min
-        cumulatief_max[niveau] = running_max
     
-    # Bereken cumulatieve behoefte (niveau 5 wedstrijden moeten door niveau 5 scheids)
+    # Bereken cumulatieve behoefte
     cumulatief_behoefte = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     running_behoefte = 0
     for niveau in range(5, 0, -1):
@@ -2858,34 +2868,25 @@ def toon_capaciteit_monitor():
     totaal_behoefte = sum(behoefte_per_niveau.values())
     totaal_ingevuld = sum(ingevuld_per_niveau.values())
     totaal_min = sum(capaciteit_min_per_niveau.values())
-    totaal_max = sum(capaciteit_max_per_niveau.values())
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Totaal nodig", totaal_behoefte, help="Aantal scheidsrechterposities")
     with col2:
         st.metric("Al ingevuld", totaal_ingevuld)
     with col3:
         st.metric("Min. capaciteit", totaal_min, help="Som van alle minimum wedstrijden")
-    with col4:
-        st.metric("Max. capaciteit", totaal_max, help="Som van alle maximum wedstrijden")
     
     # Realisatiekans
     if totaal_behoefte > 0:
         if totaal_min >= totaal_behoefte:
-            realisatie_kans = 100
-            realisatie_tekst = "✅ Voldoende"
-            realisatie_kleur = "green"
-        elif totaal_max >= totaal_behoefte:
-            realisatie_kans = round((totaal_min / totaal_behoefte) * 100)
-            realisatie_tekst = f"⚠️ {realisatie_kans}% gegarandeerd"
-            realisatie_kleur = "orange"
+            realisatie_tekst = "✅ Voldoende capaciteit"
         else:
-            realisatie_kans = round((totaal_max / totaal_behoefte) * 100)
-            realisatie_tekst = f"❌ Max {realisatie_kans}% haalbaar"
-            realisatie_kleur = "red"
+            tekort = totaal_behoefte - totaal_min
+            realisatie_tekst = f"⚠️ Tekort van {tekort} posities (afhankelijk van extra inzet)"
         
         st.markdown(f"### Realisatiekans: **{realisatie_tekst}**")
+        st.caption("*Scheidsrechters kunnen meer fluiten dan hun minimum, dus een klein tekort is vaak geen probleem.*")
     
     st.divider()
     
@@ -2898,10 +2899,8 @@ def toon_capaciteit_monitor():
         behoefte = behoefte_per_niveau[niveau]
         ingevuld = ingevuld_per_niveau[niveau]
         cap_min = capaciteit_min_per_niveau[niveau]
-        cap_max = capaciteit_max_per_niveau[niveau]
         cum_behoefte = cumulatief_behoefte[niveau]
         cum_min = cumulatief_min[niveau]
-        cum_max = cumulatief_max[niveau]
         
         # Bepaal status
         nog_nodig = behoefte - ingevuld
@@ -2909,16 +2908,11 @@ def toon_capaciteit_monitor():
         if cum_min >= cum_behoefte:
             status = "✅"
             status_tekst = "OK"
-        elif cum_max >= cum_behoefte:
+        else:
             tekort = cum_behoefte - cum_min
             status = "⚠️"
-            status_tekst = f"Risico: {tekort} onzeker"
-            problemen.append(f"Niveau {niveau}: {tekort} posities afhankelijk van maximum inzet")
-        else:
-            tekort = cum_behoefte - cum_max
-            status = "❌"
-            status_tekst = f"Tekort: {tekort}"
-            problemen.append(f"**Niveau {niveau}: TEKORT van {tekort} posities** (zelfs bij maximum inzet)")
+            status_tekst = f"Tekort: {tekort} (extra inzet nodig)"
+            problemen.append(f"Niveau {niveau}: {tekort} posities boven minimum nodig")
         
         with st.expander(f"{status} **Niveau {niveau}** — Nodig: {behoefte} | Ingevuld: {ingevuld} | Scheids: {len(scheids_per_niveau[niveau])}"):
             col_a, col_b = st.columns(2)
@@ -2930,22 +2924,18 @@ def toon_capaciteit_monitor():
                 st.write(f"- Al ingevuld: {ingevuld}")
                 st.write(f"- Nog open: {nog_nodig}")
                 
-                st.write("**Capaciteit niveau {niveau} scheidsrechters:**")
+                st.write(f"**Capaciteit niveau {niveau} scheidsrechters:**")
                 st.write(f"- Minimum: {cap_min}")
-                st.write(f"- Maximum: {cap_max}")
             
             with col_b:
-                st.write("**Cumulatief (niveau {niveau} en hoger):**")
+                st.write(f"**Cumulatief (niveau {niveau} en hoger):**")
                 st.write(f"- Totaal nodig: {cum_behoefte}")
                 st.write(f"- Min. capaciteit: {cum_min}")
-                st.write(f"- Max. capaciteit: {cum_max}")
                 
                 if cum_min >= cum_behoefte:
-                    st.success(f"Overschot van {cum_min - cum_behoefte} (minimum)")
-                elif cum_max >= cum_behoefte:
-                    st.warning(f"Afhankelijk van {cum_behoefte - cum_min} boven minimum")
+                    st.success(f"Overschot van {cum_min - cum_behoefte} (bij minimum inzet)")
                 else:
-                    st.error(f"Tekort van {cum_behoefte - cum_max} (zelfs bij max)")
+                    st.warning(f"{cum_behoefte - cum_min} extra inzet nodig boven minimum")
             
             # Toon scheidsrechters voor dit niveau
             if scheids_per_niveau[niveau]:
@@ -2953,7 +2943,7 @@ def toon_capaciteit_monitor():
                 scheids_tekst = []
                 for s in sorted(scheids_per_niveau[niveau], key=lambda x: -x["eigen_niveau"]):
                     eigen = "★" if s["eigen_niveau"] == niveau else ""
-                    scheids_tekst.append(f"{s['naam']} ({s['min']}-{s['max']} wed){eigen}")
+                    scheids_tekst.append(f"{s['naam']} (min {s['min']}){eigen}")
                 st.write(", ".join(scheids_tekst))
     
     # Advies sectie
@@ -2961,29 +2951,17 @@ def toon_capaciteit_monitor():
     st.write("### 💡 Advies")
     
     if not problemen:
-        st.success("**Geen capaciteitsproblemen gedetecteerd.** De minimum inzet van alle scheidsrechters is voldoende om alle wedstrijden te bezetten.")
+        st.success("**Geen capaciteitsproblemen.** De minimum inzet van alle scheidsrechters is voldoende om alle wedstrijden te bezetten.")
     else:
-        st.warning("**Aandachtspunten:**")
+        st.info("**Aandachtspunten:**")
         for probleem in problemen:
             st.write(f"- {probleem}")
         
         st.write("")
         st.write("**Mogelijke oplossingen:**")
-        
-        # Analyseer waar het probleem zit
-        for niveau in range(5, 0, -1):
-            cum_behoefte = cumulatief_behoefte[niveau]
-            cum_max = cumulatief_max[niveau]
-            
-            if cum_max < cum_behoefte:
-                tekort = cum_behoefte - cum_max
-                st.write(f"- **Niveau {niveau}+**: Werf {tekort // 2 + 1} extra scheidsrechter(s) met niveau {niveau}")
-                st.write(f"  *Of*: Verhoog maximum wedstrijden van bestaande niveau {niveau}+ scheidsrechters")
-        
-        # Check of minimum verhogen helpt
-        totaal_ruimte = totaal_max - totaal_min
-        if totaal_ruimte > 0 and totaal_max >= totaal_behoefte:
-            st.write(f"- **Algemeen**: Er is {totaal_ruimte} ruimte tussen minimum en maximum. Overweeg minimums te verhogen.")
+        st.write("- Scheidsrechters motiveren om boven hun minimum te fluiten (punten/ranking)")
+        st.write("- Minimums verhogen voor scheidsrechters met ruimte in hun schema")
+        st.write("- Nieuwe scheidsrechters werven op de niveaus met tekort")
 
 def toon_beloningen_beheer():
     """Beheer beloningen: ranglijst, strikes, klusjes."""
