@@ -643,14 +643,25 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
     # Positie is open - check of speler mag inschrijven
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
     
-    # Check niveau
-    max_niveau = scheids.get("niveau_1e_scheids", 1) if als_eerste else scheids.get("niveau_2e_scheids", 5)
-    if wed["niveau"] > max_niveau:
-        return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed['niveau']} te hoog"}
-    
-    # Check BS2 vereiste
+    # Check BS2 vereiste - dit geldt ALTIJD, ook voor 2e scheidsrechter
     if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
         return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "BS2 vereist"}
+    
+    # Check niveau
+    max_niveau = scheids.get("niveau_1e_scheids", 1) if als_eerste else scheids.get("niveau_2e_scheids", 5)
+    wed_niveau = wed["niveau"]
+    
+    if wed_niveau > max_niveau:
+        # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+        if not als_eerste and wed.get("scheids_1"):
+            # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
+            if wed_niveau <= max_niveau + 1:
+                # Toegestaan: 2e scheids mag met begeleiding van ervaren 1e
+                pass
+            else:
+                return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau + 1} met 1e scheids)"}
+        else:
+            return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog"}
     
     # Check eigen team
     eigen_teams = scheids.get("eigen_teams", [])
@@ -702,13 +713,21 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         if wed.get("type") == "uit":
             continue
         
-        # Check niveau
-        if wed["niveau"] > max_niveau:
-            continue
-        
-        # Check BS2 vereiste
+        # Check BS2 vereiste - dit geldt ALTIJD
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
+        
+        # Check niveau
+        wed_niveau = wed["niveau"]
+        if wed_niveau > max_niveau:
+            # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+            if not als_eerste and wed.get("scheids_1"):
+                # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
+                if wed_niveau > max_niveau + 1:
+                    continue  # Te hoog, zelfs met 1e scheids erbij
+                # Anders: toegestaan
+            else:
+                continue  # Geen uitzondering mogelijk
         
         # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
         eigen_teams = scheids.get("eigen_teams", [])
@@ -830,13 +849,21 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         max_niveau = scheids["niveau_1e_scheids"] if als_eerste else scheids["niveau_2e_scheids"]
         eigen_niveau = scheids.get("niveau_1e_scheids", 1)
         
-        # Check niveau
-        if wed["niveau"] > max_niveau:
-            continue
-        
-        # Check BS2 vereiste
+        # Check BS2 vereiste - dit geldt ALTIJD, ook voor 2e scheidsrechter
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
             continue
+        
+        # Check niveau
+        wed_niveau = wed["niveau"]
+        if wed_niveau > max_niveau:
+            # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+            if not als_eerste and wed.get("scheids_1"):
+                # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
+                if wed_niveau > max_niveau + 1:
+                    continue  # Te hoog, zelfs met 1e scheids erbij
+                # Anders: toegestaan
+            else:
+                continue  # Geen uitzondering mogelijk
         
         # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
         eigen_teams_scheids = scheids.get("eigen_teams", [])
@@ -968,6 +995,17 @@ def toon_speler_view(nbb_nummer: str):
         eigen_teams = scheids.get("eigen_teams", [])
         if eigen_teams:
             st.markdown(f"Teams: {', '.join(eigen_teams)}")
+        
+        st.divider()
+        
+        # Niveau regels
+        st.markdown("**📐 Niveau regels**")
+        st.markdown(f"""
+        - 1e scheids: max niveau **{eigen_niveau}**
+        - 2e scheids: max niveau **{niveau_2e}**
+        - *Met ervaren 1e erbij: max niveau **{niveau_2e + 1}***
+        - BS2 wedstrijden: alleen met diploma
+        """)
         
         st.divider()
         
