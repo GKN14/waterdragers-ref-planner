@@ -2790,6 +2790,205 @@ def toon_scheidsrechters_beheer():
     
     st.divider()
     
+    # Bulk bewerking
+    st.subheader("⚡ Bulk bewerking")
+    st.caption("Pas meerdere scheidsrechters tegelijk aan")
+    
+    with st.expander("Bulk bewerking openen"):
+        # Stap 1: Selecteer wie
+        st.write("**Stap 1: Selecteer scheidsrechters**")
+        
+        col_sel1, col_sel2, col_sel3 = st.columns(3)
+        
+        with col_sel1:
+            bulk_niveau_filter = st.selectbox(
+                "Filter op niveau (1e scheids)",
+                options=["Alle niveaus", "Niveau 1", "Niveau 2", "Niveau 3", "Niveau 4", "Niveau 5"],
+                key="bulk_niveau_filter"
+            )
+        
+        with col_sel2:
+            bulk_bs2_filter = st.selectbox(
+                "Filter op BS2",
+                options=["Alle", "Met BS2 diploma", "Zonder BS2 diploma"],
+                key="bulk_bs2_filter"
+            )
+        
+        with col_sel3:
+            bulk_min_filter = st.selectbox(
+                "Filter op huidig minimum",
+                options=["Alle", "Minimum = 0", "Minimum = 1", "Minimum = 2", "Minimum = 3", "Minimum ≥ 4"],
+                key="bulk_min_filter"
+            )
+        
+        # Filter scheidsrechters
+        bulk_selectie = {}
+        for nbb, scheids in scheidsrechters.items():
+            # Niveau filter
+            if bulk_niveau_filter != "Alle niveaus":
+                filter_niveau = int(bulk_niveau_filter.replace("Niveau ", ""))
+                if scheids.get("niveau_1e_scheids", 1) != filter_niveau:
+                    continue
+            
+            # BS2 filter
+            if bulk_bs2_filter == "Met BS2 diploma" and not scheids.get("bs2_diploma", False):
+                continue
+            if bulk_bs2_filter == "Zonder BS2 diploma" and scheids.get("bs2_diploma", False):
+                continue
+            
+            # Minimum filter
+            huidig_min = scheids.get("min_wedstrijden", 0)
+            if bulk_min_filter == "Minimum = 0" and huidig_min != 0:
+                continue
+            if bulk_min_filter == "Minimum = 1" and huidig_min != 1:
+                continue
+            if bulk_min_filter == "Minimum = 2" and huidig_min != 2:
+                continue
+            if bulk_min_filter == "Minimum = 3" and huidig_min != 3:
+                continue
+            if bulk_min_filter == "Minimum ≥ 4" and huidig_min < 4:
+                continue
+            
+            bulk_selectie[nbb] = scheids
+        
+        # Toon selectie
+        if bulk_selectie:
+            st.success(f"**{len(bulk_selectie)} scheidsrechter(s) geselecteerd:**")
+            namen = [s["naam"] for s in sorted(bulk_selectie.values(), key=lambda x: x["naam"])]
+            st.write(", ".join(namen))
+        else:
+            st.warning("Geen scheidsrechters gevonden met deze filters")
+        
+        st.write("---")
+        
+        # Stap 2: Kies actie
+        st.write("**Stap 2: Kies actie**")
+        
+        bulk_actie = st.selectbox(
+            "Wat wil je aanpassen?",
+            options=[
+                "-- Kies een actie --",
+                "Minimum wedstrijden instellen",
+                "Niveau 1e scheids instellen",
+                "Niveau 2e scheids instellen",
+                "BS2 diploma aan/uit",
+                "Niet op zondag aan/uit"
+            ],
+            key="bulk_actie"
+        )
+        
+        # Toon actie-specifieke opties
+        bulk_nieuwe_waarde = None
+        
+        if bulk_actie == "Minimum wedstrijden instellen":
+            bulk_nieuwe_waarde = st.number_input(
+                "Nieuw minimum voor alle geselecteerden",
+                min_value=0, max_value=20, value=2,
+                key="bulk_min_waarde"
+            )
+            
+        elif bulk_actie == "Niveau 1e scheids instellen":
+            bulk_nieuwe_waarde = st.selectbox(
+                "Nieuw niveau 1e scheids",
+                options=[1, 2, 3, 4, 5],
+                index=1,
+                key="bulk_niveau1_waarde"
+            )
+            
+        elif bulk_actie == "Niveau 2e scheids instellen":
+            bulk_nieuwe_waarde = st.selectbox(
+                "Nieuw niveau 2e scheids",
+                options=[1, 2, 3, 4, 5],
+                index=4,
+                key="bulk_niveau2_waarde"
+            )
+            
+        elif bulk_actie == "BS2 diploma aan/uit":
+            bulk_nieuwe_waarde = st.radio(
+                "BS2 diploma",
+                options=["Aan (heeft diploma)", "Uit (geen diploma)"],
+                key="bulk_bs2_waarde"
+            )
+            
+        elif bulk_actie == "Niet op zondag aan/uit":
+            bulk_nieuwe_waarde = st.radio(
+                "Niet op zondag",
+                options=["Aan (niet beschikbaar op zondag)", "Uit (wel beschikbaar op zondag)"],
+                key="bulk_zondag_waarde"
+            )
+        
+        st.write("---")
+        
+        # Stap 3: Bevestig en voer uit
+        st.write("**Stap 3: Bevestig**")
+        
+        if bulk_actie != "-- Kies een actie --" and bulk_selectie and bulk_nieuwe_waarde is not None:
+            # Toon preview
+            st.write("**Preview van wijzigingen:**")
+            
+            preview_data = []
+            for nbb, scheids in sorted(bulk_selectie.items(), key=lambda x: x[1]["naam"]):
+                naam = scheids["naam"]
+                
+                if bulk_actie == "Minimum wedstrijden instellen":
+                    oud = scheids.get("min_wedstrijden", 0)
+                    preview_data.append(f"- {naam}: {oud} → **{bulk_nieuwe_waarde}**")
+                    
+                elif bulk_actie == "Niveau 1e scheids instellen":
+                    oud = scheids.get("niveau_1e_scheids", 1)
+                    preview_data.append(f"- {naam}: niveau {oud} → **niveau {bulk_nieuwe_waarde}**")
+                    
+                elif bulk_actie == "Niveau 2e scheids instellen":
+                    oud = scheids.get("niveau_2e_scheids", 5)
+                    preview_data.append(f"- {naam}: niveau {oud} → **niveau {bulk_nieuwe_waarde}**")
+                    
+                elif bulk_actie == "BS2 diploma aan/uit":
+                    oud = "Ja" if scheids.get("bs2_diploma", False) else "Nee"
+                    nieuw = "Ja" if "Aan" in bulk_nieuwe_waarde else "Nee"
+                    preview_data.append(f"- {naam}: {oud} → **{nieuw}**")
+                    
+                elif bulk_actie == "Niet op zondag aan/uit":
+                    oud = "Ja" if scheids.get("niet_op_zondag", False) else "Nee"
+                    nieuw = "Ja" if "Aan" in bulk_nieuwe_waarde else "Nee"
+                    preview_data.append(f"- {naam}: {oud} → **{nieuw}**")
+            
+            # Toon max 10 items in preview
+            for item in preview_data[:10]:
+                st.write(item)
+            if len(preview_data) > 10:
+                st.write(f"*... en {len(preview_data) - 10} anderen*")
+            
+            # Bevestigingsknop
+            st.write("")
+            if st.button(f"✅ Pas {len(bulk_selectie)} scheidsrechter(s) aan", type="primary", key="bulk_uitvoeren"):
+                # Voer de wijziging uit
+                for nbb in bulk_selectie.keys():
+                    if bulk_actie == "Minimum wedstrijden instellen":
+                        scheidsrechters[nbb]["min_wedstrijden"] = bulk_nieuwe_waarde
+                        
+                    elif bulk_actie == "Niveau 1e scheids instellen":
+                        scheidsrechters[nbb]["niveau_1e_scheids"] = bulk_nieuwe_waarde
+                        
+                    elif bulk_actie == "Niveau 2e scheids instellen":
+                        scheidsrechters[nbb]["niveau_2e_scheids"] = bulk_nieuwe_waarde
+                        
+                    elif bulk_actie == "BS2 diploma aan/uit":
+                        scheidsrechters[nbb]["bs2_diploma"] = "Aan" in bulk_nieuwe_waarde
+                        
+                    elif bulk_actie == "Niet op zondag aan/uit":
+                        scheidsrechters[nbb]["niet_op_zondag"] = "Aan" in bulk_nieuwe_waarde
+                
+                sla_scheidsrechters_op(scheidsrechters)
+                st.success(f"✅ {len(bulk_selectie)} scheidsrechter(s) aangepast!")
+                st.rerun()
+        
+        elif bulk_actie == "-- Kies een actie --":
+            st.info("Kies eerst een actie hierboven")
+        elif not bulk_selectie:
+            st.warning("Selecteer eerst scheidsrechters met de filters")
+    
+    st.divider()
+    
     # Nieuwe scheidsrechter toevoegen
     st.subheader("➕ Nieuwe scheidsrechter toevoegen")
     
