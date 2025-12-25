@@ -2575,8 +2575,64 @@ def toon_scheidsrechters_beheer():
     
     st.info("ℹ️ Het minimum aantal wedstrijden moet op het **eigen niveau** gefluiten worden. Wedstrijden op een lager niveau tellen niet mee voor het minimum.")
     
+    # Filters
+    st.write("**Filters:**")
+    col_filter1, col_filter2, col_filter3 = st.columns(3)
+    
+    with col_filter1:
+        niveau_filter = st.selectbox(
+            "Filter op niveau (1e scheids)", 
+            options=["Alle niveaus", "Niveau 5", "Niveau 4", "Niveau 3", "Niveau 2", "Niveau 1"],
+            key="scheids_niveau_filter"
+        )
+    
+    with col_filter2:
+        status_filter = st.selectbox(
+            "Filter op status",
+            options=["Alle", "Voldoet niet aan minimum", "Voldoet aan minimum"],
+            key="scheids_status_filter"
+        )
+    
+    with col_filter3:
+        bs2_filter = st.selectbox(
+            "Filter op BS2",
+            options=["Alle", "Met BS2 diploma", "Zonder BS2 diploma"],
+            key="scheids_bs2_filter"
+        )
+    
+    # Filter scheidsrechters
+    gefilterde_scheidsrechters = {}
+    for nbb, scheids in scheidsrechters.items():
+        # Niveau filter
+        if niveau_filter != "Alle niveaus":
+            filter_niveau = int(niveau_filter.replace("Niveau ", ""))
+            if scheids.get("niveau_1e_scheids", 1) != filter_niveau:
+                continue
+        
+        # BS2 filter
+        if bs2_filter == "Met BS2 diploma" and not scheids.get("bs2_diploma", False):
+            continue
+        if bs2_filter == "Zonder BS2 diploma" and scheids.get("bs2_diploma", False):
+            continue
+        
+        # Status filter (moet na niveau check want we gebruiken niveau_stats)
+        if status_filter != "Alle":
+            niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
+            op_niveau = niveau_stats["op_niveau"]
+            min_wed = scheids.get("min_wedstrijden", 0)
+            
+            if status_filter == "Voldoet aan minimum" and op_niveau < min_wed:
+                continue
+            if status_filter == "Voldoet niet aan minimum" and op_niveau >= min_wed:
+                continue
+        
+        gefilterde_scheidsrechters[nbb] = scheids
+    
+    # Toon aantal resultaten
+    st.caption(f"*{len(gefilterde_scheidsrechters)} van {len(scheidsrechters)} scheidsrechters*")
+    
     # Statistieken
-    for nbb, scheids in sorted(scheidsrechters.items(), key=lambda x: x[1]["naam"]):
+    for nbb, scheids in sorted(gefilterde_scheidsrechters.items(), key=lambda x: x[1]["naam"]):
         niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
         huidig = niveau_stats["totaal"]
         op_niveau = niveau_stats["op_niveau"]
