@@ -16,9 +16,19 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.0.0"
+APP_VERSIE = "1.1.0"
 APP_VERSIE_DATUM = "2025-12-25"
 APP_CHANGELOG = """
+### v1.1.0 (2025-12-25)
+**Dynamische beloningsinstellingen:**
+- ⚙️ Nieuw: Beloningssysteem volledig configureerbaar via beheer
+- 🎛️ Instellingen tab met drie secties: Algemeen, Beloningssysteem, Over
+- 💰 Aanpasbaar: punten per wedstrijd, bonussen, voucher drempel
+- ⚠️ Aanpasbaar: strike waarden, waarschuwingsdrempels
+- 🔧 Aanpasbaar: strike reductie waarden
+- 🔄 Optie: strikes vervallen aan einde seizoen
+- ↩️ Reset naar defaults functie
+
 ### v1.0.0 (2025-12-25)
 **Nieuwe features:**
 - ⚡ Bulk bewerking voor scheidsrechters (niveau/minimum aanpassen)
@@ -200,6 +210,48 @@ def _clear_cache(bestand: str = None):
         for k in keys_to_delete:
             del st.session_state[k]
 
+# Default beloningsinstellingen
+DEFAULT_BELONINGSINSTELLINGEN = {
+    # Punten
+    "punten_per_wedstrijd": 1,
+    "punten_lastig_tijdstip": 1,
+    "punten_inval_48u": 3,
+    "punten_inval_24u": 5,
+    "punten_voor_voucher": 15,
+    
+    # Strikes
+    "strikes_afmelding_48u": 1,
+    "strikes_afmelding_24u": 2,
+    "strikes_no_show": 5,
+    "strikes_waarschuwing_bij": 2,
+    "strikes_gesprek_bij": 3,
+    
+    # Strike reductie
+    "strike_reductie_extra_wedstrijd": 1,
+    "strike_reductie_invallen": 2,
+    
+    # Seizoen
+    "strikes_vervallen_einde_seizoen": False
+}
+
+def laad_beloningsinstellingen() -> dict:
+    """Laad beloningsinstellingen met defaults."""
+    def _load():
+        instellingen = laad_json("beloningsinstellingen.json")
+        if not instellingen:
+            instellingen = DEFAULT_BELONINGSINSTELLINGEN.copy()
+            sla_json_op("beloningsinstellingen.json", instellingen)
+        else:
+            # Voeg eventueel ontbrekende keys toe met defaults
+            for key, default in DEFAULT_BELONINGSINSTELLINGEN.items():
+                if key not in instellingen:
+                    instellingen[key] = default
+        return instellingen
+    return _get_cached("beloningsinstellingen.json", _load)
+
+def sla_beloningsinstellingen_op(data: dict):
+    sla_json_op("beloningsinstellingen.json", data)
+
 def laad_scheidsrechters() -> dict:
     return _get_cached("scheidsrechters.json", lambda: laad_json("scheidsrechters.json"))
 
@@ -278,11 +330,14 @@ def laad_beschikbare_klusjes() -> list:
             data = [
                 {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
                 {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
+                {"id": "tafel_dienst", "naam": "Tafeldienst (2x)", "omschrijving": "2x tafeldienst draaien bij thuiswedstrijden", "strikes_waarde": 1},
+                {"id": "materiaal_check", "naam": "Materiaal check", "omschrijving": "Alle scheidsrechtersmaterialen controleren en aanvullen (fluit, kaarten, etc.)", "strikes_waarde": 1},
+                {"id": "clinic_assisteren", "naam": "Clinic assisteren", "omschrijving": "Assisteren bij een scheidsrechters clinic of training", "strikes_waarde": 1},
+                {"id": "nieuwe_scheids_begeleiden", "naam": "Nieuwe scheids begeleiden", "omschrijving": "Een nieuwe scheidsrechter begeleiden tijdens 2 wedstrijden", "strikes_waarde": 2},
             ]
             sla_json_op("beschikbare_klusjes.json", data)
         return data
     return _get_cached("beschikbare_klusjes.json", _load)
-    return data
 
 def sla_beschikbare_klusjes_op(data: list):
     sla_json_op("beschikbare_klusjes.json", data)
@@ -433,14 +488,15 @@ def is_last_minute_inval(wed_id: str, wed_datum: datetime) -> dict:
     Check of dit een last-minute inval is.
     Returns: {"is_inval": bool, "bonus": int, "uren": int}
     """
+    beloningsinst = laad_beloningsinstellingen()
     nu = datetime.now()
     verschil = wed_datum - nu
     uren = verschil.total_seconds() / 3600
     
     if uren < 24:
-        return {"is_inval": True, "bonus": 5, "uren": 24}
+        return {"is_inval": True, "bonus": beloningsinst["punten_inval_24u"], "uren": 24}
     elif uren < 48:
-        return {"is_inval": True, "bonus": 3, "uren": 48}
+        return {"is_inval": True, "bonus": beloningsinst["punten_inval_48u"], "uren": 48}
     else:
         return {"is_inval": False, "bonus": 0, "uren": 0}
 
@@ -449,6 +505,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     Bereken hoeveel punten een speler krijgt voor een wedstrijd.
     Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str, "berekening": dict}
     """
+    beloningsinst = laad_beloningsinstellingen()
     wed = wedstrijden.get(wed_id, {})
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
     nu = datetime.now()
@@ -457,22 +514,22 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     verschil = wed_datum - nu
     uren_tot_wedstrijd = verschil.total_seconds() / 3600
     
-    # Basis: 1 punt
-    basis = 1
+    # Basis punten
+    basis = beloningsinst["punten_per_wedstrijd"]
     
-    # Lastig tijdstip: +1
-    lastig = 1 if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
+    # Lastig tijdstip
+    lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
     
-    # Last-minute inval: +3 of +5
+    # Last-minute inval
     inval_info = is_last_minute_inval(wed_id, wed_datum)
     inval_bonus = inval_info["bonus"]
     
     totaal = basis + lastig + inval_bonus
     
     details = []
-    details.append("1 basis")
+    details.append(f"{basis} basis")
     if lastig:
-        details.append("+1 lastig tijdstip")
+        details.append(f"+{lastig} lastig tijdstip")
     if inval_bonus:
         details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
     
@@ -485,7 +542,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "uren_tot_wedstrijd": round(uren_tot_wedstrijd, 1),
         "is_inval_48u": uren_tot_wedstrijd < 48,
         "is_inval_24u": uren_tot_wedstrijd < 24,
-        "is_lastig_tijdstip": lastig == 1
+        "is_lastig_tijdstip": lastig > 0
     }
     
     return {
@@ -1161,40 +1218,48 @@ def toon_speler_view(nbb_nummer: str):
         
         st.divider()
         
-        # Puntensysteem uitleg
+        # Puntensysteem uitleg - dynamisch uit instellingen
+        beloningsinst = laad_beloningsinstellingen()
+        
         st.markdown("### 🏆 Punten verdienen")
-        st.markdown("""
+        st.markdown(f"""
         Wedstrijden **boven je minimum** leveren punten op:
         
         | Actie | Punten |
         |-------|--------|
-        | Wedstrijd fluiten | 1 |
-        | Lastig tijdstip* | +1 |
-        | Invallen <48 uur | +3 |
-        | Invallen <24 uur | +5 |
+        | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
+        | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
+        | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
+        | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
         
         *Lastig = apart terugkomen om te fluiten
         
-        **15 punten** = voucher Clinic!
+        **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
         """)
         
         st.divider()
         
-        # Strikes uitleg
+        # Strikes uitleg - dynamisch
         st.markdown("### ⚠️ Strikes")
-        st.markdown("""
+        strikes_vervallen_tekst = "*Strikes vervallen aan einde seizoen.*" if beloningsinst['strikes_vervallen_einde_seizoen'] else ""
+        st.markdown(f"""
         | Situatie | Strikes |
         |----------|---------|
-        | Afmelding <48u | 1 |
-        | Afmelding <24u | 2 |
-        | No-show | 5 |
+        | Afmelding <48u | {beloningsinst['strikes_afmelding_48u']} |
+        | Afmelding <24u | {beloningsinst['strikes_afmelding_24u']} |
+        | No-show | {beloningsinst['strikes_no_show']} |
         
         **Met vervanging** = geen strike!
         
+        ⚠️ {beloningsinst['strikes_waarschuwing_bij']} strikes = Let op!  
+        ❌ {beloningsinst['strikes_gesprek_bij']} strikes = Gesprek TC
+        
         Strikes wegwerken:
         - Klusje doen (-1)
-        - Extra wedstrijd (-1)
-        - Invallen <48u (-2)
+        - Extra wedstrijd (-{beloningsinst['strike_reductie_extra_wedstrijd']})
+        - Invallen <48u (-{beloningsinst['strike_reductie_invallen']})
+        
+        {strikes_vervallen_tekst}
         """)
         
         # Toon eigen puntenhistorie als er punten zijn
@@ -1253,6 +1318,9 @@ def toon_speler_view(nbb_nummer: str):
     eigen_niveau = niveau_stats["niveau"]
     min_wed = scheids.get("min_wedstrijden", 0)
     
+    # Laad beloningsinstellingen voor dynamische drempels
+    beloningsinst = laad_beloningsinstellingen()
+    
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Totaal", huidig_aantal)
@@ -1265,10 +1333,10 @@ def toon_speler_view(nbb_nummer: str):
         st.metric("🏆 Punten", speler_stats["punten"], help="Punten voor wedstrijden boven je minimum")
     with col5:
         strikes = speler_stats["strikes"]
-        if strikes >= 5:
+        if strikes >= beloningsinst["strikes_gesprek_bij"]:
             st.metric("⚠️ Strikes", strikes, delta="Gesprek TC", delta_color="inverse")
-        elif strikes >= 3:
-            st.metric("⚠️ Strikes", strikes, delta="Waarschuwing", delta_color="inverse")
+        elif strikes >= beloningsinst["strikes_waarschuwing_bij"]:
+            st.metric("⚠️ Strikes", strikes, delta="Let op!", delta_color="inverse")
         else:
             st.metric("Strikes", strikes)
     
@@ -3520,9 +3588,9 @@ def toon_beloningen_beheer():
             
             # Clinic drempel info
             st.divider()
-            clinic_kandidaten = [s for s in ranglijst if s["punten"] >= 15]
+            clinic_kandidaten = [s for s in ranglijst if s["punten"] >= 10]
             if clinic_kandidaten:
-                st.success(f"**{len(clinic_kandidaten)} speler(s)** hebben 15+ punten en kunnen een voucher Clinic claimen!")
+                st.success(f"**{len(clinic_kandidaten)} speler(s)** hebben 10+ punten en kunnen een voucher Clinic claimen!")
                 for k in clinic_kandidaten:
                     st.write(f"  • {k['naam']} ({k['punten']} punten)")
     
@@ -3812,12 +3880,13 @@ def toon_beloningen_beheer():
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button(f"Strike toekennen aan {aanvrager}", key=f"strike_{v_id}"):
-                                # Bereken strikes
+                                # Bereken strikes dynamisch
+                                beloningsinst = laad_beloningsinstellingen()
                                 uren_tot_wed = (wed_datum - datetime.fromisoformat(verzoek["aangemaakt_op"])).total_seconds() / 3600
                                 if uren_tot_wed < 24:
-                                    strikes = 2
+                                    strikes = beloningsinst["strikes_afmelding_24u"]
                                 elif uren_tot_wed < 48:
-                                    strikes = 1
+                                    strikes = beloningsinst["strikes_afmelding_48u"]
                                 else:
                                     strikes = 0
                                 
@@ -3840,43 +3909,225 @@ def toon_beloningen_beheer():
 def toon_instellingen_beheer():
     """Beheer instellingen."""
     instellingen = laad_instellingen()
+    beloningsinst = laad_beloningsinstellingen()
     
-    st.subheader("Instellingen")
+    # Tabs voor verschillende instellingen categorieën
+    tab_alg, tab_bel, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "ℹ️ Over"])
     
-    # Deadline
-    huidige_deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    nieuwe_deadline = st.date_input("Inschrijf deadline", value=huidige_deadline)
+    with tab_alg:
+        st.subheader("Algemene Instellingen")
+        
+        # Deadline
+        huidige_deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+        nieuwe_deadline = st.date_input("Inschrijf deadline", value=huidige_deadline)
+        
+        if st.button("Deadline opslaan"):
+            instellingen["inschrijf_deadline"] = nieuwe_deadline.strftime("%Y-%m-%d")
+            sla_instellingen_op(instellingen)
+            st.success("Deadline opgeslagen!")
+        
+        st.divider()
+        
+        # Niveaus
+        st.subheader("Niveau-omschrijvingen")
+        
+        for niveau in ["1", "2", "3", "4", "5"]:
+            instellingen["niveaus"][niveau] = st.text_input(
+                f"Niveau {niveau}",
+                value=instellingen["niveaus"].get(niveau, ""),
+                key=f"niveau_{niveau}"
+            )
+        
+        if st.button("Niveaus opslaan"):
+            sla_instellingen_op(instellingen)
+            st.success("Niveaus opgeslagen!")
     
-    if st.button("Deadline opslaan"):
-        instellingen["inschrijf_deadline"] = nieuwe_deadline.strftime("%Y-%m-%d")
-        sla_instellingen_op(instellingen)
-        st.success("Deadline opgeslagen!")
+    with tab_bel:
+        st.subheader("🏆 Beloningssysteem Instellingen")
+        st.caption("Pas hier de punten- en strike-waarden aan")
+        
+        # Huidige waarden tonen
+        col_info1, col_info2, col_info3 = st.columns(3)
+        with col_info1:
+            st.metric("Punten voor voucher", beloningsinst["punten_voor_voucher"])
+        with col_info2:
+            st.metric("Waarschuwing bij strikes", beloningsinst["strikes_waarschuwing_bij"])
+        with col_info3:
+            st.metric("Gesprek TC bij strikes", beloningsinst["strikes_gesprek_bij"])
+        
+        st.divider()
+        
+        # Punten instellingen
+        st.subheader("💰 Punten Verdienen")
+        st.caption("Punten worden toegekend voor wedstrijden boven het minimum")
+        
+        with st.form("punten_instellingen"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                punten_per_wedstrijd = st.number_input(
+                    "Basispunten per wedstrijd",
+                    min_value=1, max_value=10,
+                    value=beloningsinst["punten_per_wedstrijd"],
+                    help="Punten voor elke wedstrijd boven minimum"
+                )
+                
+                punten_lastig = st.number_input(
+                    "Bonus: lastig tijdstip",
+                    min_value=0, max_value=10,
+                    value=beloningsinst["punten_lastig_tijdstip"],
+                    help="Extra punten als je apart moet terugkomen"
+                )
+                
+                punten_inval_48 = st.number_input(
+                    "Bonus: invallen <48 uur",
+                    min_value=0, max_value=10,
+                    value=beloningsinst["punten_inval_48u"],
+                    help="Extra punten voor last-minute invallen"
+                )
+            
+            with col2:
+                punten_inval_24 = st.number_input(
+                    "Bonus: invallen <24 uur",
+                    min_value=0, max_value=10,
+                    value=beloningsinst["punten_inval_24u"],
+                    help="Extra punten voor zeer last-minute invallen"
+                )
+                
+                punten_voucher = st.number_input(
+                    "Punten voor voucher",
+                    min_value=5, max_value=50,
+                    value=beloningsinst["punten_voor_voucher"],
+                    help="Hoeveel punten nodig voor een clinic voucher"
+                )
+            
+            if st.form_submit_button("💾 Punten instellingen opslaan", type="primary"):
+                beloningsinst["punten_per_wedstrijd"] = punten_per_wedstrijd
+                beloningsinst["punten_lastig_tijdstip"] = punten_lastig
+                beloningsinst["punten_inval_48u"] = punten_inval_48
+                beloningsinst["punten_inval_24u"] = punten_inval_24
+                beloningsinst["punten_voor_voucher"] = punten_voucher
+                sla_beloningsinstellingen_op(beloningsinst)
+                st.success("Punten instellingen opgeslagen!")
+                st.rerun()
+        
+        st.divider()
+        
+        # Strikes instellingen
+        st.subheader("⚠️ Strikes")
+        st.caption("Strikes voor ongewenst gedrag")
+        
+        with st.form("strikes_instellingen"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Strikes toekennen:**")
+                strikes_48 = st.number_input(
+                    "Afmelding <48 uur",
+                    min_value=0, max_value=5,
+                    value=beloningsinst["strikes_afmelding_48u"],
+                    help="Strikes bij late afmelding (zonder vervanging)"
+                )
+                
+                strikes_24 = st.number_input(
+                    "Afmelding <24 uur",
+                    min_value=0, max_value=5,
+                    value=beloningsinst["strikes_afmelding_24u"],
+                    help="Strikes bij zeer late afmelding"
+                )
+                
+                strikes_noshow = st.number_input(
+                    "No-show",
+                    min_value=0, max_value=10,
+                    value=beloningsinst["strikes_no_show"],
+                    help="Strikes bij niet komen opdagen"
+                )
+            
+            with col2:
+                st.write("**Strike drempels:**")
+                strikes_waarschuwing = st.number_input(
+                    "Waarschuwing bij",
+                    min_value=1, max_value=10,
+                    value=beloningsinst["strikes_waarschuwing_bij"],
+                    help="Bij dit aantal strikes krijgt speler een waarschuwing"
+                )
+                
+                strikes_gesprek = st.number_input(
+                    "Gesprek TC bij",
+                    min_value=1, max_value=10,
+                    value=beloningsinst["strikes_gesprek_bij"],
+                    help="Bij dit aantal strikes volgt een gesprek met TC"
+                )
+                
+                strikes_vervallen = st.checkbox(
+                    "Strikes vervallen einde seizoen",
+                    value=beloningsinst["strikes_vervallen_einde_seizoen"],
+                    help="Als aan: strikes worden gereset aan einde seizoen"
+                )
+            
+            if st.form_submit_button("💾 Strike instellingen opslaan", type="primary"):
+                beloningsinst["strikes_afmelding_48u"] = strikes_48
+                beloningsinst["strikes_afmelding_24u"] = strikes_24
+                beloningsinst["strikes_no_show"] = strikes_noshow
+                beloningsinst["strikes_waarschuwing_bij"] = strikes_waarschuwing
+                beloningsinst["strikes_gesprek_bij"] = strikes_gesprek
+                beloningsinst["strikes_vervallen_einde_seizoen"] = strikes_vervallen
+                sla_beloningsinstellingen_op(beloningsinst)
+                st.success("Strike instellingen opgeslagen!")
+                st.rerun()
+        
+        st.divider()
+        
+        # Strike reductie
+        st.subheader("🔧 Strike Reductie")
+        st.caption("Hoe spelers strikes kunnen wegwerken")
+        
+        with st.form("reductie_instellingen"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                reductie_wedstrijd = st.number_input(
+                    "Per extra wedstrijd",
+                    min_value=0, max_value=5,
+                    value=beloningsinst["strike_reductie_extra_wedstrijd"],
+                    help="Strike reductie per extra gefloten wedstrijd"
+                )
+            
+            with col2:
+                reductie_invallen = st.number_input(
+                    "Bij invallen <48u",
+                    min_value=0, max_value=5,
+                    value=beloningsinst["strike_reductie_invallen"],
+                    help="Strike reductie bij last-minute invallen"
+                )
+            
+            st.caption("*Klusjes hebben hun eigen strike-waarde (zie Klusjes Instellingen)*")
+            
+            if st.form_submit_button("💾 Reductie instellingen opslaan", type="primary"):
+                beloningsinst["strike_reductie_extra_wedstrijd"] = reductie_wedstrijd
+                beloningsinst["strike_reductie_invallen"] = reductie_invallen
+                sla_beloningsinstellingen_op(beloningsinst)
+                st.success("Reductie instellingen opgeslagen!")
+                st.rerun()
+        
+        st.divider()
+        
+        # Reset naar defaults
+        st.subheader("🔄 Reset")
+        with st.expander("⚠️ Reset naar standaardwaarden"):
+            st.warning("Dit zet alle beloningsinstellingen terug naar de standaardwaarden.")
+            if st.button("Reset naar defaults", type="secondary"):
+                sla_beloningsinstellingen_op(DEFAULT_BELONINGSINSTELLINGEN.copy())
+                st.success("Instellingen gereset naar defaults!")
+                st.rerun()
     
-    st.divider()
-    
-    # Niveaus
-    st.subheader("Niveau-omschrijvingen")
-    
-    for niveau in ["1", "2", "3", "4", "5"]:
-        instellingen["niveaus"][niveau] = st.text_input(
-            f"Niveau {niveau}",
-            value=instellingen["niveaus"].get(niveau, ""),
-            key=f"niveau_{niveau}"
-        )
-    
-    if st.button("Niveaus opslaan"):
-        sla_instellingen_op(instellingen)
-        st.success("Niveaus opgeslagen!")
-    
-    st.divider()
-    
-    # Versie en changelog
-    st.subheader("ℹ️ Over Ref Planner")
-    st.write(f"**Versie:** {APP_VERSIE}")
-    st.write(f"**Datum:** {APP_VERSIE_DATUM}")
-    
-    with st.expander("📋 Changelog"):
-        st.markdown(APP_CHANGELOG)
+    with tab_versie:
+        st.subheader("ℹ️ Over Ref Planner")
+        st.write(f"**Versie:** {APP_VERSIE}")
+        st.write(f"**Datum:** {APP_VERSIE_DATUM}")
+        
+        with st.expander("📋 Changelog"):
+            st.markdown(APP_CHANGELOG)
 
 def bepaal_niveau_uit_team(teamnaam: str) -> int:
     """Bepaal niveau 1-5 uit de teamnaam van Waterdragers."""
