@@ -2825,7 +2825,7 @@ def toon_scheidsrechters_beheer():
                 st.error("NBB-nummer en naam zijn verplicht")
 
 def toon_capaciteit_monitor():
-    """Toon capaciteitsanalyse: vraag vs aanbod per niveau."""
+    """Toon capaciteitsanalyse: vraag vs aanbod per niveau, met speciale BS2/MSE analyse."""
     scheidsrechters = laad_scheidsrechters()
     wedstrijden = laad_wedstrijden()
     nu = datetime.now()
@@ -2844,15 +2844,160 @@ def toon_capaciteit_monitor():
         if wed_datum > nu:
             toekomstige_wedstrijden[wed_id] = wed
     
+    # ============================================================
+    # BS2/MSE ANALYSE (PRIORITEIT)
+    # ============================================================
+    st.write("### 🏀 BS2/MSE Analyse (Prioriteit)")
+    st.caption("MSE wedstrijden vereisen BS2 diploma en hebben voorrang")
+    
+    # Tel MSE wedstrijden (bs2_vereist of team bevat MSE)
+    mse_wedstrijden = []
+    mse_posities_nodig = 0
+    mse_posities_ingevuld = 0
+    
+    andere_niveau5_wedstrijden = []
+    andere_niveau5_posities_nodig = 0
+    andere_niveau5_posities_ingevuld = 0
+    
+    for wed_id, wed in toekomstige_wedstrijden.items():
+        is_bs2_vereist = wed.get("bs2_vereist", False)
+        thuisteam = wed.get("thuisteam", "")
+        uitteam = wed.get("uitteam", "")
+        is_mse = is_bs2_vereist or "MSE" in thuisteam.upper() or "MSE" in uitteam.upper()
+        niveau = wed.get("niveau", 1)
+        
+        if is_mse:
+            mse_wedstrijden.append(wed)
+            mse_posities_nodig += 2
+            if wed.get("scheids_1"):
+                mse_posities_ingevuld += 1
+            if wed.get("scheids_2"):
+                mse_posities_ingevuld += 1
+        elif niveau == 5:
+            andere_niveau5_wedstrijden.append(wed)
+            andere_niveau5_posities_nodig += 2
+            if wed.get("scheids_1"):
+                andere_niveau5_posities_ingevuld += 1
+            if wed.get("scheids_2"):
+                andere_niveau5_posities_ingevuld += 1
+    
+    # Tel BS2 scheidsrechters en hun capaciteit
+    bs2_scheidsrechters = []
+    bs2_min_capaciteit = 0
+    
+    for nbb, scheids in scheidsrechters.items():
+        if scheids.get("bs2_diploma", False):
+            min_wed = scheids.get("min_wedstrijden", 0)
+            eigen_teams = scheids.get("eigen_teams", [])
+            
+            # Check of deze scheids MSE speelt (kan eigen wedstrijden niet fluiten)
+            speelt_mse = any("MSE" in t.upper() for t in eigen_teams) if eigen_teams else False
+            
+            bs2_scheidsrechters.append({
+                "nbb": nbb,
+                "naam": scheids.get("naam", "?"),
+                "min": min_wed,
+                "niveau": scheids.get("niveau_1e_scheids", 5),
+                "speelt_mse": speelt_mse
+            })
+            bs2_min_capaciteit += min_wed
+    
+    # Toon BS2 metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("MSE wedstrijden", len(mse_wedstrijden))
+    with col2:
+        st.metric("MSE posities nodig", mse_posities_nodig)
+    with col3:
+        st.metric("BS2 scheidsrechters", len(bs2_scheidsrechters))
+    with col4:
+        st.metric("BS2 min. capaciteit", bs2_min_capaciteit)
+    
+    # Analyse BS2 capaciteit
+    mse_nog_open = mse_posities_nodig - mse_posities_ingevuld
+    totaal_niveau5_nodig = mse_posities_nodig + andere_niveau5_posities_nodig
+    
+    # MSE spelers kunnen eigen wedstrijden niet fluiten - schat impact
+    mse_spelers = [s for s in bs2_scheidsrechters if s["speelt_mse"]]
+    niet_mse_bs2 = [s for s in bs2_scheidsrechters if not s["speelt_mse"]]
+    
+    # Effectieve capaciteit voor MSE = niet-MSE BS2 scheidsrechters + deel van MSE spelers
+    # MSE spelers kunnen andere MSE wedstrijden fluiten, maar niet hun eigen
+    effectieve_mse_capaciteit = sum(s["min"] for s in niet_mse_bs2)
+    # MSE spelers kunnen ~helft van hun capaciteit voor andere MSE wedstrijden gebruiken (grove schatting)
+    effectieve_mse_capaciteit += sum(s["min"] for s in mse_spelers) // 2 if mse_spelers else 0
+    
+    # Status bepalen
+    if mse_posities_nodig == 0:
+        st.success("✅ Geen MSE wedstrijden gepland")
+    elif effectieve_mse_capaciteit >= mse_posities_nodig:
+        st.success(f"✅ **MSE capaciteit voldoende** — {effectieve_mse_capaciteit} beschikbaar voor {mse_posities_nodig} posities")
+    elif bs2_min_capaciteit >= mse_posities_nodig:
+        st.warning(f"⚠️ **MSE capaciteit krap** — Let op: sommige BS2 scheidsrechters spelen zelf MSE en kunnen eigen wedstrijden niet fluiten")
+    else:
+        tekort = mse_posities_nodig - bs2_min_capaciteit
+        st.error(f"❌ **MSE capaciteit tekort** — {tekort} posities tekort (zelfs bij minimum inzet)")
+    
+    # Detail expander
+    with st.expander("📋 BS2/MSE Details"):
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            st.write("**MSE Wedstrijden:**")
+            st.write(f"- Aantal wedstrijden: {len(mse_wedstrijden)}")
+            st.write(f"- Posities nodig: {mse_posities_nodig}")
+            st.write(f"- Al ingevuld: {mse_posities_ingevuld}")
+            st.write(f"- Nog open: {mse_nog_open}")
+            
+            st.write("")
+            st.write("**Andere niveau 5 wedstrijden:**")
+            st.write(f"- Aantal wedstrijden: {len(andere_niveau5_wedstrijden)}")
+            st.write(f"- Posities nodig: {andere_niveau5_posities_nodig}")
+            st.write(f"- Al ingevuld: {andere_niveau5_posities_ingevuld}")
+        
+        with col_b:
+            st.write("**BS2 Scheidsrechters:**")
+            if bs2_scheidsrechters:
+                for s in sorted(bs2_scheidsrechters, key=lambda x: x["naam"]):
+                    mse_tag = " 🏀" if s["speelt_mse"] else ""
+                    st.write(f"- {s['naam']} (min {s['min']}, niv {s['niveau']}){mse_tag}")
+                
+                if mse_spelers:
+                    st.caption("🏀 = speelt zelf MSE (kan eigen wedstrijden niet fluiten)")
+            else:
+                st.warning("Geen BS2 scheidsrechters geregistreerd!")
+        
+        # Prioriteitsadvies
+        st.write("")
+        st.write("**⚡ Prioriteitsvolgorde:**")
+        st.write("1. **MSE wedstrijden** eerst bezetten (BS2 vereist)")
+        st.write("2. **Andere niveau 5** wedstrijden daarna")
+        st.write("3. BS2 scheidsrechters die MSE spelen kunnen hun eigen wedstrijden niet fluiten")
+    
+    st.divider()
+    
+    # ============================================================
+    # REGULIERE NIVEAU ANALYSE
+    # ============================================================
+    
     # Bereken behoefte per niveau (elke wedstrijd heeft 2 scheidsrechters nodig)
+    # Let op: MSE wedstrijden tellen NIET mee bij niveau 5 (apart behandeld)
     behoefte_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     ingevuld_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
     
     for wed_id, wed in toekomstige_wedstrijden.items():
         niveau = wed.get("niveau", 1)
-        behoefte_per_niveau[niveau] += 2  # 2 scheidsrechters per wedstrijd
+        is_bs2_vereist = wed.get("bs2_vereist", False)
+        thuisteam = wed.get("thuisteam", "")
+        uitteam = wed.get("uitteam", "")
+        is_mse = is_bs2_vereist or "MSE" in thuisteam.upper() or "MSE" in uitteam.upper()
         
-        # Tel ingevulde posities
+        # MSE apart behandeld, sla over
+        if is_mse:
+            continue
+            
+        behoefte_per_niveau[niveau] += 2
+        
         if wed.get("scheids_1"):
             ingevuld_per_niveau[niveau] += 1
         if wed.get("scheids_2"):
@@ -2865,6 +3010,7 @@ def toon_capaciteit_monitor():
     for nbb, scheids in scheidsrechters.items():
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         min_wed = scheids.get("min_wedstrijden", 0)
+        has_bs2 = scheids.get("bs2_diploma", False)
         
         # Scheidsrechter kan alle niveaus t/m hun niveau fluiten
         for niveau in range(1, niveau_1e + 1):
@@ -2872,7 +3018,8 @@ def toon_capaciteit_monitor():
                 "nbb": nbb,
                 "naam": scheids.get("naam", "?"),
                 "min": min_wed,
-                "eigen_niveau": niveau_1e
+                "eigen_niveau": niveau_1e,
+                "bs2": has_bs2
             })
         
         # Tel capaciteit alleen bij eigen niveau (voorkomt dubbeltelling)
@@ -2893,7 +3040,7 @@ def toon_capaciteit_monitor():
         cumulatief_behoefte[niveau] = running_behoefte
     
     # Overzichtstabel
-    st.write("### 📊 Overzicht per niveau")
+    st.write("### 📊 Overzicht per niveau (excl. MSE)")
     
     # Header metrics
     totaal_behoefte = sum(behoefte_per_niveau.values())
@@ -2902,7 +3049,7 @@ def toon_capaciteit_monitor():
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Totaal nodig", totaal_behoefte, help="Aantal scheidsrechterposities")
+        st.metric("Totaal nodig", totaal_behoefte, help="Aantal scheidsrechterposities (excl. MSE)")
     with col2:
         st.metric("Al ingevuld", totaal_ingevuld)
     with col3:
@@ -2945,7 +3092,11 @@ def toon_capaciteit_monitor():
             status_tekst = f"Tekort: {tekort} (extra inzet nodig)"
             problemen.append(f"Niveau {niveau}: {tekort} posities boven minimum nodig")
         
-        with st.expander(f"{status} **Niveau {niveau}** — Nodig: {behoefte} | Ingevuld: {ingevuld} | Scheids: {len(scheids_per_niveau[niveau])}"):
+        niveau_label = f"Niveau {niveau}"
+        if niveau == 5:
+            niveau_label = "Niveau 5 (excl. MSE)"
+        
+        with st.expander(f"{status} **{niveau_label}** — Nodig: {behoefte} | Ingevuld: {ingevuld} | Scheids: {len(scheids_per_niveau[niveau])}"):
             col_a, col_b = st.columns(2)
             
             with col_a:
@@ -2974,18 +3125,33 @@ def toon_capaciteit_monitor():
                 scheids_tekst = []
                 for s in sorted(scheids_per_niveau[niveau], key=lambda x: -x["eigen_niveau"]):
                     eigen = "★" if s["eigen_niveau"] == niveau else ""
-                    scheids_tekst.append(f"{s['naam']} (min {s['min']}){eigen}")
+                    bs2_tag = " 🎓" if s.get("bs2") else ""
+                    scheids_tekst.append(f"{s['naam']} (min {s['min']}){eigen}{bs2_tag}")
                 st.write(", ".join(scheids_tekst))
+                if any(s.get("bs2") for s in scheids_per_niveau[niveau]):
+                    st.caption("🎓 = BS2 diploma")
     
     # Advies sectie
     st.divider()
     st.write("### 💡 Advies")
     
-    if not problemen:
+    alle_problemen = []
+    
+    # BS2/MSE problemen eerst
+    if mse_posities_nodig > 0 and bs2_min_capaciteit < mse_posities_nodig:
+        tekort = mse_posities_nodig - bs2_min_capaciteit
+        alle_problemen.append(f"**BS2/MSE**: Tekort van {tekort} posities — werf meer BS2 scheidsrechters of verhoog hun minimum")
+    elif mse_posities_nodig > 0 and effectieve_mse_capaciteit < mse_posities_nodig:
+        alle_problemen.append(f"**BS2/MSE**: Capaciteit krap — sommige MSE spelers moeten buiten eigen wedstrijden fluiten")
+    
+    # Reguliere problemen
+    alle_problemen.extend(problemen)
+    
+    if not alle_problemen:
         st.success("**Geen capaciteitsproblemen.** De minimum inzet van alle scheidsrechters is voldoende om alle wedstrijden te bezetten.")
     else:
         st.info("**Aandachtspunten:**")
-        for probleem in problemen:
+        for probleem in alle_problemen:
             st.write(f"- {probleem}")
         
         st.write("")
