@@ -156,31 +156,57 @@ def sla_json_op(bestand: str, data: dict | list):
             json.dump(data, f, indent=2, ensure_ascii=False, default=str)
     except Exception as e:
         print(f"FOUT bij opslaan {bestand}: {e}")
+    
+    # Clear cache voor dit bestand
+    cache_key = f"_cache_{bestand}"
+    if cache_key in st.session_state:
+        del st.session_state[cache_key]
+
+def _get_cached(bestand: str, loader_func) -> dict | list:
+    """Haal data uit cache of laad opnieuw."""
+    cache_key = f"_cache_{bestand}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = loader_func()
+    return st.session_state[cache_key]
+
+def _clear_cache(bestand: str = None):
+    """Clear cache voor specifiek bestand of alles."""
+    if bestand:
+        cache_key = f"_cache_{bestand}"
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+    else:
+        # Clear alle caches
+        keys_to_delete = [k for k in st.session_state.keys() if k.startswith("_cache_")]
+        for k in keys_to_delete:
+            del st.session_state[k]
 
 def laad_scheidsrechters() -> dict:
-    return laad_json("scheidsrechters.json")
+    return _get_cached("scheidsrechters.json", lambda: laad_json("scheidsrechters.json"))
 
 def laad_wedstrijden() -> dict:
-    return laad_json("wedstrijden.json")
+    return _get_cached("wedstrijden.json", lambda: laad_json("wedstrijden.json"))
 
 def laad_inschrijvingen() -> dict:
-    return laad_json("inschrijvingen.json")
+    return _get_cached("inschrijvingen.json", lambda: laad_json("inschrijvingen.json"))
 
 def laad_instellingen() -> dict:
-    instellingen = laad_json("instellingen.json")
-    if not instellingen:
-        instellingen = {
-            "inschrijf_deadline": (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"),
-            "niveaus": {
-                "1": "X10-1, X10-2, X12-2, V12-2",
-                "2": "X12-1, V12-1, X14-2, M16-2", 
-                "3": "X14-1, M16-1, V16-2",
-                "4": "V16-1, M18-2, M18-3",
-                "5": "M18-1, M20-1, MSE (BS2 vereist)"
+    def _load():
+        instellingen = laad_json("instellingen.json")
+        if not instellingen:
+            instellingen = {
+                "inschrijf_deadline": (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"),
+                "niveaus": {
+                    "1": "X10-1, X10-2, X12-2, V12-2",
+                    "2": "X12-1, V12-1, X14-2, M16-2", 
+                    "3": "X14-1, M16-1, V16-2",
+                    "4": "V16-1, M18-2, M18-3",
+                    "5": "M18-1, M20-1, MSE (BS2 vereist)"
+                }
             }
-        }
-        sla_json_op("instellingen.json", instellingen)
-    return instellingen
+            sla_json_op("instellingen.json", instellingen)
+        return instellingen
+    return _get_cached("instellingen.json", _load)
 
 def sla_scheidsrechters_op(data: dict):
     sla_json_op("scheidsrechters.json", data)
@@ -196,42 +222,47 @@ def sla_instellingen_op(data: dict):
 
 def laad_beloningen() -> dict:
     """Laad beloningen (punten, strikes per speler)."""
-    beloningen = laad_json("beloningen.json")
-    if not beloningen:
-        beloningen = {
-            "seizoen": "2024-2025",
-            "spelers": {}
-        }
-        sla_json_op("beloningen.json", beloningen)
-    return beloningen
+    def _load():
+        beloningen = laad_json("beloningen.json")
+        if not beloningen:
+            beloningen = {
+                "seizoen": "2024-2025",
+                "spelers": {}
+            }
+            sla_json_op("beloningen.json", beloningen)
+        return beloningen
+    return _get_cached("beloningen.json", _load)
 
 def sla_beloningen_op(data: dict):
     sla_json_op("beloningen.json", data)
 
 def laad_klusjes() -> dict:
     """Laad klusjes (toegewezen aan spelers)."""
-    return laad_json("klusjes.json")
+    return _get_cached("klusjes.json", lambda: laad_json("klusjes.json"))
 
 def sla_klusjes_op(data: dict):
     sla_json_op("klusjes.json", data)
 
 def laad_vervangingsverzoeken() -> dict:
     """Laad openstaande vervangingsverzoeken."""
-    return laad_json("vervangingsverzoeken.json")
+    return _get_cached("vervangingsverzoeken.json", lambda: laad_json("vervangingsverzoeken.json"))
 
 def sla_vervangingsverzoeken_op(data: dict):
     sla_json_op("vervangingsverzoeken.json", data)
 
 def laad_beschikbare_klusjes() -> list:
     """Laad de lijst met beschikbare klusjes die TC kan toewijzen."""
-    data = laad_json("beschikbare_klusjes.json")
-    if not data:
-        # Default klusjes
-        data = [
-            {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
-            {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
-        ]
-        sla_json_op("beschikbare_klusjes.json", data)
+    def _load():
+        data = laad_json("beschikbare_klusjes.json")
+        if not data:
+            # Default klusjes
+            data = [
+                {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
+                {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
+            ]
+            sla_json_op("beschikbare_klusjes.json", data)
+        return data
+    return _get_cached("beschikbare_klusjes.json", _load)
     return data
 
 def sla_beschikbare_klusjes_op(data: list):
