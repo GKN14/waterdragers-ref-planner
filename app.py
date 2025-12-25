@@ -848,6 +848,83 @@ def tel_wedstrijden_scheidsrechter(nbb_nummer: str, alleen_niveau: int = None) -
     
     return count
 
+def tel_open_posities_op_niveau(nbb_nummer: str, niveau: int) -> dict:
+    """
+    Tel hoeveel open scheidsrechterposities er zijn op een bepaald niveau
+    waar deze scheidsrechter voor in aanmerking komt.
+    
+    Returns dict met:
+    - totaal_open: aantal open posities (1e + 2e scheids)
+    - als_1e_open: aantal open 1e scheidsrechter posities
+    - als_2e_open: aantal open 2e scheidsrechter posities
+    - wedstrijden: lijst met open wedstrijden
+    """
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    nu = datetime.now()
+    
+    if nbb_nummer not in scheidsrechters:
+        return {"totaal_open": 0, "als_1e_open": 0, "als_2e_open": 0, "wedstrijden": []}
+    
+    scheids = scheidsrechters[nbb_nummer]
+    eigen_teams = scheids.get("eigen_teams", [])
+    
+    als_1e_open = 0
+    als_2e_open = 0
+    open_wedstrijden = []
+    
+    for wed_id, wed in wedstrijden.items():
+        # Alleen thuiswedstrijden op het gevraagde niveau
+        if wed.get("type", "thuis") != "thuis":
+            continue
+        if wed.get("geannuleerd", False):
+            continue
+        if wed.get("niveau", 1) != niveau:
+            continue
+        
+        # Alleen toekomstige wedstrijden
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum <= nu:
+            continue
+        
+        # Skip als dit eigen team is
+        is_eigen_team = False
+        if eigen_teams:
+            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+            is_eigen_team = is_eigen_thuis or is_eigen_uit
+        
+        if is_eigen_team:
+            continue
+        
+        # Check of al ingeschreven voor deze wedstrijd
+        if wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
+            continue
+        
+        # Tel open posities
+        wed_info = {
+            "id": wed_id,
+            "datum": wed["datum"],
+            "teams": f"{wed['thuisteam']} - {wed['uitteam']}"
+        }
+        
+        if not wed.get("scheids_1"):
+            als_1e_open += 1
+            wed_info["positie_1e_open"] = True
+        if not wed.get("scheids_2"):
+            als_2e_open += 1
+            wed_info["positie_2e_open"] = True
+        
+        if not wed.get("scheids_1") or not wed.get("scheids_2"):
+            open_wedstrijden.append(wed_info)
+    
+    return {
+        "totaal_open": als_1e_open + als_2e_open,
+        "als_1e_open": als_1e_open,
+        "als_2e_open": als_2e_open,
+        "wedstrijden": open_wedstrijden
+    }
+
 def tel_wedstrijden_op_eigen_niveau(nbb_nummer: str) -> dict:
     """
     Tel wedstrijden op eigen niveau voor minimum check.
@@ -1607,37 +1684,93 @@ def toon_speler_view(nbb_nummer: str):
                                 if op_niveau >= min_wed:
                                     punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
                                 
+                                # Check of dit 2+ niveaus onder eigen niveau is
+                                niveau_verschil = eigen_niveau - wed["niveau"]
+                                is_laag_niveau = niveau_verschil >= 2
+                                
                                 button_label = "📋 1e scheids"
                                 if punten_info:
                                     button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
                                 
-                                if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
-                                    # Herbereken punten op exact moment van inschrijving
-                                    punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                # Check of er een pending bevestiging is voor deze wedstrijd
+                                bevestig_key = f"bevestig_1e_{wed['id']}"
+                                
+                                if bevestig_key in st.session_state and st.session_state[bevestig_key]:
+                                    # Toon bevestigingsdialoog met alle tussenliggende niveaus
+                                    st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
                                     
-                                    wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                    sla_wedstrijden_op(wedstrijden)
+                                    # Toon open posities per niveau (van eigen niveau naar beneden tot wedstrijd niveau + 1)
+                                    st.write("**Open posities op hogere niveaus:**")
+                                    totaal_hoger = 0
+                                    for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                        open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                        totaal_hoger += open_op_niveau['totaal_open']
+                                        if open_op_niveau['totaal_open'] > 0:
+                                            st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
+                                        else:
+                                            st.write(f"- Niveau {check_niveau}: geen open posities")
                                     
-                                    # Ken punten toe als boven minimum, met berekening
-                                    if punten_definitief:
-                                        voeg_punten_toe(
-                                            nbb_nummer, 
-                                            punten_definitief['totaal'], 
-                                            punten_definitief['details'], 
-                                            wed['id'],
-                                            punten_definitief['berekening']
-                                        )
+                                    if totaal_hoger > 0:
+                                        st.write(f"")
+                                        st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
+                                    
+                                    col_ja, col_nee = st.columns(2)
+                                    with col_ja:
+                                        if st.button("✅ Toch inschrijven", key=f"bevestig_ja_1e_{wed['id']}", type="secondary"):
+                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                            wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                            sla_wedstrijden_op(wedstrijden)
+                                            
+                                            if punten_definitief:
+                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                            
+                                            del st.session_state[bevestig_key]
+                                            st.rerun()
+                                    with col_nee:
+                                        if st.button("❌ Annuleren", key=f"bevestig_nee_1e_{wed['id']}"):
+                                            del st.session_state[bevestig_key]
+                                            st.rerun()
+                                else:
+                                    # Normale knop, maar bij laag niveau eerst bevestiging vragen
+                                    if is_laag_niveau:
+                                        # Toon subtiele hint met alle hogere niveaus
+                                        totaal_hoger = 0
+                                        niveau_hints = []
+                                        for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                            open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                            if open_op_niveau['totaal_open'] > 0:
+                                                totaal_hoger += open_op_niveau['totaal_open']
+                                                niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
                                         
-                                        # Toon bevestiging met details bij inval bonus
-                                        if punten_definitief['inval_bonus'] > 0:
-                                            st.success(f"""
-                                            ✅ **Ingeschreven!**  
-                                            🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                            ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                            🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                            """)
+                                        if totaal_hoger > 0:
+                                            hint_tekst = ", ".join(niveau_hints)
+                                            st.caption(f"💡 *Open posities: {hint_tekst}*")
                                     
-                                    st.rerun()
+                                    if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                        if is_laag_niveau:
+                                            # Vraag bevestiging
+                                            st.session_state[bevestig_key] = True
+                                            st.rerun()
+                                        else:
+                                            # Direct inschrijven
+                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                            wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                            sla_wedstrijden_op(wedstrijden)
+                                            
+                                            if punten_definitief:
+                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                
+                                                if punten_definitief['inval_bonus'] > 0:
+                                                    st.success(f"""
+                                                    ✅ **Ingeschreven!**  
+                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                    🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                    """)
+                                            
+                                            st.rerun()
                             else:
                                 st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
                         
@@ -1656,37 +1789,100 @@ def toon_speler_view(nbb_nummer: str):
                                 if op_niveau >= min_wed:
                                     punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
                                 
+                                # Check of dit 2+ niveaus onder eigen niveau is
+                                niveau_verschil = eigen_niveau - wed["niveau"]
+                                is_laag_niveau = niveau_verschil >= 2
+                                
+                                # Check of dit 1 niveau HOGER is (positieve nudge voor 2e scheids)
+                                is_niveau_hoger = wed["niveau"] == eigen_niveau + 1
+                                heeft_1e_scheids = wed.get("scheids_1") is not None
+                                
                                 button_label = "📋 2e scheids"
                                 if punten_info:
                                     button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
                                 
-                                if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
-                                    # Herbereken punten op exact moment van inschrijving
-                                    punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                # Positieve nudge voor niveau hoger met ervaren 1e scheids
+                                if is_niveau_hoger and heeft_1e_scheids:
+                                    eerste_scheids_naam = scheidsrechters.get(wed.get("scheids_1"), {}).get("naam", "ervaren scheids")
+                                    st.success(f"⭐ **Kans om hoger te fluiten!** Met {eerste_scheids_naam} als 1e scheids mag jij hier 2e zijn.")
+                                
+                                # Check of er een pending bevestiging is voor deze wedstrijd
+                                bevestig_key = f"bevestig_2e_{wed['id']}"
+                                
+                                if bevestig_key in st.session_state and st.session_state[bevestig_key]:
+                                    # Toon bevestigingsdialoog met alle tussenliggende niveaus
+                                    st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
                                     
-                                    wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                    sla_wedstrijden_op(wedstrijden)
+                                    # Toon open posities per niveau
+                                    st.write("**Open posities op hogere niveaus:**")
+                                    totaal_hoger = 0
+                                    for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                        open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                        totaal_hoger += open_op_niveau['totaal_open']
+                                        if open_op_niveau['totaal_open'] > 0:
+                                            st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
+                                        else:
+                                            st.write(f"- Niveau {check_niveau}: geen open posities")
                                     
-                                    # Ken punten toe als boven minimum, met berekening
-                                    if punten_definitief:
-                                        voeg_punten_toe(
-                                            nbb_nummer, 
-                                            punten_definitief['totaal'], 
-                                            punten_definitief['details'], 
-                                            wed['id'],
-                                            punten_definitief['berekening']
-                                        )
+                                    if totaal_hoger > 0:
+                                        st.write(f"")
+                                        st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
+                                    
+                                    col_ja, col_nee = st.columns(2)
+                                    with col_ja:
+                                        if st.button("✅ Toch inschrijven", key=f"bevestig_ja_2e_{wed['id']}", type="secondary"):
+                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                            wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                            sla_wedstrijden_op(wedstrijden)
+                                            
+                                            if punten_definitief:
+                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                            
+                                            del st.session_state[bevestig_key]
+                                            st.rerun()
+                                    with col_nee:
+                                        if st.button("❌ Annuleren", key=f"bevestig_nee_2e_{wed['id']}"):
+                                            del st.session_state[bevestig_key]
+                                            st.rerun()
+                                else:
+                                    # Normale knop, maar bij laag niveau eerst bevestiging vragen
+                                    if is_laag_niveau:
+                                        # Toon subtiele hint met alle hogere niveaus
+                                        totaal_hoger = 0
+                                        niveau_hints = []
+                                        for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                            open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                            if open_op_niveau['totaal_open'] > 0:
+                                                totaal_hoger += open_op_niveau['totaal_open']
+                                                niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
                                         
-                                        # Toon bevestiging met details bij inval bonus
-                                        if punten_definitief['inval_bonus'] > 0:
-                                            st.success(f"""
-                                            ✅ **Ingeschreven!**  
-                                            🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                            ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                            🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                            """)
+                                        if totaal_hoger > 0:
+                                            hint_tekst = ", ".join(niveau_hints)
+                                            st.caption(f"💡 *Open posities: {hint_tekst}*")
                                     
-                                    st.rerun()
+                                    if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau or (is_niveau_hoger and heeft_1e_scheids) else "secondary"):
+                                        if is_laag_niveau:
+                                            st.session_state[bevestig_key] = True
+                                            st.rerun()
+                                        else:
+                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                            wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                            sla_wedstrijden_op(wedstrijden)
+                                            
+                                            if punten_definitief:
+                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                
+                                                if punten_definitief['inval_bonus'] > 0:
+                                                    st.success(f"""
+                                                    ✅ **Ingeschreven!**  
+                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                    🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                    """)
+                                            
+                                            st.rerun()
                             else:
                                 st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
 
@@ -2787,205 +2983,6 @@ def toon_scheidsrechters_beheer():
                 
                 # Link voor inschrijving
                 st.code(f"?nbb={nbb}")
-    
-    st.divider()
-    
-    # Bulk bewerking
-    st.subheader("⚡ Bulk bewerking")
-    st.caption("Pas meerdere scheidsrechters tegelijk aan")
-    
-    with st.expander("Bulk bewerking openen"):
-        # Stap 1: Selecteer wie
-        st.write("**Stap 1: Selecteer scheidsrechters**")
-        
-        col_sel1, col_sel2, col_sel3 = st.columns(3)
-        
-        with col_sel1:
-            bulk_niveau_filter = st.selectbox(
-                "Filter op niveau (1e scheids)",
-                options=["Alle niveaus", "Niveau 1", "Niveau 2", "Niveau 3", "Niveau 4", "Niveau 5"],
-                key="bulk_niveau_filter"
-            )
-        
-        with col_sel2:
-            bulk_bs2_filter = st.selectbox(
-                "Filter op BS2",
-                options=["Alle", "Met BS2 diploma", "Zonder BS2 diploma"],
-                key="bulk_bs2_filter"
-            )
-        
-        with col_sel3:
-            bulk_min_filter = st.selectbox(
-                "Filter op huidig minimum",
-                options=["Alle", "Minimum = 0", "Minimum = 1", "Minimum = 2", "Minimum = 3", "Minimum ≥ 4"],
-                key="bulk_min_filter"
-            )
-        
-        # Filter scheidsrechters
-        bulk_selectie = {}
-        for nbb, scheids in scheidsrechters.items():
-            # Niveau filter
-            if bulk_niveau_filter != "Alle niveaus":
-                filter_niveau = int(bulk_niveau_filter.replace("Niveau ", ""))
-                if scheids.get("niveau_1e_scheids", 1) != filter_niveau:
-                    continue
-            
-            # BS2 filter
-            if bulk_bs2_filter == "Met BS2 diploma" and not scheids.get("bs2_diploma", False):
-                continue
-            if bulk_bs2_filter == "Zonder BS2 diploma" and scheids.get("bs2_diploma", False):
-                continue
-            
-            # Minimum filter
-            huidig_min = scheids.get("min_wedstrijden", 0)
-            if bulk_min_filter == "Minimum = 0" and huidig_min != 0:
-                continue
-            if bulk_min_filter == "Minimum = 1" and huidig_min != 1:
-                continue
-            if bulk_min_filter == "Minimum = 2" and huidig_min != 2:
-                continue
-            if bulk_min_filter == "Minimum = 3" and huidig_min != 3:
-                continue
-            if bulk_min_filter == "Minimum ≥ 4" and huidig_min < 4:
-                continue
-            
-            bulk_selectie[nbb] = scheids
-        
-        # Toon selectie
-        if bulk_selectie:
-            st.success(f"**{len(bulk_selectie)} scheidsrechter(s) geselecteerd:**")
-            namen = [s["naam"] for s in sorted(bulk_selectie.values(), key=lambda x: x["naam"])]
-            st.write(", ".join(namen))
-        else:
-            st.warning("Geen scheidsrechters gevonden met deze filters")
-        
-        st.write("---")
-        
-        # Stap 2: Kies actie
-        st.write("**Stap 2: Kies actie**")
-        
-        bulk_actie = st.selectbox(
-            "Wat wil je aanpassen?",
-            options=[
-                "-- Kies een actie --",
-                "Minimum wedstrijden instellen",
-                "Niveau 1e scheids instellen",
-                "Niveau 2e scheids instellen",
-                "BS2 diploma aan/uit",
-                "Niet op zondag aan/uit"
-            ],
-            key="bulk_actie"
-        )
-        
-        # Toon actie-specifieke opties
-        bulk_nieuwe_waarde = None
-        
-        if bulk_actie == "Minimum wedstrijden instellen":
-            bulk_nieuwe_waarde = st.number_input(
-                "Nieuw minimum voor alle geselecteerden",
-                min_value=0, max_value=20, value=2,
-                key="bulk_min_waarde"
-            )
-            
-        elif bulk_actie == "Niveau 1e scheids instellen":
-            bulk_nieuwe_waarde = st.selectbox(
-                "Nieuw niveau 1e scheids",
-                options=[1, 2, 3, 4, 5],
-                index=1,
-                key="bulk_niveau1_waarde"
-            )
-            
-        elif bulk_actie == "Niveau 2e scheids instellen":
-            bulk_nieuwe_waarde = st.selectbox(
-                "Nieuw niveau 2e scheids",
-                options=[1, 2, 3, 4, 5],
-                index=4,
-                key="bulk_niveau2_waarde"
-            )
-            
-        elif bulk_actie == "BS2 diploma aan/uit":
-            bulk_nieuwe_waarde = st.radio(
-                "BS2 diploma",
-                options=["Aan (heeft diploma)", "Uit (geen diploma)"],
-                key="bulk_bs2_waarde"
-            )
-            
-        elif bulk_actie == "Niet op zondag aan/uit":
-            bulk_nieuwe_waarde = st.radio(
-                "Niet op zondag",
-                options=["Aan (niet beschikbaar op zondag)", "Uit (wel beschikbaar op zondag)"],
-                key="bulk_zondag_waarde"
-            )
-        
-        st.write("---")
-        
-        # Stap 3: Bevestig en voer uit
-        st.write("**Stap 3: Bevestig**")
-        
-        if bulk_actie != "-- Kies een actie --" and bulk_selectie and bulk_nieuwe_waarde is not None:
-            # Toon preview
-            st.write("**Preview van wijzigingen:**")
-            
-            preview_data = []
-            for nbb, scheids in sorted(bulk_selectie.items(), key=lambda x: x[1]["naam"]):
-                naam = scheids["naam"]
-                
-                if bulk_actie == "Minimum wedstrijden instellen":
-                    oud = scheids.get("min_wedstrijden", 0)
-                    preview_data.append(f"- {naam}: {oud} → **{bulk_nieuwe_waarde}**")
-                    
-                elif bulk_actie == "Niveau 1e scheids instellen":
-                    oud = scheids.get("niveau_1e_scheids", 1)
-                    preview_data.append(f"- {naam}: niveau {oud} → **niveau {bulk_nieuwe_waarde}**")
-                    
-                elif bulk_actie == "Niveau 2e scheids instellen":
-                    oud = scheids.get("niveau_2e_scheids", 5)
-                    preview_data.append(f"- {naam}: niveau {oud} → **niveau {bulk_nieuwe_waarde}**")
-                    
-                elif bulk_actie == "BS2 diploma aan/uit":
-                    oud = "Ja" if scheids.get("bs2_diploma", False) else "Nee"
-                    nieuw = "Ja" if "Aan" in bulk_nieuwe_waarde else "Nee"
-                    preview_data.append(f"- {naam}: {oud} → **{nieuw}**")
-                    
-                elif bulk_actie == "Niet op zondag aan/uit":
-                    oud = "Ja" if scheids.get("niet_op_zondag", False) else "Nee"
-                    nieuw = "Ja" if "Aan" in bulk_nieuwe_waarde else "Nee"
-                    preview_data.append(f"- {naam}: {oud} → **{nieuw}**")
-            
-            # Toon max 10 items in preview
-            for item in preview_data[:10]:
-                st.write(item)
-            if len(preview_data) > 10:
-                st.write(f"*... en {len(preview_data) - 10} anderen*")
-            
-            # Bevestigingsknop
-            st.write("")
-            if st.button(f"✅ Pas {len(bulk_selectie)} scheidsrechter(s) aan", type="primary", key="bulk_uitvoeren"):
-                # Voer de wijziging uit
-                for nbb in bulk_selectie.keys():
-                    if bulk_actie == "Minimum wedstrijden instellen":
-                        scheidsrechters[nbb]["min_wedstrijden"] = bulk_nieuwe_waarde
-                        
-                    elif bulk_actie == "Niveau 1e scheids instellen":
-                        scheidsrechters[nbb]["niveau_1e_scheids"] = bulk_nieuwe_waarde
-                        
-                    elif bulk_actie == "Niveau 2e scheids instellen":
-                        scheidsrechters[nbb]["niveau_2e_scheids"] = bulk_nieuwe_waarde
-                        
-                    elif bulk_actie == "BS2 diploma aan/uit":
-                        scheidsrechters[nbb]["bs2_diploma"] = "Aan" in bulk_nieuwe_waarde
-                        
-                    elif bulk_actie == "Niet op zondag aan/uit":
-                        scheidsrechters[nbb]["niet_op_zondag"] = "Aan" in bulk_nieuwe_waarde
-                
-                sla_scheidsrechters_op(scheidsrechters)
-                st.success(f"✅ {len(bulk_selectie)} scheidsrechter(s) aangepast!")
-                st.rerun()
-        
-        elif bulk_actie == "-- Kies een actie --":
-            st.info("Kies eerst een actie hierboven")
-        elif not bulk_selectie:
-            st.warning("Selecteer eerst scheidsrechters met de filters")
     
     st.divider()
     
