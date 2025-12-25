@@ -249,7 +249,8 @@ def get_speler_stats(nbb_nummer: str) -> dict:
         "punten": speler_data.get("punten", 0),
         "strikes": speler_data.get("strikes", 0),
         "gefloten_wedstrijden": speler_data.get("gefloten_wedstrijden", []),
-        "strike_log": speler_data.get("strike_log", [])
+        "strike_log": speler_data.get("strike_log", []),
+        "punten_log": speler_data.get("punten_log", [])
     }
 
 def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None, berekening: dict = None):
@@ -288,6 +289,33 @@ def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
 def verwijder_strike(nbb_nummer: str, strikes: int, reden: str):
     """Verwijder strikes van een speler (door klusje of extra wedstrijd)."""
     beloningen = laad_beloningen()
+
+def pas_punten_aan(nbb_nummer: str, punten: int, reden: str):
+    """
+    Pas punten aan voor een speler (positief = bijboeken, negatief = afboeken).
+    Wordt gelogd in punten_log voor transparantie.
+    """
+    beloningen = laad_beloningen()
+    if nbb_nummer not in beloningen["spelers"]:
+        beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": [], "punten_log": []}
+    
+    # Zorg dat punten_log bestaat (voor bestaande spelers)
+    if "punten_log" not in beloningen["spelers"][nbb_nummer]:
+        beloningen["spelers"][nbb_nummer]["punten_log"] = []
+    
+    oude_punten = beloningen["spelers"][nbb_nummer]["punten"]
+    beloningen["spelers"][nbb_nummer]["punten"] = max(0, oude_punten + punten)  # Niet onder 0
+    nieuwe_punten = beloningen["spelers"][nbb_nummer]["punten"]
+    
+    beloningen["spelers"][nbb_nummer]["punten_log"].append({
+        "punten": punten,
+        "oude_stand": oude_punten,
+        "nieuwe_stand": nieuwe_punten,
+        "reden": reden,
+        "datum": datetime.now().isoformat(),
+        "handmatig": True
+    })
+    sla_beloningen_op(beloningen)
     if nbb_nummer in beloningen["spelers"]:
         beloningen["spelers"][nbb_nummer]["strikes"] = max(0, beloningen["spelers"][nbb_nummer]["strikes"] - strikes)
         beloningen["spelers"][nbb_nummer]["strike_log"].append({
@@ -1050,8 +1078,12 @@ def toon_speler_view(nbb_nummer: str):
             st.divider()
             st.markdown("### 📊 Jouw historie")
             
-            if speler_stats["gefloten_wedstrijden"]:
+            # Combineer wedstrijd punten en handmatige aanpassingen
+            heeft_punten_historie = speler_stats["gefloten_wedstrijden"] or speler_stats.get("punten_log", [])
+            
+            if heeft_punten_historie:
                 with st.expander(f"🏆 Punten ({speler_stats['punten']} totaal)"):
+                    # Wedstrijd punten
                     for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
                         berekening = wed_reg.get("berekening", {})
                         if berekening:
@@ -1061,6 +1093,11 @@ def toon_speler_view(nbb_nummer: str):
                             """)
                         else:
                             st.markdown(f"**+{wed_reg['punten']}** - {wed_reg.get('reden', '')}")
+                    
+                    # Handmatige aanpassingen
+                    for entry in reversed(speler_stats.get("punten_log", [])[-3:]):
+                        teken = "+" if entry["punten"] > 0 else ""
+                        st.markdown(f"**{teken}{entry['punten']}** - {entry['reden']}")
             
             if speler_stats["strike_log"]:
                 with st.expander(f"⚠️ Strikes ({speler_stats['strikes']} actief)"):
@@ -2683,7 +2720,7 @@ def toon_beloningen_beheer():
     
     subtab1, subtab2, subtab3, subtab4, subtab5 = st.tabs([
         "📊 Ranglijst", 
-        "⚠️ Strikes Toekennen", 
+        "✏️ Punten & Strikes", 
         "🔧 Klusjes Toewijzen",
         "📋 Klusjes Instellingen",
         "🔄 Vervangingsverzoeken"
@@ -2719,29 +2756,44 @@ def toon_beloningen_beheer():
                     # Haal gedetailleerde stats op
                     speler_details = get_speler_stats(speler["nbb_nummer"])
                     
-                    if speler_details["gefloten_wedstrijden"]:
-                        st.write("**Puntenhistorie:**")
-                        wedstrijden_data = laad_wedstrijden()
-                        for wed_reg in reversed(speler_details["gefloten_wedstrijden"][-10:]):  # Laatste 10
-                            wed = wedstrijden_data.get(wed_reg.get("wed_id", ""), {})
-                            wed_naam = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}" if wed else "Onbekende wedstrijd"
-                            
-                            berekening = wed_reg.get("berekening", {})
-                            if berekening:
-                                st.markdown(f"""
-                                - **+{wed_reg['punten']}** - {wed_naam}  
-                                  *Geregistreerd: {berekening.get('inschrijf_moment_leesbaar', '?')} | {berekening.get('uren_tot_wedstrijd', '?')} uur tot wedstrijd*
-                                """)
-                            else:
-                                st.markdown(f"- **+{wed_reg['punten']}** - {wed_naam} ({wed_reg.get('reden', '')})")
-                    else:
-                        st.caption("Nog geen wedstrijden geregistreerd.")
+                    col_wed, col_handmatig = st.columns(2)
                     
-                    if speler_details["strike_log"]:
-                        st.write("**Strike historie:**")
-                        for strike in reversed(speler_details["strike_log"][-5:]):  # Laatste 5
-                            teken = "+" if strike["strikes"] > 0 else ""
-                            st.markdown(f"- **{teken}{strike['strikes']}** - {strike['reden']}")
+                    with col_wed:
+                        if speler_details["gefloten_wedstrijden"]:
+                            st.write("**Wedstrijd punten:**")
+                            wedstrijden_data = laad_wedstrijden()
+                            for wed_reg in reversed(speler_details["gefloten_wedstrijden"][-10:]):  # Laatste 10
+                                wed = wedstrijden_data.get(wed_reg.get("wed_id", ""), {})
+                                wed_naam = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}" if wed else "Onbekende wedstrijd"
+                                
+                                berekening = wed_reg.get("berekening", {})
+                                if berekening:
+                                    st.markdown(f"""
+                                    - **+{wed_reg['punten']}** - {wed_naam}  
+                                      *{berekening.get('inschrijf_moment_leesbaar', '?')} | {berekening.get('uren_tot_wedstrijd', '?')}u tot wed*
+                                    """)
+                                else:
+                                    st.markdown(f"- **+{wed_reg['punten']}** - {wed_naam}")
+                        else:
+                            st.caption("Geen wedstrijd punten.")
+                        
+                        # Handmatige aanpassingen
+                        if speler_details.get("punten_log"):
+                            st.write("**Handmatige aanpassingen:**")
+                            for entry in reversed(speler_details["punten_log"][-5:]):
+                                datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m %H:%M")
+                                teken = "+" if entry["punten"] > 0 else ""
+                                st.markdown(f"- **{teken}{entry['punten']}** ({entry['oude_stand']}→{entry['nieuwe_stand']}) *{datum}*  \n  {entry['reden']}")
+                    
+                    with col_handmatig:
+                        if speler_details["strike_log"]:
+                            st.write("**Strike historie:**")
+                            for strike in reversed(speler_details["strike_log"][-8:]):  # Laatste 8
+                                datum = datetime.fromisoformat(strike["datum"]).strftime("%d-%m %H:%M")
+                                teken = "+" if strike["strikes"] > 0 else ""
+                                st.markdown(f"- **{teken}{strike['strikes']}** *{datum}*  \n  {strike['reden']}")
+                        else:
+                            st.caption("Geen strikes.")
             
             # Clinic drempel info
             st.divider()
@@ -2752,8 +2804,8 @@ def toon_beloningen_beheer():
                     st.write(f"  • {k['naam']} ({k['punten']} punten)")
     
     with subtab2:
-        st.write("**Strikes toekennen**")
-        st.caption("Gebruik dit voor no-shows of late afmeldingen die niet via de app zijn gegaan.")
+        st.write("**Punten & Strikes aanpassen**")
+        st.caption("Handmatig bijboeken of afboeken met verplichte omschrijving voor audit trail.")
         
         # Selecteer speler
         speler_opties = {f"{s['naam']} (NBB: {nbb})": nbb for nbb, s in scheidsrechters.items()}
@@ -2764,11 +2816,54 @@ def toon_beloningen_beheer():
             
             # Toon huidige status
             stats = get_speler_stats(geselecteerde_nbb)
-            st.info(f"Huidige status: {stats['punten']} punten, {stats['strikes']} strikes")
             
-            col1, col2 = st.columns(2)
+            col_status1, col_status2 = st.columns(2)
+            with col_status1:
+                st.metric("🏆 Punten", stats['punten'])
+            with col_status2:
+                st.metric("⚠️ Strikes", stats['strikes'])
             
-            with col1:
+            st.divider()
+            
+            # Punten sectie
+            st.subheader("🏆 Punten aanpassen")
+            
+            col_punten_plus, col_punten_min = st.columns(2)
+            
+            with col_punten_plus:
+                st.write("**Punten bijboeken**")
+                punten_bij = st.number_input("Aantal punten", min_value=1, max_value=50, value=1, key="punten_bij")
+                punten_bij_reden = st.text_input("Reden (verplicht)", key="punten_bij_reden", placeholder="bijv. Correctie, extra beloning, etc.")
+                
+                if st.button("➕ Punten bijboeken", type="primary", key="btn_punten_bij"):
+                    if punten_bij_reden.strip():
+                        pas_punten_aan(geselecteerde_nbb, punten_bij, f"Bijgeboekt: {punten_bij_reden}")
+                        st.success(f"+{punten_bij} punten toegevoegd!")
+                        st.rerun()
+                    else:
+                        st.error("Vul een reden in")
+            
+            with col_punten_min:
+                st.write("**Punten afboeken**")
+                punten_af = st.number_input("Aantal punten", min_value=1, max_value=50, value=1, key="punten_af")
+                punten_af_reden = st.text_input("Reden (verplicht)", key="punten_af_reden", placeholder="bijv. Voucher verzilverd, correctie, etc.")
+                
+                if st.button("➖ Punten afboeken", key="btn_punten_af"):
+                    if punten_af_reden.strip():
+                        pas_punten_aan(geselecteerde_nbb, -punten_af, f"Afgeboekt: {punten_af_reden}")
+                        st.success(f"-{punten_af} punten verwijderd!")
+                        st.rerun()
+                    else:
+                        st.error("Vul een reden in")
+            
+            st.divider()
+            
+            # Strikes sectie
+            st.subheader("⚠️ Strikes aanpassen")
+            
+            col_strikes_plus, col_strikes_min = st.columns(2)
+            
+            with col_strikes_plus:
                 st.write("**Strike toevoegen**")
                 strike_reden = st.selectbox("Reden", [
                     "No-show (5 strikes)",
@@ -2786,30 +2881,61 @@ def toon_beloningen_beheer():
                 else:
                     strike_aantal = st.number_input("Aantal strikes", min_value=1, max_value=10, value=1)
                 
-                opmerking = st.text_input("Opmerking (optioneel)")
+                strike_opmerking = st.text_input("Opmerking (optioneel)", key="strike_opmerking")
                 
                 if st.button("⚠️ Strike toekennen", type="primary"):
                     reden_tekst = f"{strike_reden}"
-                    if opmerking:
-                        reden_tekst += f" - {opmerking}"
+                    if strike_opmerking:
+                        reden_tekst += f" - {strike_opmerking}"
                     voeg_strike_toe(geselecteerde_nbb, strike_aantal, reden_tekst)
-                    st.success(f"{strike_aantal} strike(s) toegekend!")
+                    st.success(f"+{strike_aantal} strike(s) toegekend!")
                     st.rerun()
             
-            with col2:
+            with col_strikes_min:
                 st.write("**Strike verwijderen**")
-                st.caption("Voor correcties of na het voltooien van een klusje buiten de app om.")
-                
-                verwijder_aantal = st.number_input("Aantal strikes verwijderen", min_value=1, max_value=10, value=1)
-                verwijder_reden = st.text_input("Reden voor verwijdering")
+                verwijder_aantal = st.number_input("Aantal strikes", min_value=1, max_value=10, value=1, key="strike_verwijder")
+                verwijder_reden = st.text_input("Reden (verplicht)", key="strike_verwijder_reden", placeholder="bijv. Klusje afgerond, correctie, etc.")
                 
                 if st.button("✅ Strike verwijderen"):
-                    if verwijder_reden:
+                    if verwijder_reden.strip():
                         verwijder_strike(geselecteerde_nbb, verwijder_aantal, verwijder_reden)
-                        st.success(f"{verwijder_aantal} strike(s) verwijderd!")
+                        st.success(f"-{verwijder_aantal} strike(s) verwijderd!")
                         st.rerun()
                     else:
                         st.error("Vul een reden in")
+            
+            st.divider()
+            
+            # Historie tonen
+            st.subheader("📜 Aanpassingshistorie")
+            
+            # Haal punten_log op indien aanwezig
+            beloningen = laad_beloningen()
+            speler_data = beloningen.get("spelers", {}).get(geselecteerde_nbb, {})
+            punten_log = speler_data.get("punten_log", [])
+            strike_log = speler_data.get("strike_log", [])
+            
+            col_hist1, col_hist2 = st.columns(2)
+            
+            with col_hist1:
+                st.write("**Punten historie:**")
+                if punten_log:
+                    for entry in reversed(punten_log[-10:]):
+                        datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
+                        teken = "+" if entry["punten"] > 0 else ""
+                        st.markdown(f"- **{teken}{entry['punten']}** ({entry['oude_stand']}→{entry['nieuwe_stand']})  \n  *{datum}*: {entry['reden']}")
+                else:
+                    st.caption("Geen handmatige aanpassingen.")
+            
+            with col_hist2:
+                st.write("**Strikes historie:**")
+                if strike_log:
+                    for entry in reversed(strike_log[-10:]):
+                        datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
+                        teken = "+" if entry["strikes"] > 0 else ""
+                        st.markdown(f"- **{teken}{entry['strikes']}** - *{datum}*  \n  {entry['reden']}")
+                else:
+                    st.caption("Geen strikes geregistreerd.")
     
     with subtab3:
         st.write("**Klusjes beheer**")
