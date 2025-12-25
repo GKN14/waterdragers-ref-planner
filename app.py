@@ -3071,6 +3071,23 @@ def toon_capaciteit_monitor():
     # Detail per niveau
     st.write("### 📋 Detail per niveau")
     
+    # Uitleg
+    with st.expander("ℹ️ **Uitleg: Waarom cumulatief?**"):
+        st.write("""
+**Het principe:** Een scheidsrechter kan "omlaag" fluiten, maar niet "omhoog".
+- Niveau 5 scheidsrechter → kan niveau 5, 4, 3, 2, 1 fluiten ✓
+- Niveau 4 scheidsrechter → kan niveau 4, 3, 2, 1 fluiten, maar **niet** niveau 5 ✗
+
+**Daarom kijken we cumulatief van hoog naar laag:**
+- Eerst moeten niveau 5 wedstrijden gevuld worden (alleen door niveau 5 scheidsrechters)
+- Wat overblijft van niveau 5 capaciteit kan helpen bij niveau 4
+- Enzovoort...
+
+**Voorbeeld:**  
+Als je 20 niveau 5 posities hebt en 20 niveau 5 scheidsrechters (exact genoeg), 
+dan kunnen die scheidsrechters **niet** meer helpen bij niveau 4 wedstrijden.
+        """)
+    
     problemen = []
     
     for niveau in range(5, 0, -1):
@@ -3097,39 +3114,73 @@ def toon_capaciteit_monitor():
             niveau_label = "Niveau 5 (excl. MSE)"
         
         with st.expander(f"{status} **{niveau_label}** — Nodig: {behoefte} | Ingevuld: {ingevuld} | Scheids: {len(scheids_per_niveau[niveau])}"):
-            col_a, col_b = st.columns(2)
+            # Sectie 1: Dit niveau alleen
+            st.write("#### 📍 Dit niveau alleen")
+            col_a1, col_a2 = st.columns(2)
+            with col_a1:
+                st.write(f"**Wedstrijden niveau {niveau}:** {behoefte // 2}")
+                st.write(f"**Posities nodig:** {behoefte}")
+                st.write(f"**Al ingevuld:** {ingevuld}")
+                st.write(f"**Nog open:** {nog_nodig}")
+            with col_a2:
+                # Tel scheidsrechters met dit als EIGEN niveau
+                eigen_niveau_scheids = [s for s in scheids_per_niveau[niveau] if s["eigen_niveau"] == niveau]
+                st.write(f"**Scheidsrechters niveau {niveau}:** {len(eigen_niveau_scheids)}")
+                st.write(f"**Hun min. capaciteit:** {cap_min}")
             
-            with col_a:
-                st.write("**Dit niveau:**")
-                st.write(f"- Wedstrijden: {behoefte // 2}")
-                st.write(f"- Posities nodig: {behoefte}")
-                st.write(f"- Al ingevuld: {ingevuld}")
-                st.write(f"- Nog open: {nog_nodig}")
-                
-                st.write(f"**Capaciteit niveau {niveau} scheidsrechters:**")
-                st.write(f"- Minimum: {cap_min}")
+            st.write("---")
             
-            with col_b:
-                st.write(f"**Cumulatief (niveau {niveau} en hoger):**")
-                st.write(f"- Totaal nodig: {cum_behoefte}")
-                st.write(f"- Min. capaciteit: {cum_min}")
+            # Sectie 2: Cumulatief met uitleg
+            st.write(f"#### 📊 Cumulatief: niveau {niveau} t/m 5")
+            st.caption(f"*Wie kan niveau {niveau} fluiten? Alle scheidsrechters van niveau {niveau} en hoger.*")
+            
+            # Bouw breakdown tabel
+            st.write("**Opbouw behoefte:**")
+            breakdown_behoefte = []
+            breakdown_capaciteit = []
+            for n in range(5, niveau - 1, -1):
+                niv_label = f"Niveau {n}"
+                if n == 5:
+                    niv_label = "Niveau 5 (excl. MSE)"
+                breakdown_behoefte.append(f"- {niv_label}: {behoefte_per_niveau[n]} posities")
                 
-                if cum_min >= cum_behoefte:
-                    st.success(f"Overschot van {cum_min - cum_behoefte} (bij minimum inzet)")
-                else:
-                    st.warning(f"{cum_behoefte - cum_min} extra inzet nodig boven minimum")
+                # Capaciteit van scheidsrechters met dit als EIGEN niveau
+                eigen_cap = capaciteit_min_per_niveau[n]
+                eigen_count = len([s for s in scheids_per_niveau[n] if s["eigen_niveau"] == n])
+                breakdown_capaciteit.append(f"- Niveau {n} scheidsrechters: {eigen_count} personen, min {eigen_cap} wedstrijden")
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                for line in breakdown_behoefte:
+                    st.write(line)
+                st.write(f"**Totaal nodig: {cum_behoefte}**")
+            
+            with col_b2:
+                st.write("**Opbouw capaciteit:**")
+                for line in breakdown_capaciteit:
+                    st.write(line)
+                st.write(f"**Totaal capaciteit: {cum_min}**")
+            
+            # Conclusie
+            st.write("")
+            if cum_min >= cum_behoefte:
+                overschot = cum_min - cum_behoefte
+                st.success(f"✅ **Voldoende** — {overschot} posities over (bij minimum inzet)")
+            else:
+                tekort = cum_behoefte - cum_min
+                st.warning(f"⚠️ **{tekort} extra inzet nodig** boven het minimum")
             
             # Toon scheidsrechters voor dit niveau
+            st.write("---")
+            st.write(f"#### 👥 Alle scheidsrechters die niveau {niveau} kunnen fluiten")
             if scheids_per_niveau[niveau]:
-                st.write("**Beschikbare scheidsrechters:**")
                 scheids_tekst = []
-                for s in sorted(scheids_per_niveau[niveau], key=lambda x: -x["eigen_niveau"]):
-                    eigen = "★" if s["eigen_niveau"] == niveau else ""
+                for s in sorted(scheids_per_niveau[niveau], key=lambda x: (-x["eigen_niveau"], x["naam"])):
+                    eigen = f" ★niv{s['eigen_niveau']}" if s["eigen_niveau"] != niveau else " ★"
                     bs2_tag = " 🎓" if s.get("bs2") else ""
                     scheids_tekst.append(f"{s['naam']} (min {s['min']}){eigen}{bs2_tag}")
                 st.write(", ".join(scheids_tekst))
-                if any(s.get("bs2") for s in scheids_per_niveau[niveau]):
-                    st.caption("🎓 = BS2 diploma")
+                st.caption("★ = eigen niveau | 🎓 = BS2 diploma")
     
     # Advies sectie
     st.divider()
