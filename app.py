@@ -222,11 +222,20 @@ def laad_vervangingsverzoeken() -> dict:
 def sla_vervangingsverzoeken_op(data: dict):
     sla_json_op("vervangingsverzoeken.json", data)
 
-# Beschikbare klusjes
-BESCHIKBARE_KLUSJES = [
-    {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
-    {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
-]
+def laad_beschikbare_klusjes() -> list:
+    """Laad de lijst met beschikbare klusjes die TC kan toewijzen."""
+    data = laad_json("beschikbare_klusjes.json")
+    if not data:
+        # Default klusjes
+        data = [
+            {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
+            {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
+        ]
+        sla_json_op("beschikbare_klusjes.json", data)
+    return data
+
+def sla_beschikbare_klusjes_op(data: list):
+    sla_json_op("beschikbare_klusjes.json", data)
 
 # ============================================================
 # BELONINGSSYSTEEM FUNCTIES
@@ -935,6 +944,44 @@ def toon_speler_view(nbb_nummer: str):
         eigen_teams = scheids.get("eigen_teams", [])
         if eigen_teams:
             st.markdown(f"Teams: {', '.join(eigen_teams)}")
+        
+        st.divider()
+        
+        # Puntensysteem uitleg
+        st.markdown("### 🏆 Punten verdienen")
+        st.markdown("""
+        Wedstrijden **boven je minimum** leveren punten op:
+        
+        | Actie | Punten |
+        |-------|--------|
+        | Wedstrijd fluiten | 1 |
+        | Lastig tijdstip* | +1 |
+        | Invallen <48 uur | +3 |
+        | Invallen <24 uur | +5 |
+        
+        *Lastig = apart terugkomen om te fluiten
+        
+        **15 punten** = clinic naar keuze!
+        """)
+        
+        st.divider()
+        
+        # Strikes uitleg
+        st.markdown("### ⚠️ Strikes")
+        st.markdown("""
+        | Situatie | Strikes |
+        |----------|---------|
+        | Afmelding <48u | 1 |
+        | Afmelding <24u | 2 |
+        | No-show | 5 |
+        
+        **Met vervanging** = geen strike!
+        
+        Strikes wegwerken:
+        - Klusje doen (-1)
+        - Extra wedstrijd (-1)
+        - Invallen <48u (-2)
+        """)
     
     # Header met logo
     logo_path = Path(__file__).parent / "logo.png"
@@ -2496,10 +2543,11 @@ def toon_beloningen_beheer():
     
     st.subheader("🏆 Beloningen & Strikes Beheer")
     
-    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+    subtab1, subtab2, subtab3, subtab4, subtab5 = st.tabs([
         "📊 Ranglijst", 
         "⚠️ Strikes Toekennen", 
-        "🔧 Klusjes Beheer",
+        "🔧 Klusjes Toewijzen",
+        "📋 Klusjes Instellingen",
         "🔄 Vervangingsverzoeken"
     ])
     
@@ -2655,7 +2703,7 @@ def toon_beloningen_beheer():
             geselecteerde_speler = st.selectbox("Selecteer speler met strikes", options=list(speler_opties.keys()), key="klusje_speler")
             geselecteerde_nbb = speler_opties[geselecteerde_speler]
             
-            klusje_opties = {k["naam"]: k for k in BESCHIKBARE_KLUSJES}
+            klusje_opties = {k["naam"]: k for k in laad_beschikbare_klusjes()}
             geselecteerde_klusje = st.selectbox("Selecteer klusje", options=list(klusje_opties.keys()))
             klusje_data = klusje_opties[geselecteerde_klusje]
             
@@ -2679,6 +2727,56 @@ def toon_beloningen_beheer():
             st.info("Geen spelers met strikes.")
     
     with subtab4:
+        st.write("**Beschikbare klusjes beheren**")
+        st.caption("Hier kun je de klusjes instellen die aan spelers met strikes kunnen worden toegewezen.")
+        
+        beschikbare_klusjes = laad_beschikbare_klusjes()
+        
+        # Toon huidige klusjes
+        if beschikbare_klusjes:
+            st.write("**Huidige klusjes:**")
+            for idx, klusje in enumerate(beschikbare_klusjes):
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.write(f"**{klusje['naam']}**")
+                        st.caption(klusje['omschrijving'])
+                    with col2:
+                        st.write(f"*{klusje['strikes_waarde']} strike(s)*")
+                    with col3:
+                        if st.button("🗑️ Verwijderen", key=f"del_klusje_{idx}"):
+                            beschikbare_klusjes.pop(idx)
+                            sla_beschikbare_klusjes_op(beschikbare_klusjes)
+                            st.rerun()
+        else:
+            st.info("Nog geen klusjes gedefinieerd.")
+        
+        st.divider()
+        
+        # Nieuw klusje toevoegen
+        st.write("**Nieuw klusje toevoegen**")
+        
+        with st.form("nieuw_klusje_form"):
+            nieuwe_naam = st.text_input("Naam", placeholder="bijv. Ballen oppompen")
+            nieuwe_omschrijving = st.text_area("Omschrijving", placeholder="Beschrijf wat de speler moet doen...")
+            nieuwe_strikes_waarde = st.number_input("Strikes kwijtschelding", min_value=1, max_value=5, value=1, help="Hoeveel strikes worden kwijtgescholden na afronding")
+            
+            if st.form_submit_button("➕ Klusje toevoegen", type="primary"):
+                if nieuwe_naam and nieuwe_omschrijving:
+                    nieuw_klusje = {
+                        "id": f"klusje_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        "naam": nieuwe_naam,
+                        "omschrijving": nieuwe_omschrijving,
+                        "strikes_waarde": nieuwe_strikes_waarde
+                    }
+                    beschikbare_klusjes.append(nieuw_klusje)
+                    sla_beschikbare_klusjes_op(beschikbare_klusjes)
+                    st.success(f"Klusje '{nieuwe_naam}' toegevoegd!")
+                    st.rerun()
+                else:
+                    st.error("Vul naam en omschrijving in")
+    
+    with subtab5:
         st.write("**Openstaande vervangingsverzoeken**")
         
         open_verzoeken = {v_id: v for v_id, v in verzoeken.items() if v.get("status") == "pending"}

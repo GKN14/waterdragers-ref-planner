@@ -1,0 +1,14 @@
+[
+  {
+    "id": "ballen_oppompen",
+    "naam": "Ballen oppompen",
+    "omschrijving": "Ballen oppompen op alle 3 locaties",
+    "strikes_waarde": 1
+  },
+  {
+    "id": "coach_ondersteunen",
+    "naam": "Coach ondersteunen (2x)",
+    "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler",
+    "strikes_waarde": 1
+  }
+]
