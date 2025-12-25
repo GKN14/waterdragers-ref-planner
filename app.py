@@ -1727,9 +1727,10 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
+        "📈 Capaciteit",
         "🏆 Beloningen",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
@@ -1743,15 +1744,18 @@ def toon_beheerder_view():
         toon_scheidsrechters_beheer()
     
     with tab3:
-        toon_beloningen_beheer()
+        toon_capaciteit_monitor()
     
     with tab4:
-        toon_weekend_overzicht()
+        toon_beloningen_beheer()
     
     with tab5:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab6:
+        toon_instellingen_beheer()
+    
+    with tab7:
         toon_import_export()
 
 def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, scheidsrechters: dict) -> bytes:
@@ -2708,6 +2712,222 @@ def toon_scheidsrechters_beheer():
                 st.rerun()
             else:
                 st.error("NBB-nummer en naam zijn verplicht")
+
+def toon_capaciteit_monitor():
+    """Toon capaciteitsanalyse: vraag vs aanbod per niveau."""
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    nu = datetime.now()
+    
+    st.subheader("📈 Capaciteitsmonitor")
+    st.caption("Analyse van scheidsrechtercapaciteit vs wedstrijdbehoefte per niveau")
+    
+    # Filter alleen toekomstige thuiswedstrijden
+    toekomstige_wedstrijden = {}
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("type", "thuis") != "thuis":
+            continue
+        if wed.get("geannuleerd", False):
+            continue
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum > nu:
+            toekomstige_wedstrijden[wed_id] = wed
+    
+    # Bereken behoefte per niveau (elke wedstrijd heeft 2 scheidsrechters nodig)
+    behoefte_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    ingevuld_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    
+    for wed_id, wed in toekomstige_wedstrijden.items():
+        niveau = wed.get("niveau", 1)
+        behoefte_per_niveau[niveau] += 2  # 2 scheidsrechters per wedstrijd
+        
+        # Tel ingevulde posities
+        if wed.get("scheids_1"):
+            ingevuld_per_niveau[niveau] += 1
+        if wed.get("scheids_2"):
+            ingevuld_per_niveau[niveau] += 1
+    
+    # Bereken capaciteit per niveau (scheidsrechters die dit niveau KUNNEN fluiten)
+    # Minimum capaciteit = som van alle minimum wedstrijden
+    # Maximum capaciteit = som van alle maximum wedstrijden
+    capaciteit_min_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    capaciteit_max_per_niveau = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    scheids_per_niveau = {1: [], 2: [], 3: [], 4: [], 5: []}
+    
+    for nbb, scheids in scheidsrechters.items():
+        niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        niveau_2e = scheids.get("niveau_2e_scheids", 5)
+        min_wed = scheids.get("min_wedstrijden", 0)
+        max_wed = scheids.get("max_wedstrijden", 5)
+        
+        # Scheidsrechter kan alle niveaus t/m hun niveau fluiten
+        # We tellen capaciteit bij het HOOGSTE niveau dat ze kunnen (waar ze het meest nodig zijn)
+        for niveau in range(1, niveau_1e + 1):
+            scheids_per_niveau[niveau].append({
+                "nbb": nbb,
+                "naam": scheids.get("naam", "?"),
+                "min": min_wed,
+                "max": max_wed,
+                "eigen_niveau": niveau_1e
+            })
+        
+        # Tel capaciteit alleen bij eigen niveau (voorkomt dubbeltelling)
+        capaciteit_min_per_niveau[niveau_1e] += min_wed
+        capaciteit_max_per_niveau[niveau_1e] += max_wed
+    
+    # Bereken cumulatieve capaciteit (niveau 5 scheids kan ook niveau 1-4)
+    # Van hoog naar laag: overschot van hoger niveau kan lager opvangen
+    cumulatief_min = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    cumulatief_max = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    
+    running_min = 0
+    running_max = 0
+    for niveau in range(5, 0, -1):
+        running_min += capaciteit_min_per_niveau[niveau]
+        running_max += capaciteit_max_per_niveau[niveau]
+        cumulatief_min[niveau] = running_min
+        cumulatief_max[niveau] = running_max
+    
+    # Bereken cumulatieve behoefte (niveau 5 wedstrijden moeten door niveau 5 scheids)
+    cumulatief_behoefte = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    running_behoefte = 0
+    for niveau in range(5, 0, -1):
+        running_behoefte += behoefte_per_niveau[niveau]
+        cumulatief_behoefte[niveau] = running_behoefte
+    
+    # Overzichtstabel
+    st.write("### 📊 Overzicht per niveau")
+    
+    # Header metrics
+    totaal_behoefte = sum(behoefte_per_niveau.values())
+    totaal_ingevuld = sum(ingevuld_per_niveau.values())
+    totaal_min = sum(capaciteit_min_per_niveau.values())
+    totaal_max = sum(capaciteit_max_per_niveau.values())
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Totaal nodig", totaal_behoefte, help="Aantal scheidsrechterposities")
+    with col2:
+        st.metric("Al ingevuld", totaal_ingevuld)
+    with col3:
+        st.metric("Min. capaciteit", totaal_min, help="Som van alle minimum wedstrijden")
+    with col4:
+        st.metric("Max. capaciteit", totaal_max, help="Som van alle maximum wedstrijden")
+    
+    # Realisatiekans
+    if totaal_behoefte > 0:
+        if totaal_min >= totaal_behoefte:
+            realisatie_kans = 100
+            realisatie_tekst = "✅ Voldoende"
+            realisatie_kleur = "green"
+        elif totaal_max >= totaal_behoefte:
+            realisatie_kans = round((totaal_min / totaal_behoefte) * 100)
+            realisatie_tekst = f"⚠️ {realisatie_kans}% gegarandeerd"
+            realisatie_kleur = "orange"
+        else:
+            realisatie_kans = round((totaal_max / totaal_behoefte) * 100)
+            realisatie_tekst = f"❌ Max {realisatie_kans}% haalbaar"
+            realisatie_kleur = "red"
+        
+        st.markdown(f"### Realisatiekans: **{realisatie_tekst}**")
+    
+    st.divider()
+    
+    # Detail per niveau
+    st.write("### 📋 Detail per niveau")
+    
+    problemen = []
+    
+    for niveau in range(5, 0, -1):
+        behoefte = behoefte_per_niveau[niveau]
+        ingevuld = ingevuld_per_niveau[niveau]
+        cap_min = capaciteit_min_per_niveau[niveau]
+        cap_max = capaciteit_max_per_niveau[niveau]
+        cum_behoefte = cumulatief_behoefte[niveau]
+        cum_min = cumulatief_min[niveau]
+        cum_max = cumulatief_max[niveau]
+        
+        # Bepaal status
+        nog_nodig = behoefte - ingevuld
+        
+        if cum_min >= cum_behoefte:
+            status = "✅"
+            status_tekst = "OK"
+        elif cum_max >= cum_behoefte:
+            tekort = cum_behoefte - cum_min
+            status = "⚠️"
+            status_tekst = f"Risico: {tekort} onzeker"
+            problemen.append(f"Niveau {niveau}: {tekort} posities afhankelijk van maximum inzet")
+        else:
+            tekort = cum_behoefte - cum_max
+            status = "❌"
+            status_tekst = f"Tekort: {tekort}"
+            problemen.append(f"**Niveau {niveau}: TEKORT van {tekort} posities** (zelfs bij maximum inzet)")
+        
+        with st.expander(f"{status} **Niveau {niveau}** — Nodig: {behoefte} | Ingevuld: {ingevuld} | Scheids: {len(scheids_per_niveau[niveau])}"):
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                st.write("**Dit niveau:**")
+                st.write(f"- Wedstrijden: {behoefte // 2}")
+                st.write(f"- Posities nodig: {behoefte}")
+                st.write(f"- Al ingevuld: {ingevuld}")
+                st.write(f"- Nog open: {nog_nodig}")
+                
+                st.write("**Capaciteit niveau {niveau} scheidsrechters:**")
+                st.write(f"- Minimum: {cap_min}")
+                st.write(f"- Maximum: {cap_max}")
+            
+            with col_b:
+                st.write("**Cumulatief (niveau {niveau} en hoger):**")
+                st.write(f"- Totaal nodig: {cum_behoefte}")
+                st.write(f"- Min. capaciteit: {cum_min}")
+                st.write(f"- Max. capaciteit: {cum_max}")
+                
+                if cum_min >= cum_behoefte:
+                    st.success(f"Overschot van {cum_min - cum_behoefte} (minimum)")
+                elif cum_max >= cum_behoefte:
+                    st.warning(f"Afhankelijk van {cum_behoefte - cum_min} boven minimum")
+                else:
+                    st.error(f"Tekort van {cum_behoefte - cum_max} (zelfs bij max)")
+            
+            # Toon scheidsrechters voor dit niveau
+            if scheids_per_niveau[niveau]:
+                st.write("**Beschikbare scheidsrechters:**")
+                scheids_tekst = []
+                for s in sorted(scheids_per_niveau[niveau], key=lambda x: -x["eigen_niveau"]):
+                    eigen = "★" if s["eigen_niveau"] == niveau else ""
+                    scheids_tekst.append(f"{s['naam']} ({s['min']}-{s['max']} wed){eigen}")
+                st.write(", ".join(scheids_tekst))
+    
+    # Advies sectie
+    st.divider()
+    st.write("### 💡 Advies")
+    
+    if not problemen:
+        st.success("**Geen capaciteitsproblemen gedetecteerd.** De minimum inzet van alle scheidsrechters is voldoende om alle wedstrijden te bezetten.")
+    else:
+        st.warning("**Aandachtspunten:**")
+        for probleem in problemen:
+            st.write(f"- {probleem}")
+        
+        st.write("")
+        st.write("**Mogelijke oplossingen:**")
+        
+        # Analyseer waar het probleem zit
+        for niveau in range(5, 0, -1):
+            cum_behoefte = cumulatief_behoefte[niveau]
+            cum_max = cumulatief_max[niveau]
+            
+            if cum_max < cum_behoefte:
+                tekort = cum_behoefte - cum_max
+                st.write(f"- **Niveau {niveau}+**: Werf {tekort // 2 + 1} extra scheidsrechter(s) met niveau {niveau}")
+                st.write(f"  *Of*: Verhoog maximum wedstrijden van bestaande niveau {niveau}+ scheidsrechters")
+        
+        # Check of minimum verhogen helpt
+        totaal_ruimte = totaal_max - totaal_min
+        if totaal_ruimte > 0 and totaal_max >= totaal_behoefte:
+            st.write(f"- **Algemeen**: Er is {totaal_ruimte} ruimte tussen minimum en maximum. Overweeg minimums te verhogen.")
 
 def toon_beloningen_beheer():
     """Beheer beloningen: ranglijst, strikes, klusjes."""
