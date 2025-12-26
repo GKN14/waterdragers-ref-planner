@@ -16,9 +16,18 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.1.0"
-APP_VERSIE_DATUM = "2025-12-25"
+APP_VERSIE = "1.2.0"
+APP_VERSIE_DATUM = "2025-12-26"
 APP_CHANGELOG = """
+### v1.2.0 (2025-12-26)
+**Begeleidingssysteem:**
+- 🎓 Nieuw: Spelers kunnen aangeven open te staan voor begeleiding
+- 📋 Motivatie-keuze: "Vind het spannend", "Wil naar BS2", etc.
+- 📱 Optioneel telefoonnummer delen voor WhatsApp contact
+- 🔍 Filter in beheer op spelers die begeleiding willen
+- 📊 Begeleidingskolom in overzichtstabel
+- 👥 MSE-spelers zien aparte begeleidingsrol-info
+
 ### v1.1.0 (2025-12-25)
 **Dynamische beloningsinstellingen:**
 - ⚙️ Nieuw: Beloningssysteem volledig configureerbaar via beheer
@@ -119,6 +128,14 @@ SCHEIDSRECHTER_TEAMS = [
     "M18-1", "M18-2", "M18-3",
     "M20-1",
     "MSE"
+]
+
+# Redenen voor begeleiding (bij fluiten)
+BEGELEIDING_REDENEN = [
+    "Ik vind fluiten nog spannend",
+    "Ik wil richting BS2 diploma",
+    "Ik wil beter worden in fluiten",
+    "Samen fluiten is gezelliger"
 ]
 
 def team_match(volledig_team: str, eigen_team: str) -> bool:
@@ -1205,6 +1222,10 @@ def toon_speler_view(nbb_nummer: str):
         if eigen_teams:
             st.markdown(f"Teams: {', '.join(eigen_teams)}")
         
+        # Begeleidingsstatus
+        if scheids.get("open_voor_begeleiding", False):
+            st.markdown("🎓 Open voor begeleiding")
+        
         st.divider()
         
         # Niveau regels
@@ -1346,6 +1367,86 @@ def toon_speler_view(nbb_nummer: str):
         st.warning(f"⚠️ Je moet nog **{tekort}** wedstrijd(en) kiezen op niveau {eigen_niveau}.")
     else:
         st.success(f"✅ Je hebt aan je minimum voldaan ({op_niveau}/{min_wed} wedstrijden op niveau {eigen_niveau}).")
+    
+    # ============================================================
+    # BEGELEIDING SECTIE
+    # ============================================================
+    st.divider()
+    
+    # Huidige begeleidingsstatus
+    open_voor_begeleiding = scheids.get("open_voor_begeleiding", False)
+    begeleiding_reden = scheids.get("begeleiding_reden", "")
+    telefoon_begeleiding = scheids.get("telefoon_begeleiding", "")
+    
+    # Bepaal of deze speler MSE is (niveau 5 of team bevat MSE)
+    is_mse = scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in scheids.get("eigen_teams", []))
+    
+    if is_mse:
+        # MSE ziet een andere tekst - zij zijn de begeleiders
+        with st.expander("🎓 Begeleidingsrol (MSE)", expanded=False):
+            st.info("""
+            Als MSE-speler kun je jongere scheidsrechters begeleiden.  
+            Bekijk het **MSE-overzicht** (binnenkort beschikbaar) om te zien welke 
+            spelers open staan voor begeleiding.
+            """)
+    else:
+        # Niet-MSE spelers kunnen aangeven of ze begeleiding willen
+        begeleiding_label = "🎓 Begeleiding instellen" + (" ✓" if open_voor_begeleiding else "")
+        with st.expander(begeleiding_label, expanded=False):
+            st.markdown("""
+            **Wil je hulp van een ervaren scheidsrechter?**  
+            Als je dit aanzet, kunnen MSE-spelers je uitnodigen om samen te fluiten.  
+            Zo leer je sneller en heb je een vangnet bij moeilijke situaties.
+            """)
+            
+            with st.form("begeleiding_form"):
+                nieuwe_open_voor_begeleiding = st.toggle(
+                    "Ik sta open voor begeleiding",
+                    value=open_voor_begeleiding,
+                    help="MSE-scheidsrechters kunnen je dan uitnodigen om samen te fluiten"
+                )
+                
+                # Alleen tonen als begeleiding aan staat
+                if nieuwe_open_voor_begeleiding or open_voor_begeleiding:
+                    nieuwe_reden = st.selectbox(
+                        "Waarom wil je begeleiding?",
+                        options=[""] + BEGELEIDING_REDENEN,
+                        index=BEGELEIDING_REDENEN.index(begeleiding_reden) + 1 if begeleiding_reden in BEGELEIDING_REDENEN else 0,
+                        help="Dit helpt MSE'ers om je beter te kunnen helpen"
+                    )
+                    
+                    nieuwe_telefoon = st.text_input(
+                        "Telefoonnummer voor WhatsApp (optioneel)",
+                        value=telefoon_begeleiding,
+                        help="Als je dit invult, kan een MSE je via WhatsApp benaderen"
+                    )
+                else:
+                    nieuwe_reden = ""
+                    nieuwe_telefoon = ""
+                
+                if st.form_submit_button("💾 Opslaan", type="primary"):
+                    # Update scheidsrechter gegevens
+                    scheidsrechters[nbb_nummer]["open_voor_begeleiding"] = nieuwe_open_voor_begeleiding
+                    scheidsrechters[nbb_nummer]["begeleiding_reden"] = nieuwe_reden if nieuwe_open_voor_begeleiding else ""
+                    scheidsrechters[nbb_nummer]["telefoon_begeleiding"] = nieuwe_telefoon if nieuwe_open_voor_begeleiding else ""
+                    sla_scheidsrechters_op(scheidsrechters)
+                    
+                    if nieuwe_open_voor_begeleiding:
+                        st.success("✅ Je staat nu open voor begeleiding! MSE-scheidsrechters kunnen je uitnodigen.")
+                    else:
+                        st.success("✅ Begeleiding uitgeschakeld.")
+                    st.rerun()
+            
+            # Voordelen uitleg
+            if not open_voor_begeleiding:
+                st.markdown("""
+                ---
+                **Voordelen van begeleiding:**
+                - 🛡️ Een ervaren scheidsrechter als vangnet
+                - 📈 Sneller leren en beter worden
+                - 🎯 Toegang tot wedstrijden boven je niveau (met MSE erbij)
+                - 🏅 Op weg naar je eigen BS2 diploma
+                """)
     
     # Toon open klusjes indien aanwezig
     klusjes = laad_klusjes()
@@ -2881,7 +2982,7 @@ def toon_scheidsrechters_beheer():
     
     # Filters
     st.write("**Filters:**")
-    col_filter1, col_filter2, col_filter3 = st.columns(3)
+    col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
     
     with col_filter1:
         niveau_filter = st.selectbox(
@@ -2904,6 +3005,13 @@ def toon_scheidsrechters_beheer():
             key="scheids_bs2_filter"
         )
     
+    with col_filter4:
+        begeleiding_filter = st.selectbox(
+            "Filter op begeleiding",
+            options=["Alle", "🎓 Open voor begeleiding", "Niet open"],
+            key="scheids_begeleiding_filter"
+        )
+    
     # Filter scheidsrechters
     gefilterde_scheidsrechters = {}
     for nbb, scheids in scheidsrechters.items():
@@ -2917,6 +3025,12 @@ def toon_scheidsrechters_beheer():
         if bs2_filter == "Met BS2 diploma" and not scheids.get("bs2_diploma", False):
             continue
         if bs2_filter == "Zonder BS2 diploma" and scheids.get("bs2_diploma", False):
+            continue
+        
+        # Begeleiding filter
+        if begeleiding_filter == "🎓 Open voor begeleiding" and not scheids.get("open_voor_begeleiding", False):
+            continue
+        if begeleiding_filter == "Niet open" and scheids.get("open_voor_begeleiding", False):
             continue
         
         # Status filter (moet na niveau check want we gebruiken niveau_stats)
@@ -2953,6 +3067,7 @@ def toon_scheidsrechters_beheer():
             "🏆 Punten": speler_stats["punten"],
             "⚠️ Strikes": speler_stats["strikes"],
             "BS2": "✓" if scheids.get("bs2_diploma", False) else "",
+            "🎓": "✓" if scheids.get("open_voor_begeleiding", False) else "",
         })
     
     if overzicht_data:
@@ -2977,6 +3092,11 @@ def toon_scheidsrechters_beheer():
             df = df.sort_values("⚠️ Strikes", ascending=False)
         
         st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Tel spelers open voor begeleiding
+        open_voor_begeleiding_count = sum(1 for d in overzicht_data if d["🎓"] == "✓")
+        if open_voor_begeleiding_count > 0:
+            st.caption(f"🎓 = Open voor begeleiding ({open_voor_begeleiding_count} spelers)")
     
     st.divider()
     st.write("### 📝 Details per scheidsrechter")
@@ -3037,6 +3157,30 @@ def toon_scheidsrechters_beheer():
                         key=f"teams_{nbb}"
                     )
                     
+                    # Begeleiding velden (TC kan dit ook aanpassen)
+                    st.divider()
+                    st.write("**🎓 Begeleiding**")
+                    open_voor_begeleiding = st.checkbox(
+                        "Open voor begeleiding", 
+                        value=bool(scheids.get("open_voor_begeleiding", False)), 
+                        key=f"begeleiding_{nbb}"
+                    )
+                    
+                    begeleiding_reden_idx = 0
+                    if scheids.get("begeleiding_reden") in BEGELEIDING_REDENEN:
+                        begeleiding_reden_idx = BEGELEIDING_REDENEN.index(scheids.get("begeleiding_reden")) + 1
+                    begeleiding_reden = st.selectbox(
+                        "Reden",
+                        options=[""] + BEGELEIDING_REDENEN,
+                        index=begeleiding_reden_idx,
+                        key=f"reden_{nbb}"
+                    )
+                    telefoon_begeleiding = st.text_input(
+                        "Telefoon voor begeleiding",
+                        value=scheids.get("telefoon_begeleiding", ""),
+                        key=f"telefoon_{nbb}"
+                    )
+                    
                     col_save, col_delete = st.columns(2)
                     with col_save:
                         if st.form_submit_button("💾 Opslaan"):
@@ -3047,7 +3191,10 @@ def toon_scheidsrechters_beheer():
                                 "niveau_1e_scheids": niveau_1e,
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
-                                "eigen_teams": eigen_teams
+                                "eigen_teams": eigen_teams,
+                                "open_voor_begeleiding": open_voor_begeleiding,
+                                "begeleiding_reden": begeleiding_reden if open_voor_begeleiding else "",
+                                "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
                             }
                             sla_scheidsrechters_op(scheidsrechters)
                             st.session_state[edit_key] = False
@@ -3073,6 +3220,15 @@ def toon_scheidsrechters_beheer():
                     st.write(f"**1e scheids t/m niveau:** {scheids.get('niveau_1e_scheids', '-')}")
                     st.write(f"**2e scheids t/m niveau:** {scheids.get('niveau_2e_scheids', '-')}")
                     st.write(f"**Eigen teams:** {', '.join(scheids.get('eigen_teams', [])) or '-'}")
+                
+                # Begeleidingsinfo tonen indien aanwezig
+                if scheids.get("open_voor_begeleiding", False):
+                    st.divider()
+                    st.write("**🎓 Open voor begeleiding**")
+                    if scheids.get("begeleiding_reden"):
+                        st.write(f"*{scheids.get('begeleiding_reden')}*")
+                    if scheids.get("telefoon_begeleiding"):
+                        st.write(f"📱 {scheids.get('telefoon_begeleiding')}")
                 
                 # Link voor inschrijving
                 st.code(f"?nbb={nbb}")
