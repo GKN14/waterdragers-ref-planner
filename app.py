@@ -16,9 +16,15 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.2.0"
+APP_VERSIE = "1.2.1"
 APP_VERSIE_DATUM = "2025-12-26"
 APP_CHANGELOG = """
+### v1.2.1 (2025-12-26)
+**UX verbeteringen begeleiding:**
+- 🎯 Alle velden (toggle, reden, telefoon) direct zichtbaar bij openen
+- 📂 Expander blijft open na opslaan
+- 💡 Voordelen info bovenaan (verdwijnt als begeleiding aan staat)
+
 ### v1.2.0 (2025-12-26)
 **Begeleidingssysteem:**
 - 🎓 Nieuw: Spelers kunnen aangeven open te staan voor begeleiding
@@ -1381,6 +1387,10 @@ def toon_speler_view(nbb_nummer: str):
     # Bepaal of deze speler MSE is (niveau 5 of team bevat MSE)
     is_mse = scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in scheids.get("eigen_teams", []))
     
+    # Session state voor expander open/dicht
+    if f"begeleiding_expander_{nbb_nummer}" not in st.session_state:
+        st.session_state[f"begeleiding_expander_{nbb_nummer}"] = False
+    
     if is_mse:
         # MSE ziet een andere tekst - zij zijn de begeleiders
         with st.expander("🎓 Begeleidingsrol (MSE)", expanded=False):
@@ -1392,12 +1402,25 @@ def toon_speler_view(nbb_nummer: str):
     else:
         # Niet-MSE spelers kunnen aangeven of ze begeleiding willen
         begeleiding_label = "🎓 Begeleiding instellen" + (" ✓" if open_voor_begeleiding else "")
-        with st.expander(begeleiding_label, expanded=False):
+        
+        # Expander open houden na opslaan
+        expander_open = st.session_state[f"begeleiding_expander_{nbb_nummer}"] or False
+        
+        with st.expander(begeleiding_label, expanded=expander_open):
             st.markdown("""
             **Wil je hulp van een ervaren scheidsrechter?**  
             Als je dit aanzet, kunnen MSE-spelers je uitnodigen om samen te fluiten.  
             Zo leer je sneller en heb je een vangnet bij moeilijke situaties.
             """)
+            
+            # Voordelen uitleg bovenaan (altijd zichtbaar)
+            if not open_voor_begeleiding:
+                st.info("""
+                **Voordelen van begeleiding:**  
+                🛡️ Ervaren scheidsrechter als vangnet · 📈 Sneller leren · 🎯 Toegang tot hogere wedstrijden · 🏅 Op weg naar BS2
+                """)
+            
+            st.markdown("---")
             
             with st.form("begeleiding_form"):
                 nieuwe_open_voor_begeleiding = st.toggle(
@@ -1406,23 +1429,25 @@ def toon_speler_view(nbb_nummer: str):
                     help="MSE-scheidsrechters kunnen je dan uitnodigen om samen te fluiten"
                 )
                 
-                # Alleen tonen als begeleiding aan staat
-                if nieuwe_open_voor_begeleiding or open_voor_begeleiding:
-                    nieuwe_reden = st.selectbox(
-                        "Waarom wil je begeleiding?",
-                        options=[""] + BEGELEIDING_REDENEN,
-                        index=BEGELEIDING_REDENEN.index(begeleiding_reden) + 1 if begeleiding_reden in BEGELEIDING_REDENEN else 0,
-                        help="Dit helpt MSE'ers om je beter te kunnen helpen"
-                    )
-                    
-                    nieuwe_telefoon = st.text_input(
-                        "Telefoonnummer voor WhatsApp (optioneel)",
-                        value=telefoon_begeleiding,
-                        help="Als je dit invult, kan een MSE je via WhatsApp benaderen"
-                    )
-                else:
+                # Velden ALTIJD tonen, zodat gebruiker direct ziet wat er is
+                st.markdown("**Optionele extra informatie** *(helpt MSE'ers om je beter te helpen)*")
+                
+                nieuwe_reden = st.selectbox(
+                    "Waarom wil je begeleiding?",
+                    options=["(geen reden opgegeven)"] + BEGELEIDING_REDENEN,
+                    index=BEGELEIDING_REDENEN.index(begeleiding_reden) + 1 if begeleiding_reden in BEGELEIDING_REDENEN else 0,
+                    help="Dit helpt MSE'ers om je beter te kunnen helpen"
+                )
+                # Converteer placeholder naar lege string
+                if nieuwe_reden == "(geen reden opgegeven)":
                     nieuwe_reden = ""
-                    nieuwe_telefoon = ""
+                
+                nieuwe_telefoon = st.text_input(
+                    "Telefoonnummer voor WhatsApp",
+                    value=telefoon_begeleiding,
+                    placeholder="bijv. 06-12345678",
+                    help="Als je dit invult, kan een MSE je via WhatsApp benaderen"
+                )
                 
                 if st.form_submit_button("💾 Opslaan", type="primary"):
                     # Update scheidsrechter gegevens
@@ -1431,22 +1456,18 @@ def toon_speler_view(nbb_nummer: str):
                     scheidsrechters[nbb_nummer]["telefoon_begeleiding"] = nieuwe_telefoon if nieuwe_open_voor_begeleiding else ""
                     sla_scheidsrechters_op(scheidsrechters)
                     
+                    # Houd expander open na opslaan
+                    st.session_state[f"begeleiding_expander_{nbb_nummer}"] = True
+                    
                     if nieuwe_open_voor_begeleiding:
-                        st.success("✅ Je staat nu open voor begeleiding! MSE-scheidsrechters kunnen je uitnodigen.")
+                        st.success("✅ Opgeslagen! Je staat nu open voor begeleiding.")
                     else:
-                        st.success("✅ Begeleiding uitgeschakeld.")
+                        st.success("✅ Opgeslagen! Begeleiding is uitgeschakeld.")
+                    
+                    # Kleine vertraging zodat gebruiker success message ziet, dan refresh
+                    import time
+                    time.sleep(0.5)
                     st.rerun()
-            
-            # Voordelen uitleg
-            if not open_voor_begeleiding:
-                st.markdown("""
-                ---
-                **Voordelen van begeleiding:**
-                - 🛡️ Een ervaren scheidsrechter als vangnet
-                - 📈 Sneller leren en beter worden
-                - 🎯 Toegang tot wedstrijden boven je niveau (met MSE erbij)
-                - 🏅 Op weg naar je eigen BS2 diploma
-                """)
     
     # Toon open klusjes indien aanwezig
     klusjes = laad_klusjes()
