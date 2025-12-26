@@ -16,9 +16,17 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.2.1"
+APP_VERSIE = "1.3.0"
 APP_VERSIE_DATUM = "2025-12-26"
 APP_CHANGELOG = """
+### v1.3.0 (2025-12-26)
+**MSE-uitnodigingssysteem:**
+- 🎓 MSE ziet overzicht van wedstrijden waar ze 1e scheids zijn
+- 📋 Per wedstrijd: lijst van beschikbare spelers die begeleiding willen
+- 📨 MSE kan speler uitnodigen als 2e scheids
+- ✅ Speler kan uitnodiging accepteren of weigeren
+- 🔍 Beschikbaarheidscheck: geen eigen wedstrijd, niet al ingepland elders
+
 ### v1.2.1 (2025-12-26)
 **UX verbeteringen begeleiding:**
 - 🎯 Alle velden (toggle, reden, telefoon) direct zichtbaar bij openen
@@ -343,6 +351,14 @@ def laad_vervangingsverzoeken() -> dict:
 
 def sla_vervangingsverzoeken_op(data: dict):
     sla_json_op("vervangingsverzoeken.json", data)
+
+def laad_begeleidingsuitnodigingen() -> dict:
+    """Laad begeleidingsuitnodigingen (MSE nodigt speler uit als 2e scheids)."""
+    return _get_cached("begeleidingsuitnodigingen.json", lambda: laad_json("begeleidingsuitnodigingen.json") or {})
+
+def sla_begeleidingsuitnodigingen_op(data: dict):
+    sla_json_op("begeleidingsuitnodigingen.json", data)
+    _clear_cache("begeleidingsuitnodigingen.json")
 
 def laad_beschikbare_klusjes() -> list:
     """Laad de lijst met beschikbare klusjes die TC kan toewijzen."""
@@ -691,6 +707,38 @@ def heeft_overlappende_fluitwedstrijd(nbb_nummer: str, huidige_wed_id: str, datu
             return True
     
     return False
+
+def is_beschikbaar_voor_begeleiding(nbb_nummer: str, wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> tuple[bool, str]:
+    """
+    Check of een speler beschikbaar is om als 2e scheids mee te fluiten bij een wedstrijd.
+    
+    Returns: (beschikbaar: bool, reden: str)
+    """
+    scheids = scheidsrechters.get(nbb_nummer, {})
+    wed = wedstrijden.get(wed_id, {})
+    
+    if not wed:
+        return False, "Wedstrijd niet gevonden"
+    
+    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    
+    # Check: niet op zondag
+    if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
+        return False, "Niet beschikbaar op zondag"
+    
+    # Check: eigen wedstrijd
+    if heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
+        return False, "Heeft eigen wedstrijd"
+    
+    # Check: al ingeschreven voor andere wedstrijd
+    if heeft_overlappende_fluitwedstrijd(nbb_nummer, wed_id, wed_datum, wedstrijden):
+        return False, "Fluit al andere wedstrijd"
+    
+    # Check: al ingeschreven voor deze wedstrijd
+    if wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
+        return False, "Al ingeschreven voor deze wedstrijd"
+    
+    return True, "Beschikbaar"
 
 def analyseer_scheids_conflicten(nbb_nummer: str, wed_id: str, nieuwe_datum_tijd: datetime, 
                                    wedstrijden: dict, scheidsrechters: dict) -> list:
@@ -1392,13 +1440,116 @@ def toon_speler_view(nbb_nummer: str):
         st.session_state[f"begeleiding_expander_{nbb_nummer}"] = False
     
     if is_mse:
-        # MSE ziet een andere tekst - zij zijn de begeleiders
+        # MSE ziet overzicht van wedstrijden waar ze kunnen begeleiden
         with st.expander("🎓 Begeleidingsrol (MSE)", expanded=False):
-            st.info("""
+            st.markdown("""
             Als MSE-speler kun je jongere scheidsrechters begeleiden.  
-            Bekijk het **MSE-overzicht** (binnenkort beschikbaar) om te zien welke 
-            spelers open staan voor begeleiding.
+            Hieronder zie je wedstrijden waar jij 1e scheids bent en spelers kunt uitnodigen.
             """)
+            
+            # Haal wedstrijden op waar MSE 1e scheids is
+            nu = datetime.now()
+            mijn_wedstrijden_als_1e = []
+            
+            for wed_id, wed in wedstrijden.items():
+                if wed.get("scheids_1") != nbb_nummer:
+                    continue
+                if wed.get("geannuleerd", False):
+                    continue
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                if wed_datum < nu:
+                    continue
+                mijn_wedstrijden_als_1e.append((wed_id, wed, wed_datum))
+            
+            # Sorteer op datum
+            mijn_wedstrijden_als_1e.sort(key=lambda x: x[2])
+            
+            if not mijn_wedstrijden_als_1e:
+                st.info("Je bent nog niet ingeschreven als 1e scheidsrechter bij komende wedstrijden.")
+            else:
+                # Haal spelers op die open staan voor begeleiding
+                spelers_voor_begeleiding = []
+                for s_nbb, s_data in scheidsrechters.items():
+                    if s_nbb == nbb_nummer:  # Niet jezelf
+                        continue
+                    if s_data.get("open_voor_begeleiding", False):
+                        spelers_voor_begeleiding.append((s_nbb, s_data))
+                
+                # Haal bestaande uitnodigingen op
+                uitnodigingen = laad_begeleidingsuitnodigingen()
+                
+                for wed_id, wed, wed_datum in mijn_wedstrijden_als_1e:
+                    dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+                    huidige_2e = wed.get("scheids_2")
+                    huidige_2e_naam = scheidsrechters.get(huidige_2e, {}).get("naam", "") if huidige_2e else ""
+                    
+                    st.markdown(f"---")
+                    st.markdown(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']}")
+                    
+                    if huidige_2e:
+                        # Er is al een 2e scheids
+                        st.write(f"2e scheids: **{huidige_2e_naam}**")
+                        
+                        # Check of deze open staat voor begeleiding
+                        if scheidsrechters.get(huidige_2e, {}).get("open_voor_begeleiding", False):
+                            reden = scheidsrechters.get(huidige_2e, {}).get("begeleiding_reden", "")
+                            telefoon = scheidsrechters.get(huidige_2e, {}).get("telefoon_begeleiding", "")
+                            st.success(f"🎓 Staat open voor begeleiding: *{reden}*" if reden else "🎓 Staat open voor begeleiding")
+                            if telefoon:
+                                st.write(f"📱 {telefoon}")
+                    else:
+                        # Geen 2e scheids - toon beschikbare spelers
+                        st.warning("⚠️ Nog geen 2e scheidsrechter")
+                        
+                        # Check of er al een uitnodiging uit staat
+                        bestaande_uitnodiging = None
+                        for u_id, u in uitnodigingen.items():
+                            if u.get("wed_id") == wed_id and u.get("status") == "pending":
+                                bestaande_uitnodiging = u
+                                break
+                        
+                        if bestaande_uitnodiging:
+                            uitgenodigde = scheidsrechters.get(bestaande_uitnodiging["speler_nbb"], {})
+                            st.info(f"📨 Uitnodiging verstuurd naar **{uitgenodigde.get('naam', '?')}** - wacht op reactie")
+                        else:
+                            # Filter beschikbare spelers
+                            beschikbare_spelers = []
+                            for s_nbb, s_data in spelers_voor_begeleiding:
+                                beschikbaar, reden = is_beschikbaar_voor_begeleiding(s_nbb, wed_id, wedstrijden, scheidsrechters)
+                                if beschikbaar:
+                                    beschikbare_spelers.append((s_nbb, s_data))
+                            
+                            if not beschikbare_spelers:
+                                st.caption("Geen spelers beschikbaar die open staan voor begeleiding.")
+                            else:
+                                # Dropdown met beschikbare spelers
+                                opties = {f"{s['naam']} ({s.get('begeleiding_reden', 'geen reden')[:30]})": nbb 
+                                          for nbb, s in beschikbare_spelers}
+                                
+                                col1, col2 = st.columns([3, 1])
+                                with col1:
+                                    selectie = st.selectbox(
+                                        "Nodig uit als 2e scheids:",
+                                        options=["(selecteer)"] + list(opties.keys()),
+                                        key=f"uitnodig_{wed_id}"
+                                    )
+                                with col2:
+                                    if st.button("📨 Uitnodigen", key=f"btn_uitnodig_{wed_id}", type="primary"):
+                                        if selectie != "(selecteer)":
+                                            speler_nbb = opties[selectie]
+                                            # Maak uitnodiging aan
+                                            uitnodiging_id = f"beg_{wed_id}_{speler_nbb}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                                            uitnodigingen[uitnodiging_id] = {
+                                                "id": uitnodiging_id,
+                                                "wed_id": wed_id,
+                                                "mse_nbb": nbb_nummer,
+                                                "speler_nbb": speler_nbb,
+                                                "status": "pending",
+                                                "aangemaakt": datetime.now().isoformat()
+                                            }
+                                            sla_begeleidingsuitnodigingen_op(uitnodigingen)
+                                            st.success(f"✅ Uitnodiging verstuurd!")
+                                            st.rerun()
     else:
         # Niet-MSE spelers kunnen aangeven of ze begeleiding willen
         begeleiding_label = "🎓 Begeleiding instellen" + (" ✓" if open_voor_begeleiding else "")
@@ -1484,6 +1635,57 @@ def toon_speler_view(nbb_nummer: str):
                 *Levert {klusje['strikes_waarde']} strike(s) kwijtschelding op*
                 """)
                 st.caption("Meld je bij de TC als je dit klusje hebt afgerond.")
+    
+    # Toon inkomende begeleidingsuitnodigingen
+    uitnodigingen = laad_begeleidingsuitnodigingen()
+    mijn_uitnodigingen = [u for u_id, u in uitnodigingen.items() 
+                          if u.get("speler_nbb") == nbb_nummer 
+                          and u.get("status") == "pending"]
+    
+    if mijn_uitnodigingen:
+        st.divider()
+        st.subheader("🎓 Begeleidingsuitnodigingen")
+        for uitnodiging in mijn_uitnodigingen:
+            wed = wedstrijden.get(uitnodiging["wed_id"], {})
+            if not wed:
+                continue
+            
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            mse_naam = scheidsrechters.get(uitnodiging["mse_nbb"], {}).get("naam", "Onbekend")
+            
+            with st.container():
+                st.info(f"""
+                **{mse_naam}** (MSE) nodigt je uit om samen te fluiten:  
+                📅 **{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']}  
+                👕 Jij als 2e scheidsrechter, {mse_naam} als 1e  
+                🎓 *Met begeleiding van een ervaren scheidsrechter*
+                """)
+                
+                col_accept, col_reject = st.columns(2)
+                with col_accept:
+                    if st.button("✅ Accepteren", key=f"beg_accept_{uitnodiging['id']}", type="primary"):
+                        # Schrijf speler in als 2e scheids
+                        wedstrijden[uitnodiging["wed_id"]]["scheids_2"] = nbb_nummer
+                        sla_wedstrijden_op(wedstrijden)
+                        
+                        # Update uitnodiging status
+                        uitnodigingen[uitnodiging["id"]]["status"] = "accepted"
+                        uitnodigingen[uitnodiging["id"]]["bevestigd_op"] = datetime.now().isoformat()
+                        sla_begeleidingsuitnodigingen_op(uitnodigingen)
+                        
+                        st.success(f"✅ Geaccepteerd! Je fluit samen met {mse_naam}.")
+                        st.rerun()
+                
+                with col_reject:
+                    if st.button("❌ Kan niet", key=f"beg_reject_{uitnodiging['id']}"):
+                        # Update uitnodiging status
+                        uitnodigingen[uitnodiging["id"]]["status"] = "rejected"
+                        uitnodigingen[uitnodiging["id"]]["afgewezen_op"] = datetime.now().isoformat()
+                        sla_begeleidingsuitnodigingen_op(uitnodigingen)
+                        
+                        st.info("Afgewezen. De MSE kan iemand anders uitnodigen.")
+                        st.rerun()
     
     # Toon inkomende vervangingsverzoeken
     verzoeken = laad_vervangingsverzoeken()
