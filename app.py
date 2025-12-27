@@ -16,9 +16,14 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.3.0"
-APP_VERSIE_DATUM = "2025-12-26"
+APP_VERSIE = "1.4.0"
+APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.4.0 (2025-12-27)
+**Niveau-exceptie bij MSE-begeleiding:**
+- 🎓 Met MSE als 1e scheids: geen niveau-restrictie voor 2e scheids
+- 📐 Sidebar toont nieuwe regel: "Met MSE als 1e: geen limiet"
+
 ### v1.3.0 (2025-12-26)
 **MSE-uitnodigingssysteem:**
 - 🎓 MSE ziet overzicht van wedstrijden waar ze 1e scheids zijn
@@ -858,11 +863,19 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
     wed_niveau = wed["niveau"]
     
     if wed_niveau > max_niveau:
-        # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+        # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
         if not als_eerste and wed.get("scheids_1"):
-            # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
-            if wed_niveau <= max_niveau + 1:
-                # Toegestaan: 2e scheids mag met begeleiding van ervaren 1e
+            eerste_scheids_nbb = wed.get("scheids_1")
+            eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+            
+            # Check of 1e scheids MSE is (niveau 5 of team MSE)
+            is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+            
+            if is_mse:
+                # MSE als 1e scheids: geen niveau-restrictie voor 2e scheids
+                pass
+            elif wed_niveau <= max_niveau + 1:
+                # Normale situatie: 2e scheids mag max 1 niveau hoger
                 pass
             else:
                 return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau + 1} met 1e scheids)"}
@@ -926,12 +939,20 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         # Check niveau
         wed_niveau = wed["niveau"]
         if wed_niveau > max_niveau:
-            # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+            # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
             if not als_eerste and wed.get("scheids_1"):
-                # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
-                if wed_niveau > max_niveau + 1:
+                eerste_scheids_nbb = wed.get("scheids_1")
+                eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+                
+                # Check of 1e scheids MSE is (niveau 5 of team MSE)
+                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                
+                if is_mse:
+                    pass  # MSE als 1e scheids: geen niveau-restrictie
+                elif wed_niveau <= max_niveau + 1:
+                    pass  # Normale situatie: max 1 niveau hoger toegestaan
+                else:
                     continue  # Te hoog, zelfs met 1e scheids erbij
-                # Anders: toegestaan
             else:
                 continue  # Geen uitzondering mogelijk
         
@@ -1139,12 +1160,20 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         # Check niveau
         wed_niveau = wed["niveau"]
         if wed_niveau > max_niveau:
-            # Uitzondering voor 2e scheidsrechter: mag 1 niveau hoger als er een ervaren 1e is
+            # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
             if not als_eerste and wed.get("scheids_1"):
-                # Er is een 1e scheidsrechter - check of we max 1 niveau hoger mogen
-                if wed_niveau > max_niveau + 1:
+                eerste_scheids_nbb = wed.get("scheids_1")
+                eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+                
+                # Check of 1e scheids MSE is (niveau 5 of team MSE)
+                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                
+                if is_mse:
+                    pass  # MSE als 1e scheids: geen niveau-restrictie
+                elif wed_niveau <= max_niveau + 1:
+                    pass  # Normale situatie: max 1 niveau hoger toegestaan
+                else:
                     continue  # Te hoog, zelfs met 1e scheids erbij
-                # Anders: toegestaan
             else:
                 continue  # Geen uitzondering mogelijk
         
@@ -1287,7 +1316,8 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown(f"""
         - 1e scheids: max niveau **{eigen_niveau}**
         - 2e scheids: max niveau **{niveau_2e}**
-        - *Met ervaren 1e erbij: max niveau **{niveau_2e + 1}***
+        - *Met ervaren 1e: max niveau **{niveau_2e + 1}***
+        - *Met MSE als 1e: **geen limiet** 🎓*
         - BS2 wedstrijden: alleen met diploma
         """)
         
