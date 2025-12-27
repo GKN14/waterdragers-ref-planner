@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.0"
+APP_VERSIE = "1.9.1"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.9.1 (2025-12-27)
+**Filter verbeteringen:**
+- 🚫 Wedstrijden waar je niet op kunt inschrijven (eigen wedstrijd, overlap, zondag, BS2) worden nu ook gefilterd
+- 📊 Telling bij filters klopt nu volledig met daadwerkelijk beschikbare wedstrijden
+- 🔍 "Hele overzicht" toont nog steeds alle wedstrijden inclusief niet-beschikbare
+
 ### v1.9.0 (2025-12-27)
 **Filter verbeteringen:**
 - 📊 "Boven niveau" toont nu alleen wedstrijden waar je kunt inschrijven
@@ -1977,6 +1983,23 @@ def toon_speler_view(nbb_nummer: str):
         if scheids_1_bezet and scheids_2_bezet:
             continue  # Geen plek meer
         
+        # Extra beschikbaarheid checks
+        heeft_eigen = heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters)
+        if heeft_eigen:
+            continue  # Eigen wedstrijd op dit tijdstip
+        
+        heeft_overlap = heeft_overlappende_fluitwedstrijd(nbb_nummer, wed_id, wed_datum, wedstrijden)
+        if heeft_overlap:
+            continue  # Overlap met andere fluitwedstrijd
+        
+        zondag_blocked = scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6
+        if zondag_blocked:
+            continue  # Zondag restrictie
+        
+        bs2_blocked = wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False)
+        if bs2_blocked:
+            continue  # BS2 vereist maar geen diploma
+        
         wed_niveau = wed.get("niveau", 1)
         is_in_doelmaand = wed_datum.month == doel_maand and wed_datum.year == doel_jaar
         
@@ -2218,6 +2241,21 @@ def toon_speler_view(nbb_nummer: str):
                     scheids_1_bezet = wed.get("scheids_1") is not None
                     scheids_2_bezet = wed.get("scheids_2") is not None
                     
+                    # Al ingeschreven op andere positie?
+                    al_ingeschreven = wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer
+                    
+                    # Eigen wedstrijd op dit tijdstip?
+                    heeft_eigen = heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters)
+                    
+                    # Overlap met andere fluitwedstrijd?
+                    heeft_overlap = heeft_overlappende_fluitwedstrijd(nbb_nummer, wed_id, wed_datum, wedstrijden)
+                    
+                    # Zondag restrictie?
+                    zondag_blocked = scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6
+                    
+                    # BS2 vereist maar geen diploma?
+                    bs2_blocked = wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False)
+                    
                     kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau
                     kan_als_2e = not scheids_2_bezet
                     
@@ -2230,7 +2268,8 @@ def toon_speler_view(nbb_nummer: str):
                         else:
                             kan_als_2e = False
                     
-                    kan_inschrijven = kan_als_1e or kan_als_2e
+                    # Combineer alle checks
+                    kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked
                     
                     # Check filters
                     if is_eigen_niv and not filter_eigen_niveau:
@@ -2242,6 +2281,11 @@ def toon_speler_view(nbb_nummer: str):
                         # Tenzij "Hele overzicht" aan staat
                         if not kan_inschrijven and not filter_hele_overzicht:
                             continue
+                    
+                    # Ook voor eigen niveau: alleen tonen als je kunt inschrijven
+                    # Tenzij "Hele overzicht" aan staat
+                    if is_eigen_niv and not kan_inschrijven and not filter_hele_overzicht:
+                        continue
                     
                     alle_items.append({
                         "id": wed_id,
