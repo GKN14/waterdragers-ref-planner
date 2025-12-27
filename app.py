@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.3"
+APP_VERSIE = "1.8.4"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.4 (2025-12-27)
+**Bugfix:**
+- 🔄 Import nu via bevestigingsknop (voorkomt rerun loop)
+- 📋 Preview van aantal items voor import
+
 ### v1.8.3 (2025-12-27)
 **Bugfix:**
 - 🔄 Automatische refresh na import scheidsrechters/wedstrijden
@@ -5063,27 +5068,32 @@ def toon_import_export():
             content = uploaded_scheids.read().decode('utf-8')
             reader = csv.DictReader(io.StringIO(content))
             
-            scheidsrechters = laad_scheidsrechters()
-            count = 0
+            # Preview
+            rows = list(reader)
+            st.info(f"📋 {len(rows)} scheidsrechters gevonden in bestand")
             
-            for row in reader:
-                nbb = row.get("nbb_nummer", "").strip()
-                if nbb:
-                    scheidsrechters[nbb] = {
-                        "naam": row.get("naam", "").strip(),
-                        "bs2_diploma": row.get("bs2_diploma", "").lower() in ["ja", "yes", "true", "1"],
-                        "niveau_1e_scheids": int(row.get("niveau_1e", 1)),
-                        "niveau_2e_scheids": int(row.get("niveau_2e", 2)),
-                        "min_wedstrijden": int(row.get("min", 2)),
-                        "max_wedstrijden": int(row.get("max", 5)),
-                        "niet_op_zondag": row.get("niet_zondag", "").lower() in ["ja", "yes", "true", "1"],
-                        "eigen_teams": [t.strip() for t in row.get("eigen_teams", "").split(";") if t.strip()]
-                    }
-                    count += 1
-            
-            sla_scheidsrechters_op(scheidsrechters)
-            st.success(f"{count} scheidsrechters geïmporteerd!")
-            st.rerun()
+            if st.button("✅ Importeer scheidsrechters", key="btn_import_scheids"):
+                scheidsrechters = laad_scheidsrechters()
+                count = 0
+                
+                for row in rows:
+                    nbb = row.get("nbb_nummer", "").strip()
+                    if nbb:
+                        scheidsrechters[nbb] = {
+                            "naam": row.get("naam", "").strip(),
+                            "bs2_diploma": row.get("bs2_diploma", "").lower() in ["ja", "yes", "true", "1"],
+                            "niveau_1e_scheids": int(row.get("niveau_1e", 1)),
+                            "niveau_2e_scheids": int(row.get("niveau_2e", 2)),
+                            "min_wedstrijden": int(row.get("min", 2)),
+                            "max_wedstrijden": int(row.get("max", 5)),
+                            "niet_op_zondag": row.get("niet_zondag", "").lower() in ["ja", "yes", "true", "1"],
+                            "eigen_teams": [t.strip() for t in row.get("eigen_teams", "").split(";") if t.strip()]
+                        }
+                        count += 1
+                
+                sla_scheidsrechters_op(scheidsrechters)
+                st.success(f"✅ {count} scheidsrechters geïmporteerd!")
+                st.rerun()
     
     with tab4:
         st.write("**Import wedstrijden (CSV)**")
@@ -5099,38 +5109,43 @@ def toon_import_export():
             content = uploaded_wed.read().decode('utf-8')
             reader = csv.DictReader(io.StringIO(content))
             
-            wedstrijden = laad_wedstrijden()
-            count = 0
+            # Preview
+            rows = list(reader)
+            st.info(f"📋 {len(rows)} wedstrijden gevonden in bestand")
             
-            for row in reader:
-                datum = row.get("datum", "").strip()
-                tijd = row.get("tijd", "").strip()
-                thuisteam = row.get("thuisteam", "").strip()
+            if st.button("✅ Importeer wedstrijden", key="btn_import_wed"):
+                wedstrijden = laad_wedstrijden()
+                count = 0
                 
-                if datum and thuisteam:
-                    wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{count}"
-                    wed_type = row.get("type", "thuis").strip().lower()
+                for row in rows:
+                    datum = row.get("datum", "").strip()
+                    tijd = row.get("tijd", "").strip()
+                    thuisteam = row.get("thuisteam", "").strip()
                     
-                    nieuwe_wed = {
-                        "datum": f"{datum} {tijd}",
-                        "thuisteam": thuisteam,
-                        "uitteam": row.get("uitteam", "").strip(),
-                        "niveau": int(row.get("niveau", 1)),
-                        "type": wed_type,
-                        "vereist_bs2": row.get("vereist_bs2", "").lower() in ["ja", "yes", "true", "1"],
-                        "scheids_1": None,
-                        "scheids_2": None
-                    }
-                    
-                    if wed_type == "uit":
-                        nieuwe_wed["reistijd_minuten"] = int(row.get("reistijd_minuten", 60))
-                    
-                    wedstrijden[wed_id] = nieuwe_wed
-                    count += 1
-            
-            sla_wedstrijden_op(wedstrijden)
-            st.success(f"{count} wedstrijden geïmporteerd!")
-            st.rerun()
+                    if datum and thuisteam:
+                        wed_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{count}"
+                        wed_type = row.get("type", "thuis").strip().lower()
+                        
+                        nieuwe_wed = {
+                            "datum": f"{datum} {tijd}",
+                            "thuisteam": thuisteam,
+                            "uitteam": row.get("uitteam", "").strip(),
+                            "niveau": int(row.get("niveau", 1)),
+                            "type": wed_type,
+                            "vereist_bs2": row.get("vereist_bs2", "").lower() in ["ja", "yes", "true", "1"],
+                            "scheids_1": None,
+                            "scheids_2": None
+                        }
+                        
+                        if wed_type == "uit":
+                            nieuwe_wed["reistijd_minuten"] = int(row.get("reistijd_minuten", 60))
+                        
+                        wedstrijden[wed_id] = nieuwe_wed
+                        count += 1
+                
+                sla_wedstrijden_op(wedstrijden)
+                st.success(f"✅ {count} wedstrijden geïmporteerd!")
+                st.rerun()
     
     with tab5:
         st.write("**Export planning (CSV)**")
