@@ -19,9 +19,21 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.6"
+APP_VERSIE = "1.8.8"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.8 (2025-12-27)
+**Performance:**
+- ⚡ Individuele wijzigingen nu via single-record opslag (veel sneller)
+- 🔄 Cache wordt in-place bijgewerkt i.p.v. volledig herladen
+- 💾 Bewerken/opslaan scheidsrechters nu instant
+
+### v1.8.7 (2025-12-27)
+**UI:**
+- 📐 Witruimte onder container verwijderd
+- 🙈 Footer en "Made with Streamlit" verborgen
+- 📌 Header blijft nu beter sticky
+
 ### v1.8.6 (2025-12-27)
 **Performance:**
 - ⚡ Caching toegevoegd voor wedstrijden en scheidsrechters
@@ -408,8 +420,16 @@ def laad_instellingen() -> dict:
 def sla_scheidsrechters_op(data: dict):
     db.sla_scheidsrechters_op(data)
 
+def sla_scheidsrechter_op(nbb_nummer: str, data: dict):
+    """Sla één scheidsrechter op (sneller dan bulk)"""
+    db.sla_scheidsrechter_op(nbb_nummer, data)
+
 def sla_wedstrijden_op(data: dict):
     db.sla_wedstrijden_op(data)
+
+def sla_wedstrijd_op(wed_id: str, data: dict):
+    """Sla één wedstrijd op (sneller dan bulk)"""
+    db.sla_wedstrijd_op(wed_id, data)
 
 def sla_inschrijvingen_op(data: dict):
     # Niet meer nodig - inschrijvingen zitten in wedstrijden
@@ -1346,8 +1366,9 @@ def toon_speler_view(nbb_nummer: str):
         /* Minimale padding op alle niveaus */
         .main .block-container {
             padding-top: 0 !important;
-            padding-bottom: 0.5rem !important;
+            padding-bottom: 0 !important;
             margin-top: 0 !important;
+            margin-bottom: 0 !important;
         }
         
         /* App container */
@@ -1451,6 +1472,31 @@ def toon_speler_view(nbb_nummer: str):
         /* Toggle switches */
         [data-testid="stToggle"] label span {
             color: #003082 !important;
+        }
+        
+        /* Verberg footer */
+        footer {
+            display: none !important;
+        }
+        
+        /* Minimale ruimte na scrollbare container */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            margin-bottom: 0 !important;
+        }
+        
+        /* Verwijder extra ruimte onderaan main */
+        section[data-testid="stMain"] {
+            padding-bottom: 0 !important;
+        }
+        
+        /* Verberg "Made with Streamlit" */
+        .viewerBadge_container__r5tak {
+            display: none !important;
+        }
+        
+        /* Bottom bar verbergen */
+        .stBottom {
+            display: none !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1840,7 +1886,7 @@ def toon_speler_view(nbb_nummer: str):
                     scheidsrechters[nbb_nummer]["open_voor_begeleiding"] = nieuwe_open
                     scheidsrechters[nbb_nummer]["begeleiding_reden"] = nieuwe_reden if nieuwe_open else ""
                     scheidsrechters[nbb_nummer]["telefoon_begeleiding"] = nieuwe_tel if nieuwe_open else ""
-                    sla_scheidsrechters_op(scheidsrechters)
+                    sla_scheidsrechter_op(nbb_nummer, scheidsrechters[nbb_nummer])
                     st.session_state[f"begeleiding_expander_{nbb_nummer}"] = True
                     st.rerun()
     
@@ -3569,14 +3615,14 @@ def toon_scheidsrechters_beheer():
                                 "begeleiding_reden": begeleiding_reden if open_voor_begeleiding else "",
                                 "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
                             }
-                            sla_scheidsrechters_op(scheidsrechters)
+                            sla_scheidsrechter_op(nbb, scheidsrechters[nbb])
                             st.session_state[edit_key] = False
                             st.success("Scheidsrechter bijgewerkt!")
                             st.rerun()
                     with col_delete:
                         if st.form_submit_button("🗑️ Verwijderen", type="secondary"):
                             del scheidsrechters[nbb]
-                            sla_scheidsrechters_op(scheidsrechters)
+                            db.verwijder_scheidsrechter(nbb)
                             st.session_state[edit_key] = False
                             st.success("Scheidsrechter verwijderd!")
                             st.rerun()
@@ -3636,7 +3682,7 @@ def toon_scheidsrechters_beheer():
                     "min_wedstrijden": min_wed,
                     "eigen_teams": eigen_teams
                 }
-                sla_scheidsrechters_op(scheidsrechters)
+                sla_scheidsrechter_op(nbb_nummer, scheidsrechters[nbb_nummer])
                 st.success("Scheidsrechter toegevoegd!")
                 st.rerun()
             else:

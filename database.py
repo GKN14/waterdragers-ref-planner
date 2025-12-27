@@ -105,9 +105,9 @@ def sla_scheidsrechter_op(nbb_nummer: str, data: dict) -> bool:
         }
         supabase.table("scheidsrechters").upsert(record).execute()
         
-        # Invalideer cache
+        # Update cache in-place (sneller dan volledig herladen)
         if "_db_cache_scheidsrechters" in st.session_state:
-            del st.session_state["_db_cache_scheidsrechters"]
+            st.session_state["_db_cache_scheidsrechters"][nbb_nummer] = data
         
         return True
     except Exception as e:
@@ -120,9 +120,9 @@ def verwijder_scheidsrechter(nbb_nummer: str) -> bool:
         supabase = get_supabase_client()
         supabase.table("scheidsrechters").delete().eq("nbb_nummer", nbb_nummer).execute()
         
-        # Invalideer cache
+        # Update cache in-place
         if "_db_cache_scheidsrechters" in st.session_state:
-            del st.session_state["_db_cache_scheidsrechters"]
+            st.session_state["_db_cache_scheidsrechters"].pop(nbb_nummer, None)
         
         return True
     except Exception as e:
@@ -246,9 +246,9 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
         }
         supabase.table("wedstrijden").upsert(record).execute()
         
-        # Invalideer cache
+        # Update cache in-place (sneller dan volledig herladen)
         if "_db_cache_wedstrijden" in st.session_state:
-            del st.session_state["_db_cache_wedstrijden"]
+            st.session_state["_db_cache_wedstrijden"][wed_id] = data
         
         return True
     except Exception as e:
@@ -261,9 +261,9 @@ def verwijder_wedstrijd(wed_id: str) -> bool:
         supabase = get_supabase_client()
         supabase.table("wedstrijden").delete().eq("wed_id", wed_id).execute()
         
-        # Invalideer cache
+        # Update cache in-place
         if "_db_cache_wedstrijden" in st.session_state:
-            del st.session_state["_db_cache_wedstrijden"]
+            st.session_state["_db_cache_wedstrijden"].pop(wed_id, None)
         
         return True
     except Exception as e:
@@ -277,9 +277,9 @@ def verwijder_alle_wedstrijden() -> bool:
         # Delete all by selecting all and deleting
         supabase.table("wedstrijden").delete().neq("wed_id", "").execute()
         
-        # Invalideer cache
+        # Leeg cache volledig
         if "_db_cache_wedstrijden" in st.session_state:
-            del st.session_state["_db_cache_wedstrijden"]
+            st.session_state["_db_cache_wedstrijden"] = {}
         
         return True
     except Exception as e:
