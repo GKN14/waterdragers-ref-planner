@@ -38,7 +38,13 @@ def get_supabase_client() -> Client:
 # ============================================================
 
 def laad_scheidsrechters() -> dict:
-    """Laad alle scheidsrechters uit Supabase"""
+    """Laad alle scheidsrechters uit Supabase (met caching)"""
+    cache_key = "_db_cache_scheidsrechters"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("scheidsrechters").select("*").execute()
@@ -51,6 +57,9 @@ def laad_scheidsrechters() -> dict:
             row.pop("created_at", None)
             row.pop("updated_at", None)
             result[nbb] = row
+        
+        # Cache resultaat
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden scheidsrechters: {e}")
@@ -76,6 +85,10 @@ def sla_scheidsrechters_op(scheidsrechters: dict) -> bool:
             batch = records[i:i + batch_size]
             supabase.table("scheidsrechters").upsert(batch).execute()
         
+        # Invalideer cache
+        if "_db_cache_scheidsrechters" in st.session_state:
+            del st.session_state["_db_cache_scheidsrechters"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan scheidsrechters: {e}")
@@ -91,6 +104,11 @@ def sla_scheidsrechter_op(nbb_nummer: str, data: dict) -> bool:
             **data
         }
         supabase.table("scheidsrechters").upsert(record).execute()
+        
+        # Invalideer cache
+        if "_db_cache_scheidsrechters" in st.session_state:
+            del st.session_state["_db_cache_scheidsrechters"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan scheidsrechter: {e}")
@@ -101,6 +119,11 @@ def verwijder_scheidsrechter(nbb_nummer: str) -> bool:
     try:
         supabase = get_supabase_client()
         supabase.table("scheidsrechters").delete().eq("nbb_nummer", nbb_nummer).execute()
+        
+        # Invalideer cache
+        if "_db_cache_scheidsrechters" in st.session_state:
+            del st.session_state["_db_cache_scheidsrechters"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij verwijderen scheidsrechter: {e}")
@@ -111,7 +134,13 @@ def verwijder_scheidsrechter(nbb_nummer: str) -> bool:
 # ============================================================
 
 def laad_wedstrijden() -> dict:
-    """Laad alle wedstrijden uit Supabase"""
+    """Laad alle wedstrijden uit Supabase (met caching)"""
+    cache_key = "_db_cache_wedstrijden"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("wedstrijden").select("*").execute()
@@ -128,6 +157,9 @@ def laad_wedstrijden() -> dict:
             row.pop("created_at", None)
             row.pop("updated_at", None)
             result[wed_id] = row
+        
+        # Cache resultaat
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden wedstrijden: {e}")
@@ -173,6 +205,10 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
             batch = records[i:i + batch_size]
             supabase.table("wedstrijden").upsert(batch).execute()
         
+        # Invalideer cache
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan wedstrijden: {e}")
@@ -209,6 +245,11 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "updated_at": datetime.now().isoformat()
         }
         supabase.table("wedstrijden").upsert(record).execute()
+        
+        # Invalideer cache
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan wedstrijd: {e}")
@@ -219,6 +260,11 @@ def verwijder_wedstrijd(wed_id: str) -> bool:
     try:
         supabase = get_supabase_client()
         supabase.table("wedstrijden").delete().eq("wed_id", wed_id).execute()
+        
+        # Invalideer cache
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij verwijderen wedstrijd: {e}")
@@ -230,6 +276,11 @@ def verwijder_alle_wedstrijden() -> bool:
         supabase = get_supabase_client()
         # Delete all by selecting all and deleting
         supabase.table("wedstrijden").delete().neq("wed_id", "").execute()
+        
+        # Invalideer cache
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij verwijderen alle wedstrijden: {e}")

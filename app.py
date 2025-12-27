@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.5"
+APP_VERSIE = "1.8.6"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.6 (2025-12-27)
+**Performance:**
+- ⚡ Caching toegevoegd voor wedstrijden en scheidsrechters
+- 🔄 Cache wordt automatisch geinvalideerd bij wijzigingen
+- 🚀 Veel snellere laadtijden na eerste load
+
 ### v1.8.5 (2025-12-27)
 **Performance:**
 - ⚡ Bulk import voor wedstrijden en scheidsrechters (veel sneller)
