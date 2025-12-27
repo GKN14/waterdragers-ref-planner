@@ -313,6 +313,22 @@ def laad_beloningsinstellingen() -> dict:
             row = response.data[0]
             row.pop("id", None)
             row.pop("updated_at", None)
+            # Voeg eventueel ontbrekende keys toe met defaults
+            defaults = {
+                "punten_per_wedstrijd": 1,
+                "punten_eigen_niveau": 2,
+                "punten_2e_scheids": 1,
+                "punten_bonus_niveau_hoger": 1,
+                "punten_voor_voucher": 15,
+                "strikes_afmelden_48u": 1,
+                "strikes_afmelden_24u": 2,
+                "strikes_no_show": 3,
+                "strikes_waarschuwing_bij": 2,
+                "strikes_gesprek_bij": 3
+            }
+            for key, val in defaults.items():
+                if key not in row:
+                    row[key] = val
             return row
         
         # Default waarden
@@ -321,6 +337,7 @@ def laad_beloningsinstellingen() -> dict:
             "punten_eigen_niveau": 2,
             "punten_2e_scheids": 1,
             "punten_bonus_niveau_hoger": 1,
+            "punten_voor_voucher": 15,
             "strikes_afmelden_48u": 1,
             "strikes_afmelden_24u": 2,
             "strikes_no_show": 3,
@@ -334,6 +351,7 @@ def laad_beloningsinstellingen() -> dict:
             "punten_eigen_niveau": 2,
             "punten_2e_scheids": 1,
             "punten_bonus_niveau_hoger": 1,
+            "punten_voor_voucher": 15,
             "strikes_afmelden_48u": 1,
             "strikes_afmelden_24u": 2,
             "strikes_no_show": 3,

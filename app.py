@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.0"
+APP_VERSIE = "1.8.1"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.1 (2025-12-27)
+**Bugfix:**
+- 🐛 punten_voor_voucher toegevoegd aan database defaults
+
 ### v1.8.0 (2025-12-27)
 **Supabase Database integratie:**
 - 💾 Alle data nu opgeslagen in Supabase (PostgreSQL)
