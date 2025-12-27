@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.8"
+APP_VERSIE = "1.8.9"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.9 (2025-12-27)
+**Bugfix niveau regels:**
+- 📐 2e scheids max niveau = eigen niveau + 1 (was onbeperkt)
+- 🎓 Uitzondering: met MSE als 1e scheids nog steeds geen limiet
+- 📋 Sidebar toont nu correcte niveau regels
+
 ### v1.8.8 (2025-12-27)
 **Performance:**
 - ⚡ Individuele wijzigingen nu via single-record opslag (veel sneller)
@@ -946,28 +952,36 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
         return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "BS2 vereist"}
     
     # Check niveau
-    max_niveau = scheids.get("niveau_1e_scheids", 1) if als_eerste else scheids.get("niveau_2e_scheids", 5)
     wed_niveau = wed["niveau"]
     
-    if wed_niveau > max_niveau:
-        # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
-        if not als_eerste and wed.get("scheids_1"):
-            eerste_scheids_nbb = wed.get("scheids_1")
+    if als_eerste:
+        # 1e scheidsrechter: gewoon niveau check
+        max_niveau = scheids.get("niveau_1e_scheids", 1)
+        if wed_niveau > max_niveau:
+            return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau})"}
+    else:
+        # 2e scheidsrechter: complexere logica
+        niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        
+        # Check of er al een 1e scheids is en of die MSE is
+        eerste_scheids_nbb = wed.get("scheids_1")
+        if eerste_scheids_nbb:
             eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
-            
-            # Check of 1e scheids MSE is (niveau 5 of team MSE)
             is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
             
             if is_mse:
                 # MSE als 1e scheids: geen niveau-restrictie voor 2e scheids
                 pass
-            elif wed_niveau <= max_niveau + 1:
-                # Normale situatie: 2e scheids mag max 1 niveau hoger
-                pass
             else:
-                return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau + 1} met 1e scheids)"}
+                # Met 1e scheids (geen MSE): max 1 niveau hoger dan eigen niveau
+                max_niveau_2e = min(niveau_1e + 1, 5)
+                if wed_niveau > max_niveau_2e:
+                    return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau_2e})"}
         else:
-            return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog"}
+            # Nog geen 1e scheids: zelfstandig max 1 niveau hoger
+            max_niveau_2e = min(niveau_1e + 1, 5)
+            if wed_niveau > max_niveau_2e:
+                return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau_2e} zonder 1e scheids)"}
     
     # Check eigen team
     eigen_teams = scheids.get("eigen_teams", [])
@@ -1011,7 +1025,9 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         return []
     
     scheids = scheidsrechters[nbb_nummer]
-    max_niveau = scheids["niveau_1e_scheids"] if als_eerste else scheids["niveau_2e_scheids"]
+    niveau_1e = scheids.get("niveau_1e_scheids", 1)
+    # Voor 2e scheids: standaard max 1 niveau hoger dan eigen niveau
+    max_niveau_2e = min(niveau_1e + 1, 5)
     
     beschikbaar = []
     for wed_id, wed in wedstrijden.items():
@@ -1025,23 +1041,23 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
         
         # Check niveau
         wed_niveau = wed["niveau"]
-        if wed_niveau > max_niveau:
-            # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
-            if not als_eerste and wed.get("scheids_1"):
+        
+        if als_eerste:
+            # 1e scheidsrechter: gewoon niveau check
+            if wed_niveau > niveau_1e:
+                continue
+        else:
+            # 2e scheidsrechter: complexere logica
+            if wed_niveau > max_niveau_2e:
+                # Check of er een MSE als 1e scheids is (dan geen limiet)
                 eerste_scheids_nbb = wed.get("scheids_1")
-                eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
-                
-                # Check of 1e scheids MSE is (niveau 5 of team MSE)
-                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
-                
-                if is_mse:
-                    pass  # MSE als 1e scheids: geen niveau-restrictie
-                elif wed_niveau <= max_niveau + 1:
-                    pass  # Normale situatie: max 1 niveau hoger toegestaan
+                if eerste_scheids_nbb:
+                    eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+                    is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                    if not is_mse:
+                        continue  # Te hoog, geen MSE
                 else:
-                    continue  # Te hoog, zelfs met 1e scheids erbij
-            else:
-                continue  # Geen uitzondering mogelijk
+                    continue  # Te hoog, nog geen 1e scheids
         
         # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
         eigen_teams = scheids.get("eigen_teams", [])
@@ -1237,8 +1253,9 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     
     kandidaten = []
     for nbb, scheids in scheidsrechters.items():
-        max_niveau = scheids["niveau_1e_scheids"] if als_eerste else scheids["niveau_2e_scheids"]
-        eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+        niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        # Voor 2e scheids: standaard max 1 niveau hoger dan eigen niveau
+        max_niveau_2e = min(niveau_1e + 1, 5)
         
         # Check BS2 vereiste - dit geldt ALTIJD, ook voor 2e scheidsrechter
         if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
@@ -1246,23 +1263,23 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         
         # Check niveau
         wed_niveau = wed["niveau"]
-        if wed_niveau > max_niveau:
-            # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
-            if not als_eerste and wed.get("scheids_1"):
+        
+        if als_eerste:
+            # 1e scheidsrechter: gewoon niveau check
+            if wed_niveau > niveau_1e:
+                continue
+        else:
+            # 2e scheidsrechter: complexere logica
+            if wed_niveau > max_niveau_2e:
+                # Check of er een MSE als 1e scheids is (dan geen limiet)
                 eerste_scheids_nbb = wed.get("scheids_1")
-                eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
-                
-                # Check of 1e scheids MSE is (niveau 5 of team MSE)
-                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
-                
-                if is_mse:
-                    pass  # MSE als 1e scheids: geen niveau-restrictie
-                elif wed_niveau <= max_niveau + 1:
-                    pass  # Normale situatie: max 1 niveau hoger toegestaan
+                if eerste_scheids_nbb:
+                    eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+                    is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                    if not is_mse:
+                        continue  # Te hoog, geen MSE
                 else:
-                    continue  # Te hoog, zelfs met 1e scheids erbij
-            else:
-                continue  # Geen uitzondering mogelijk
+                    continue  # Te hoog, nog geen 1e scheids
         
         # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
         eigen_teams_scheids = scheids.get("eigen_teams", [])
@@ -1546,8 +1563,8 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown("**Jouw gegevens**")
         eigen_niveau = scheids.get("niveau_1e_scheids", 1)
         st.markdown(f"1e scheids niveau: **{eigen_niveau}**")
-        niveau_2e = scheids.get("niveau_2e_scheids", 5)
-        st.markdown(f"2e scheids niveau: **{niveau_2e}**")
+        max_niveau_2e = min(eigen_niveau + 1, 5)
+        st.markdown(f"2e scheids niveau: **{max_niveau_2e}**")
         if scheids.get("bs2_diploma", False):
             st.markdown("✅ BS2 diploma")
         eigen_teams = scheids.get("eigen_teams", [])
@@ -1562,11 +1579,9 @@ def toon_speler_view(nbb_nummer: str):
         
         # Niveau regels
         st.markdown("**📐 Niveau regels**")
-        max_met_ervaren = min(niveau_2e + 1, 5)  # Max niveau is 5
         st.markdown(f"""
         - 1e scheids: max niveau **{eigen_niveau}**
-        - 2e scheids: max niveau **{niveau_2e}**
-        - *Met ervaren 1e: max niveau **{max_met_ervaren}***
+        - 2e scheids: max niveau **{max_niveau_2e}**
         - *Met MSE als 1e: **geen limiet** 🎓*
         - BS2 wedstrijden: alleen met diploma
         """)
@@ -3560,12 +3575,12 @@ def toon_scheidsrechters_beheer():
                     with col2:
                         # Zorg voor geldige index (0-4)
                         idx_1e = max(0, min(4, scheids.get("niveau_1e_scheids", 1) - 1))
-                        idx_2e = max(0, min(4, scheids.get("niveau_2e_scheids", 5) - 1))
                         
                         niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], 
                                                   index=idx_1e, key=f"niv1_{nbb}")
-                        niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], 
-                                                  index=idx_2e, key=f"niv2_{nbb}")
+                        # 2e scheids niveau wordt automatisch berekend als niveau_1e + 1
+                        max_niveau_2e = min(niveau_1e + 1, 5)
+                        st.info(f"2e scheids t/m niveau: **{max_niveau_2e}** (automatisch)")
                         min_w = st.number_input("Minimum wedstrijden", min_value=0, 
                                                 value=int(scheids.get("min_wedstrijden", 2) or 2), key=f"min_{nbb}")
                     
@@ -3603,6 +3618,8 @@ def toon_scheidsrechters_beheer():
                     col_save, col_delete = st.columns(2)
                     with col_save:
                         if st.form_submit_button("💾 Opslaan"):
+                            # niveau_2e wordt automatisch berekend
+                            niveau_2e = min(niveau_1e + 1, 5)
                             scheidsrechters[nbb] = {
                                 "naam": nieuwe_naam,
                                 "bs2_diploma": bs2_diploma,
@@ -3630,14 +3647,17 @@ def toon_scheidsrechters_beheer():
                 # Weergave modus
                 col1, col2 = st.columns(2)
                 
+                niveau_1e = scheids.get('niveau_1e_scheids', 1)
+                max_niveau_2e = min(niveau_1e + 1, 5)
+                
                 with col1:
                     st.write(f"**NBB-nummer:** {nbb}")
                     st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
                     st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
                 
                 with col2:
-                    st.write(f"**1e scheids t/m niveau:** {scheids.get('niveau_1e_scheids', '-')}")
-                    st.write(f"**2e scheids t/m niveau:** {scheids.get('niveau_2e_scheids', '-')}")
+                    st.write(f"**1e scheids t/m niveau:** {niveau_1e}")
+                    st.write(f"**2e scheids t/m niveau:** {max_niveau_2e}")
                     st.write(f"**Eigen teams:** {', '.join(scheids.get('eigen_teams', [])) or '-'}")
                 
                 # Begeleidingsinfo tonen indien aanwezig
@@ -3666,13 +3686,16 @@ def toon_scheidsrechters_beheer():
             niet_op_zondag = st.checkbox("Niet op zondag")
         with col2:
             niveau_1e = st.selectbox("1e scheids t/m niveau", [1, 2, 3, 4, 5], index=1)
-            niveau_2e = st.selectbox("2e scheids t/m niveau", [1, 2, 3, 4, 5], index=4)
+            # 2e scheids niveau wordt automatisch berekend
+            st.info(f"2e scheids niveau wordt automatisch berekend (niveau + 1)")
             min_wed = st.number_input("Minimum wedstrijden", min_value=0, value=2)
         
         eigen_teams = st.multiselect("Eigen teams", options=SCHEIDSRECHTER_TEAMS)
         
         if st.form_submit_button("Toevoegen"):
             if nbb_nummer and naam:
+                # niveau_2e wordt automatisch berekend
+                niveau_2e = min(niveau_1e + 1, 5)
                 scheidsrechters[nbb_nummer] = {
                     "naam": naam,
                     "bs2_diploma": bs2_diploma,
