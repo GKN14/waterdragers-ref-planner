@@ -16,9 +16,16 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.2"
+APP_VERSIE = "1.7.3"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.3 (2025-12-27)
+**Slimmere tellingen bij filters:**
+- 📊 Mijn niveau/Boven niveau tonen nu BESCHIKBARE wedstrijden (niet ingeschreven, nog plek)
+- 📊 Hele overzicht toont extra wedstrijden buiten doelmaand
+- 📊 Titel toont aantal gefilterde wedstrijden: "Wedstrijdenoverzicht januari (12)"
+- 🎯 Mijn wed telt alleen wedstrijden in doelmaand
+
 ### v1.7.2 (2025-12-27)
 **Filter toggles verbeterd:**
 - 📊 Alle toggles tonen nu aantallen
@@ -1850,15 +1857,17 @@ def toon_speler_view(nbb_nummer: str):
                               if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
                               and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu)
     
-    # Tel eigen wedstrijden (thuis + uit)
+    # Tel eigen wedstrijden (thuis + uit) in doelmaand
     eigen_teams = scheids.get("eigen_teams", [])
     aantal_eigen_wed = sum(1 for wed in wedstrijden.values() 
                           if datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu
                           and not wed.get("geannuleerd", False)
+                          and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M").month == doel_maand
+                          and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M").year == doel_jaar
                           and (any(team_match(wed["thuisteam"], et) for et in eigen_teams) 
                                or any(team_match(wed["uitteam"], et) for et in eigen_teams)))
     
-    # Tel wedstrijden per niveau categorie (alleen fluitwedstrijden, niet eigen wedstrijden)
+    # Tel BESCHIKBARE wedstrijden per niveau (niet ingeschreven, nog plek vrij)
     aantal_mijn_niveau = 0
     aantal_boven_niveau = 0
     aantal_buiten_maand = 0
@@ -1875,15 +1884,26 @@ def toon_speler_view(nbb_nummer: str):
         if is_eigen:
             continue  # Eigen wedstrijden niet meetellen voor niveau filters
         
+        # Check of je al ingeschreven bent
+        al_ingeschreven = (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
+        if al_ingeschreven:
+            continue  # Al ingeschreven, niet meer beschikbaar
+        
+        # Check of er nog plek is
+        scheids_1_bezet = wed.get("scheids_1") is not None
+        scheids_2_bezet = wed.get("scheids_2") is not None
+        if scheids_1_bezet and scheids_2_bezet:
+            continue  # Geen plek meer
+        
         wed_niveau = wed.get("niveau", 1)
         is_in_doelmaand = wed_datum.month == doel_maand and wed_datum.year == doel_jaar
         
-        if wed_niveau == eigen_niveau:
-            aantal_mijn_niveau += 1
-        elif wed_niveau > eigen_niveau:
-            aantal_boven_niveau += 1
-        
-        if not is_in_doelmaand:
+        if is_in_doelmaand:
+            if wed_niveau == eigen_niveau:
+                aantal_mijn_niveau += 1
+            elif wed_niveau > eigen_niveau:
+                aantal_boven_niveau += 1
+        else:
             aantal_buiten_maand += 1
     
     # Filter toggles in compacte rij
@@ -2028,12 +2048,7 @@ def toon_speler_view(nbb_nummer: str):
     
         st.divider()
     
-        # Gecombineerd wedstrijdenoverzicht - titel afhankelijk van filter
-        if filter_hele_overzicht:
-            st.subheader("📝 Wedstrijdenoverzicht")
-        else:
-            st.subheader(f"📝 Wedstrijdenoverzicht {maand_namen_lang[doel_maand]}")
-    
+        # Verzamel eerst alle items om het aantal te kunnen tonen
         eigen_teams = scheids.get("eigen_teams", [])
     
         # Verzamel ALLE wedstrijden (thuiswedstrijden om te fluiten + eigen wedstrijden)
@@ -2116,6 +2131,12 @@ def toon_speler_view(nbb_nummer: str):
     
         # Sorteer chronologisch
         alle_items = sorted(alle_items, key=lambda x: x["datum"])
+        
+        # Titel met aantal gefilterde wedstrijden
+        if filter_hele_overzicht:
+            st.subheader(f"📝 Wedstrijdenoverzicht ({len(alle_items)})")
+        else:
+            st.subheader(f"📝 Wedstrijdenoverzicht {maand_namen_lang[doel_maand]} ({len(alle_items)})")
     
         if alle_items:
             # Groepeer items per dag
