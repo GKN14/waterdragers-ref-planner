@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.3"
+APP_VERSIE = "1.9.4"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.9.4 (2025-12-27)
+**UI:**
+- 🟠 Gebogen oranje lijn verbeterd (subtielere curve)
+- 🖼️ Logo's vergroot (70 → 90px)
+- ➖ Divider onder filters verwijderd
+
 ### v1.9.3 (2025-12-27)
 **UI:**
 - 🟠 Gebogen oranje lijn hersteld met SVG curve
@@ -1701,12 +1707,12 @@ def toon_speler_view(nbb_nummer: str):
     col_logo_left, col_title, col_logo_right = st.columns([1, 3, 1])
     with col_logo_left:
         if logo_path.exists():
-            st.image(str(logo_path), width=70)
+            st.image(str(logo_path), width=90)
     with col_title:
         st.markdown(f"### 🏀 Welkom, {scheids['naam']}")
     with col_logo_right:
         if bob_logo_path.exists():
-            st.image(str(bob_logo_path), width=70)
+            st.image(str(bob_logo_path), width=90)
     
     # Status metrics in compacte rij
     niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb_nummer)
@@ -1736,8 +1742,8 @@ def toon_speler_view(nbb_nummer: str):
     
     # Gebogen oranje lijn onder metrics (SVG voor echte curve)
     st.markdown("""
-    <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0 0.5rem 0;">
-        <path d="M 0 0 Q 50 20 100 0" stroke="#FF6600" stroke-width="3" fill="none"/>
+    <svg width="100%" height="15" viewBox="0 0 100 15" preserveAspectRatio="none" style="display: block; margin: 0.5rem 0;">
+        <path d="M 0 2 Q 50 15 100 2" stroke="#FF6600" stroke-width="3" fill="none" stroke-linecap="round"/>
     </svg>
     """, unsafe_allow_html=True)
     
@@ -2059,8 +2065,6 @@ def toon_speler_view(nbb_nummer: str):
         filter_eigen_wedstrijd = st.toggle(f"Mijn wed ({aantal_eigen_wed})", value=True, key="filter_eigen_wedstrijd")
     with col_f5:
         filter_hele_overzicht = st.toggle(f"Hele overzicht (+{aantal_buiten_maand})", value=False, key="filter_hele_overzicht")
-    
-    st.divider()
     
     # Scrollbare container voor wedstrijden
     with st.container(height=600):
