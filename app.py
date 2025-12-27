@@ -16,9 +16,16 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.0"
+APP_VERSIE = "1.7.1"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.1 (2025-12-27)
+**UI verbeteringen:**
+- 🎨 Sidebar nu lichtgrijs
+- 🔘 Nieuwe filter: "Mijn wed" voor eigen wedstrijden aan/uit
+- 🚗 Uitwedstrijden: thuisteam nu eerst genoemd (conventie)
+- 🏠 Thuiswedstrijden: duidelijker label
+
 ### v1.7.0 (2025-12-27)
 **BOB Huisstijl geïmplementeerd:**
 - 🎨 Sidebar: wit met blauwe border (#003082)
@@ -1338,9 +1345,9 @@ def toon_speler_view(nbb_nummer: str):
             padding-top: 0 !important;
         }
         
-        /* Sidebar styling - wit met blauwe border */
+        /* Sidebar styling - lichtgrijs met blauwe border */
         section[data-testid="stSidebar"] {
-            background-color: white !important;
+            background-color: #f8f9fa !important;
             border-right: 3px solid #003082 !important;
         }
         
@@ -1834,9 +1841,17 @@ def toon_speler_view(nbb_nummer: str):
                               if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
                               and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu)
     
+    # Tel eigen wedstrijden (thuis + uit)
+    eigen_teams = scheids.get("eigen_teams", [])
+    aantal_eigen_wed = sum(1 for wed in wedstrijden.values() 
+                          if datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu
+                          and not wed.get("geannuleerd", False)
+                          and (any(team_match(wed["thuisteam"], et) for et in eigen_teams) 
+                               or any(team_match(wed["uitteam"], et) for et in eigen_teams)))
+    
     # Filter toggles in compacte rij
     st.markdown("**Filters:**")
-    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
     
     with col_f1:
         filter_ingeschreven = st.toggle(f"Ingeschreven ({aantal_ingeschreven})", value=True, key="filter_ingeschreven")
@@ -1845,6 +1860,8 @@ def toon_speler_view(nbb_nummer: str):
     with col_f3:
         filter_boven_niveau = st.toggle("Boven niveau", value=True, key="filter_boven_niveau")
     with col_f4:
+        filter_eigen_wedstrijd = st.toggle(f"Mijn wed ({aantal_eigen_wed})", value=True, key="filter_eigen_wedstrijd")
+    with col_f5:
         filter_alle_maanden = st.toggle(f"Buiten {maand_namen_kort[doel_maand]}", value=False, key="filter_alle_maanden")
     
     st.divider()
@@ -2005,6 +2022,8 @@ def toon_speler_view(nbb_nummer: str):
             if wed.get("type") == "uit":
                 # Uitwedstrijd van eigen team
                 if is_eigen_thuis:
+                    if not filter_eigen_wedstrijd:
+                        continue
                     reistijd = wed.get("reistijd_minuten", 45)
                     terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
                     alle_items.append({
@@ -2014,11 +2033,14 @@ def toon_speler_view(nbb_nummer: str):
                         "wed_datum": wed_datum,
                         "thuisteam": wed["thuisteam"],
                         "uitteam": wed["uitteam"],
+                        "tegenstander": wed["uitteam"],
                         "terug_tijd": terug_tijd
                     })
             else:
                 # Thuiswedstrijd
                 if is_eigen_thuis or is_eigen_uit:
+                    if not filter_eigen_wedstrijd:
+                        continue
                     # Eigen thuiswedstrijd (speler speelt zelf)
                     eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
                     alle_items.append({
@@ -2098,12 +2120,12 @@ def toon_speler_view(nbb_nummer: str):
                         item_datum = item["wed_datum"]
                     
                         if item["type"] == "eigen_uit":
-                            # Eigen uitwedstrijd - opvallend blok
-                            st.warning(f"🚗 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
+                            # Eigen uitwedstrijd - opvallend blok, tegenstander (thuis) eerst
+                            st.warning(f"🚗 **{item_datum.strftime('%H:%M')} - {item['uitteam']}** vs {item['thuisteam']}  \n*Jouw uitwedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
                             
                         elif item["type"] == "eigen_thuis":
                             # Eigen thuiswedstrijd - opvallend blok
-                            st.warning(f"🏠 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
+                            st.warning(f"🏠 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw thuiswedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
                             
                         else:
                             # Wedstrijd om te fluiten
