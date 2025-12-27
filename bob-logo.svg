@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  
+  <!-- Fluitje silhouet -->
+  <g>
+    <!-- Rond deel - grote cirkel -->
+    <circle cx="310" cy="160" r="90" fill="#FF6600"/>
+    
+    <!-- Witte binnenste cirkel voor O -->
+    <circle cx="310" cy="160" r="58" fill="#FFFFFF"/>
+    
+    <!-- Mondstuk - rechthoekige balk die bovenin de cirkel uitkomt -->
+    <rect x="40" y="100" width="210" height="42" fill="#FF6600"/>
+    
+    <!-- Kleine ring aan het einde -->
+    <circle cx="415" cy="160" r="16" fill="none" stroke="#FF6600" stroke-width="7"/>
+    
+    <!-- Verbindingsstuk tussen cirkel en ring -->
+    <rect x="396" y="152" width="10" height="16" fill="#FF6600"/>
+  </g>
+  
+  <!-- Basketbal boven (Beschikbaarheid) -->
+  <g>
+    <!-- Oranje bal -->
+    <circle cx="145" cy="45" r="50" fill="#FF6600"/>
+    
+    <!-- Basketbal lijnen in blauw -->
+    <line x1="145" y1="-5" x2="145" y2="95" stroke="#003082" stroke-width="2.5"/>
+    <line x1="95" y1="45" x2="195" y2="45" stroke="#003082" stroke-width="2.5"/>
+    <path d="M110 0 Q95 45 110 90" fill="none" stroke="#003082" stroke-width="2.5"/>
+    <path d="M180 0 Q195 45 180 90" fill="none" stroke="#003082" stroke-width="2.5"/>
+    
+    <!-- Witte cirkel achter de B -->
+    <circle cx="145" cy="45" r="35" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- Basketbal onder (Belonen) -->
+  <g>
+    <!-- Oranje bal -->
+    <circle cx="145" cy="217" r="50" fill="#FF6600"/>
+    
+    <!-- Basketbal lijnen in blauw -->
+    <line x1="145" y1="167" x2="145" y2="267" stroke="#003082" stroke-width="2.5"/>
+    <line x1="95" y1="217" x2="195" y2="217" stroke="#003082" stroke-width="2.5"/>
+    <path d="M110 172 Q95 217 110 262" fill="none" stroke="#003082" stroke-width="2.5"/>
+    <path d="M180 172 Q195 217 180 262" fill="none" stroke="#003082" stroke-width="2.5"/>
+    
+    <!-- Witte cirkel achter de B -->
+    <circle cx="145" cy="217" r="35" fill="#FFFFFF"/>
+  </g>
+  
+  <!-- O als blauwe lijn -->
+  <circle cx="310" cy="160" r="50" fill="none" stroke="#003082" stroke-width="4"/>
+  
+  <!-- B boven - witte vette B -->
+  <text x="145" y="77" 
+        font-family="'Arial Black', 'Helvetica Neue', sans-serif" 
+        font-size="90" 
+        font-weight="900" 
+        fill="#FFFFFF"
+        text-anchor="middle">B</text>
+  
+  <!-- B boven - dunne blauwe lijn eroverheen -->
+  <text x="145" y="77" 
+        font-family="'Arial', 'Helvetica Neue', sans-serif" 
+        font-size="90" 
+        font-weight="400" 
+        fill="none"
+        stroke="#003082"
+        stroke-width="3"
+        text-anchor="middle">B</text>
+  
+  <!-- B onder - witte vette B -->
+  <text x="145" y="249" 
+        font-family="'Arial Black', 'Helvetica Neue', sans-serif" 
+        font-size="90" 
+        font-weight="900" 
+        fill="#FFFFFF"
+        text-anchor="middle">B</text>
+  
+  <!-- B onder - dunne blauwe lijn eroverheen -->
+  <text x="145" y="249" 
+        font-family="'Arial', 'Helvetica Neue', sans-serif" 
+        font-size="90" 
+        font-weight="400" 
+        fill="none"
+        stroke="#003082"
+        stroke-width="3"
+        text-anchor="middle">B</text>
+  
+  <!-- Subtitel -->
+  <text x="240" y="310" 
+        font-family="'Arial', sans-serif" 
+        font-size="11" 
+        fill="#003082" 
+        text-anchor="middle"
+        letter-spacing="1.5">BESCHIKBAARHEID • ONTWIKKELEN • BELONEN</text>
+</svg>
