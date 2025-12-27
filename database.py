@@ -315,16 +315,28 @@ def laad_beloningsinstellingen() -> dict:
             row.pop("updated_at", None)
             # Voeg eventueel ontbrekende keys toe met defaults
             defaults = {
+                # Punten
                 "punten_per_wedstrijd": 1,
                 "punten_eigen_niveau": 2,
                 "punten_2e_scheids": 1,
                 "punten_bonus_niveau_hoger": 1,
+                "punten_lastig_tijdstip": 1,
+                "punten_inval_48u": 3,
+                "punten_inval_24u": 5,
                 "punten_voor_voucher": 15,
+                # Strikes
                 "strikes_afmelden_48u": 1,
                 "strikes_afmelden_24u": 2,
-                "strikes_no_show": 3,
+                "strikes_afmelding_48u": 1,
+                "strikes_afmelding_24u": 2,
+                "strikes_no_show": 5,
                 "strikes_waarschuwing_bij": 2,
-                "strikes_gesprek_bij": 3
+                "strikes_gesprek_bij": 3,
+                # Strike reductie
+                "strike_reductie_extra_wedstrijd": 1,
+                "strike_reductie_invallen": 2,
+                # Seizoen
+                "strikes_vervallen_einde_seizoen": False
             }
             for key, val in defaults.items():
                 if key not in row:
@@ -337,12 +349,20 @@ def laad_beloningsinstellingen() -> dict:
             "punten_eigen_niveau": 2,
             "punten_2e_scheids": 1,
             "punten_bonus_niveau_hoger": 1,
+            "punten_lastig_tijdstip": 1,
+            "punten_inval_48u": 3,
+            "punten_inval_24u": 5,
             "punten_voor_voucher": 15,
             "strikes_afmelden_48u": 1,
             "strikes_afmelden_24u": 2,
-            "strikes_no_show": 3,
+            "strikes_afmelding_48u": 1,
+            "strikes_afmelding_24u": 2,
+            "strikes_no_show": 5,
             "strikes_waarschuwing_bij": 2,
-            "strikes_gesprek_bij": 3
+            "strikes_gesprek_bij": 3,
+            "strike_reductie_extra_wedstrijd": 1,
+            "strike_reductie_invallen": 2,
+            "strikes_vervallen_einde_seizoen": False
         }
     except Exception as e:
         st.error(f"Fout bij laden beloningsinstellingen: {e}")
@@ -351,12 +371,20 @@ def laad_beloningsinstellingen() -> dict:
             "punten_eigen_niveau": 2,
             "punten_2e_scheids": 1,
             "punten_bonus_niveau_hoger": 1,
+            "punten_lastig_tijdstip": 1,
+            "punten_inval_48u": 3,
+            "punten_inval_24u": 5,
             "punten_voor_voucher": 15,
             "strikes_afmelden_48u": 1,
             "strikes_afmelden_24u": 2,
-            "strikes_no_show": 3,
+            "strikes_afmelding_48u": 1,
+            "strikes_afmelding_24u": 2,
+            "strikes_no_show": 5,
             "strikes_waarschuwing_bij": 2,
-            "strikes_gesprek_bij": 3
+            "strikes_gesprek_bij": 3,
+            "strike_reductie_extra_wedstrijd": 1,
+            "strike_reductie_invallen": 2,
+            "strikes_vervallen_einde_seizoen": False
         }
 
 def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
