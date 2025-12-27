@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.2"
+APP_VERSIE = "1.8.3"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.3 (2025-12-27)
+**Bugfix:**
+- 🔄 Automatische refresh na import scheidsrechters/wedstrijden
+
 ### v1.8.2 (2025-12-27)
 **Bugfix:**
 - 🐛 Alle beloningsinstellingen velden toegevoegd aan database defaults
@@ -5079,6 +5083,7 @@ def toon_import_export():
             
             sla_scheidsrechters_op(scheidsrechters)
             st.success(f"{count} scheidsrechters geïmporteerd!")
+            st.rerun()
     
     with tab4:
         st.write("**Import wedstrijden (CSV)**")
@@ -5125,6 +5130,7 @@ def toon_import_export():
             
             sla_wedstrijden_op(wedstrijden)
             st.success(f"{count} wedstrijden geïmporteerd!")
+            st.rerun()
     
     with tab5:
         st.write("**Export planning (CSV)**")
