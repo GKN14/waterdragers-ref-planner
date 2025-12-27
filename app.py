@@ -1697,7 +1697,7 @@ def toon_speler_view(nbb_nummer: str):
     st.divider()
     
     # Scrollbare container voor wedstrijden
-    with st.container(height=450):
+    with st.container(height=600):
         
         # Toon huidige inschrijvingen
         st.subheader("🎯 Ingeschreven")
