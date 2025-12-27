@@ -20,12 +20,13 @@ APP_VERSIE = "1.5.0"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
 ### v1.5.0 (2025-12-27)
-**Compacte header layout:**
+**Compacte header layout met scrollbare wedstrijden:**
 - 🎨 Twee logo's: Waterdragers links, BOB rechts
 - 📐 Minder witruimte, compactere metrics
 - 📋 Alle actie-items (klusjes, uitnodigingen, verzoeken) in header
 - 🎓 Begeleiding toggle compact in header
 - 📅 Status en deadline naast elkaar
+- 📜 Wedstrijden in scrollbare container (header blijft vast)
 
 ### v1.4.0 (2025-12-27)
 **Niveau-exceptie bij MSE-begeleiding:**
@@ -1260,47 +1261,52 @@ def toon_speler_view(nbb_nummer: str):
     # Haal speler stats vroeg op voor gebruik in sidebar
     speler_stats = get_speler_stats(nbb_nummer)
     
-    # CSS voor compactere layout
+    # CSS voor compacte layout
     st.markdown("""
     <style>
-        /* Minder witruimte bovenaan */
-        .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 1rem !important;
+        /* Verberg standaard Streamlit header voor meer ruimte */
+        header[data-testid="stHeader"] {
+            display: none;
+        }
+        
+        /* Minimale padding */
+        .main .block-container {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
         }
         
         /* Compactere metrics */
         [data-testid="stMetric"] {
             background-color: #f8f9fa;
-            padding: 0.5rem;
+            padding: 0.3rem;
             border-radius: 0.5rem;
         }
         [data-testid="stMetricValue"] {
-            font-size: 1.5rem;
+            font-size: 1.2rem;
         }
         [data-testid="stMetricLabel"] {
-            font-size: 0.8rem;
-        }
-        
-        /* Header container */
-        .header-container {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 0.75rem;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border: 1px solid #dee2e6;
+            font-size: 0.7rem;
         }
         
         /* Compacte alerts */
         .stAlert {
-            padding: 0.5rem 1rem !important;
-            margin-bottom: 0.5rem !important;
+            padding: 0.3rem 0.6rem !important;
+            margin-bottom: 0.3rem !important;
+        }
+        .stAlert p {
+            margin-bottom: 0 !important;
         }
         
-        /* Logo styling */
-        .logo-container img {
-            max-height: 60px;
-            width: auto;
+        /* Compacte expanders */
+        details summary {
+            padding: 0.3rem 0 !important;
+            font-size: 0.9rem;
+        }
+        
+        /* Scrollbare container styling */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 0.5rem;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1690,521 +1696,520 @@ def toon_speler_view(nbb_nummer: str):
     
     st.divider()
     
-    # ============================================================
-    # WEDSTRIJDEN CONTENT (scrollbaar)
-    # ============================================================
+    # Scrollbare container voor wedstrijden
+    with st.container(height=450):
+        
+        # Toon huidige inschrijvingen
+        st.subheader("🎯 Ingeschreven")
     
-    # Toon huidige inschrijvingen
-    st.subheader("🎯 Ingeschreven")
+        mijn_wedstrijden = []
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("scheids_1") == nbb_nummer:
+                mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "1e scheidsrechter"})
+            elif wed.get("scheids_2") == nbb_nummer:
+                mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "2e scheidsrechter"})
     
-    mijn_wedstrijden = []
-    for wed_id, wed in wedstrijden.items():
-        if wed.get("scheids_1") == nbb_nummer:
-            mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "1e scheidsrechter"})
-        elif wed.get("scheids_2") == nbb_nummer:
-            mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "2e scheidsrechter"})
-    
-    if mijn_wedstrijden:
-        for wed in sorted(mijn_wedstrijden, key=lambda x: x["datum"]):
-            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+        if mijn_wedstrijden:
+            for wed in sorted(mijn_wedstrijden, key=lambda x: x["datum"]):
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
             
-            # Check of er al een openstaand vervangingsverzoek is
-            verzoeken = laad_vervangingsverzoeken()
-            heeft_openstaand_verzoek = any(
-                v.get("wed_id") == wed["id"] and 
-                v.get("aanvrager_nbb") == nbb_nummer and 
-                v.get("status") == "pending"
-                for v in verzoeken.values()
-            )
+                # Check of er al een openstaand vervangingsverzoek is
+                verzoeken = laad_vervangingsverzoeken()
+                heeft_openstaand_verzoek = any(
+                    v.get("wed_id") == wed["id"] and 
+                    v.get("aanvrager_nbb") == nbb_nummer and 
+                    v.get("status") == "pending"
+                    for v in verzoeken.values()
+                )
             
-            with st.container():
-                col1, col2, col3 = st.columns([2, 3, 2])
-                with col1:
-                    st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
-                with col2:
-                    st.write(f"{wed['thuisteam']} - {wed['uitteam']}")
-                with col3:
-                    st.write(f"*{wed['rol']}*")
+                with st.container():
+                    col1, col2, col3 = st.columns([2, 3, 2])
+                    with col1:
+                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
+                    with col2:
+                        st.write(f"{wed['thuisteam']} - {wed['uitteam']}")
+                    with col3:
+                        st.write(f"*{wed['rol']}*")
                 
-                if heeft_openstaand_verzoek:
-                    st.warning("⏳ Wacht op bevestiging van vervanger...")
-                elif kan_inschrijven:
-                    # Afmelden met expander voor opties
-                    with st.expander("❌ Afmelden"):
-                        st.write("**Hoe wil je afmelden?**")
+                    if heeft_openstaand_verzoek:
+                        st.warning("⏳ Wacht op bevestiging van vervanger...")
+                    elif kan_inschrijven:
+                        # Afmelden met expander voor opties
+                        with st.expander("❌ Afmelden"):
+                            st.write("**Hoe wil je afmelden?**")
                         
-                        # Bereken hoeveel uur tot de wedstrijd
-                        uren_tot_wed = (wed_datum - datetime.now()).total_seconds() / 3600
+                            # Bereken hoeveel uur tot de wedstrijd
+                            uren_tot_wed = (wed_datum - datetime.now()).total_seconds() / 3600
                         
-                        if uren_tot_wed < 48:
-                            if uren_tot_wed < 24:
-                                st.error("⚠️ **Let op:** Afmelden zonder vervanging binnen 24 uur geeft **2 strikes**.")
-                            else:
-                                st.warning("⚠️ **Let op:** Afmelden zonder vervanging binnen 48 uur geeft **1 strike**.")
-                        
-                        col_zonder, col_met = st.columns(2)
-                        
-                        with col_zonder:
-                            st.write("**Zonder vervanging**")
-                            strikes_tekst = ""
-                            if uren_tot_wed < 24:
-                                strikes_tekst = " (2 strikes)"
-                            elif uren_tot_wed < 48:
-                                strikes_tekst = " (1 strike)"
-                            
-                            if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
-                                positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
-                                wedstrijden[wed["id"]][positie] = None
-                                sla_wedstrijden_op(wedstrijden)
-                                
-                                # Strikes toekennen indien nodig
+                            if uren_tot_wed < 48:
                                 if uren_tot_wed < 24:
-                                    voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
-                                elif uren_tot_wed < 48:
-                                    voeg_strike_toe(nbb_nummer, 1, f"Afmelding <48u voor {wed['thuisteam']} vs {wed['uitteam']}")
-                                
-                                st.rerun()
+                                    st.error("⚠️ **Let op:** Afmelden zonder vervanging binnen 24 uur geeft **2 strikes**.")
+                                else:
+                                    st.warning("⚠️ **Let op:** Afmelden zonder vervanging binnen 48 uur geeft **1 strike**.")
                         
-                        with col_met:
-                            st.write("**Met vervanging** (geen strike)")
+                            col_zonder, col_met = st.columns(2)
+                        
+                            with col_zonder:
+                                st.write("**Zonder vervanging**")
+                                strikes_tekst = ""
+                                if uren_tot_wed < 24:
+                                    strikes_tekst = " (2 strikes)"
+                                elif uren_tot_wed < 48:
+                                    strikes_tekst = " (1 strike)"
                             
-                            # Haal geschikte vervangers op
-                            positie = wed["rol"]
-                            als_eerste = positie == "1e scheidsrechter"
-                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste)
-                            
-                            # Filter jezelf eruit
-                            kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
-                            
-                            if kandidaten:
-                                vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] for k in kandidaten}
+                                if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
+                                    positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
+                                    wedstrijden[wed["id"]][positie] = None
+                                    sla_wedstrijden_op(wedstrijden)
                                 
-                                geselecteerde = st.selectbox(
-                                    "Selecteer vervanger",
-                                    options=list(vervanger_opties.keys()),
-                                    key=f"vervanger_{wed['id']}"
-                                )
+                                    # Strikes toekennen indien nodig
+                                    if uren_tot_wed < 24:
+                                        voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                    elif uren_tot_wed < 48:
+                                        voeg_strike_toe(nbb_nummer, 1, f"Afmelding <48u voor {wed['thuisteam']} vs {wed['uitteam']}")
                                 
-                                if st.button("📤 Verstuur verzoek", key=f"verzoek_{wed['id']}", type="primary"):
-                                    vervanger_nbb = vervanger_opties[geselecteerde]
-                                    
-                                    # Maak vervangingsverzoek aan
-                                    verzoek_id = f"verz_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-                                    verzoeken[verzoek_id] = {
-                                        "id": verzoek_id,
-                                        "wed_id": wed["id"],
-                                        "aanvrager_nbb": nbb_nummer,
-                                        "vervanger_nbb": vervanger_nbb,
-                                        "positie": positie,
-                                        "status": "pending",
-                                        "aangemaakt_op": datetime.now().isoformat()
-                                    }
-                                    sla_vervangingsverzoeken_op(verzoeken)
-                                    
-                                    vervanger_naam = scheidsrechters.get(vervanger_nbb, {}).get("naam", "")
-                                    st.success(f"Verzoek verstuurd naar {vervanger_naam}. Zorg dat die persoon het bevestigt!")
                                     st.rerun()
-                            else:
-                                st.caption("*Geen geschikte vervangers beschikbaar*")
-    else:
-        st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
-    
-    if not kan_inschrijven:
-        return
-    
-    st.divider()
-    
-    # Gecombineerd wedstrijdenoverzicht
-    st.subheader("📝 Wedstrijdenoverzicht")
-    
-    # Bepaal welke maand getoond moet worden op basis van deadline
-    deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    
-    if deadline_dt.day <= 15:
-        doel_maand = deadline_dt.month
-        doel_jaar = deadline_dt.year
-    else:
-        if deadline_dt.month == 12:
-            doel_maand = 1
-            doel_jaar = deadline_dt.year + 1
+                        
+                            with col_met:
+                                st.write("**Met vervanging** (geen strike)")
+                            
+                                # Haal geschikte vervangers op
+                                positie = wed["rol"]
+                                als_eerste = positie == "1e scheidsrechter"
+                                kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste)
+                            
+                                # Filter jezelf eruit
+                                kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
+                            
+                                if kandidaten:
+                                    vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] for k in kandidaten}
+                                
+                                    geselecteerde = st.selectbox(
+                                        "Selecteer vervanger",
+                                        options=list(vervanger_opties.keys()),
+                                        key=f"vervanger_{wed['id']}"
+                                    )
+                                
+                                    if st.button("📤 Verstuur verzoek", key=f"verzoek_{wed['id']}", type="primary"):
+                                        vervanger_nbb = vervanger_opties[geselecteerde]
+                                    
+                                        # Maak vervangingsverzoek aan
+                                        verzoek_id = f"verz_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                                        verzoeken[verzoek_id] = {
+                                            "id": verzoek_id,
+                                            "wed_id": wed["id"],
+                                            "aanvrager_nbb": nbb_nummer,
+                                            "vervanger_nbb": vervanger_nbb,
+                                            "positie": positie,
+                                            "status": "pending",
+                                            "aangemaakt_op": datetime.now().isoformat()
+                                        }
+                                        sla_vervangingsverzoeken_op(verzoeken)
+                                    
+                                        vervanger_naam = scheidsrechters.get(vervanger_nbb, {}).get("naam", "")
+                                        st.success(f"Verzoek verstuurd naar {vervanger_naam}. Zorg dat die persoon het bevestigt!")
+                                        st.rerun()
+                                else:
+                                    st.caption("*Geen geschikte vervangers beschikbaar*")
         else:
-            doel_maand = deadline_dt.month + 1
+            st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
+    
+        if not kan_inschrijven:
+            return
+    
+        st.divider()
+    
+        # Gecombineerd wedstrijdenoverzicht
+        st.subheader("📝 Wedstrijdenoverzicht")
+    
+        # Bepaal welke maand getoond moet worden op basis van deadline
+        deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    
+        if deadline_dt.day <= 15:
+            doel_maand = deadline_dt.month
             doel_jaar = deadline_dt.year
+        else:
+            if deadline_dt.month == 12:
+                doel_maand = 1
+                doel_jaar = deadline_dt.year + 1
+            else:
+                doel_maand = deadline_dt.month + 1
+                doel_jaar = deadline_dt.year
     
-    maand_namen = ["", "januari", "februari", "maart", "april", "mei", "juni", 
-                   "juli", "augustus", "september", "oktober", "november", "december"]
+        maand_namen = ["", "januari", "februari", "maart", "april", "mei", "juni", 
+                       "juli", "augustus", "september", "oktober", "november", "december"]
     
-    # Filter optie
-    toon_alle = st.toggle(f"Toon ook wedstrijden buiten {maand_namen[doel_maand]}", value=False, 
-                          help=f"Standaard zie je alleen wedstrijden van {maand_namen[doel_maand]} {doel_jaar}. Zet aan om alle toekomstige wedstrijden te zien.")
+        # Filter optie
+        toon_alle = st.toggle(f"Toon ook wedstrijden buiten {maand_namen[doel_maand]}", value=False, 
+                              help=f"Standaard zie je alleen wedstrijden van {maand_namen[doel_maand]} {doel_jaar}. Zet aan om alle toekomstige wedstrijden te zien.")
     
-    eigen_teams = scheids.get("eigen_teams", [])
+        eigen_teams = scheids.get("eigen_teams", [])
     
-    # Verzamel ALLE wedstrijden (thuiswedstrijden om te fluiten + eigen wedstrijden)
-    alle_items = []
+        # Verzamel ALLE wedstrijden (thuiswedstrijden om te fluiten + eigen wedstrijden)
+        alle_items = []
     
-    for wed_id, wed in wedstrijden.items():
-        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        for wed_id, wed in wedstrijden.items():
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         
-        # Skip geannuleerde wedstrijden
-        if wed.get("geannuleerd", False):
-            continue
-        
-        # Filter op toekomst
-        if wed_datum < datetime.now():
-            continue
-        
-        # Filter op doelmaand indien nodig
-        if not toon_alle:
-            if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
+            # Skip geannuleerde wedstrijden
+            if wed.get("geannuleerd", False):
                 continue
         
-        # Check of dit een eigen wedstrijd is
-        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
-        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+            # Filter op toekomst
+            if wed_datum < datetime.now():
+                continue
         
-        if wed.get("type") == "uit":
-            # Uitwedstrijd van eigen team
-            if is_eigen_thuis:
-                reistijd = wed.get("reistijd_minuten", 45)
-                terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
-                alle_items.append({
-                    "id": wed_id,
-                    "type": "eigen_uit",
-                    "datum": wed["datum"],
-                    "wed_datum": wed_datum,
-                    "thuisteam": wed["thuisteam"],
-                    "uitteam": wed["uitteam"],
-                    "terug_tijd": terug_tijd
-                })
+            # Filter op doelmaand indien nodig
+            if not toon_alle:
+                if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
+                    continue
+        
+            # Check of dit een eigen wedstrijd is
+            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        
+            if wed.get("type") == "uit":
+                # Uitwedstrijd van eigen team
+                if is_eigen_thuis:
+                    reistijd = wed.get("reistijd_minuten", 45)
+                    terug_tijd = wed_datum + timedelta(minutes=reistijd) + timedelta(hours=1, minutes=30) + timedelta(minutes=reistijd)
+                    alle_items.append({
+                        "id": wed_id,
+                        "type": "eigen_uit",
+                        "datum": wed["datum"],
+                        "wed_datum": wed_datum,
+                        "thuisteam": wed["thuisteam"],
+                        "uitteam": wed["uitteam"],
+                        "terug_tijd": terug_tijd
+                    })
+            else:
+                # Thuiswedstrijd
+                if is_eigen_thuis or is_eigen_uit:
+                    # Eigen thuiswedstrijd (speler speelt zelf)
+                    eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
+                    alle_items.append({
+                        "id": wed_id,
+                        "type": "eigen_thuis",
+                        "datum": wed["datum"],
+                        "wed_datum": wed_datum,
+                        "thuisteam": wed["thuisteam"],
+                        "uitteam": wed["uitteam"],
+                        "eind_tijd": eind_tijd
+                    })
+                else:
+                    # Wedstrijd om te fluiten
+                    alle_items.append({
+                        "id": wed_id,
+                        "type": "fluiten",
+                        "datum": wed["datum"],
+                        "wed_datum": wed_datum,
+                        **wed
+                    })
+    
+        # Sorteer chronologisch
+        alle_items = sorted(alle_items, key=lambda x: x["datum"])
+    
+        if not alle_items:
+            st.write("*Geen wedstrijden in deze periode.*")
         else:
-            # Thuiswedstrijd
-            if is_eigen_thuis or is_eigen_uit:
-                # Eigen thuiswedstrijd (speler speelt zelf)
-                eind_tijd = wed_datum + timedelta(hours=1, minutes=30)
-                alle_items.append({
-                    "id": wed_id,
-                    "type": "eigen_thuis",
-                    "datum": wed["datum"],
-                    "wed_datum": wed_datum,
-                    "thuisteam": wed["thuisteam"],
-                    "uitteam": wed["uitteam"],
-                    "eind_tijd": eind_tijd
-                })
-            else:
-                # Wedstrijd om te fluiten
-                alle_items.append({
-                    "id": wed_id,
-                    "type": "fluiten",
-                    "datum": wed["datum"],
-                    "wed_datum": wed_datum,
-                    **wed
-                })
-    
-    # Sorteer chronologisch
-    alle_items = sorted(alle_items, key=lambda x: x["datum"])
-    
-    if not alle_items:
-        st.write("*Geen wedstrijden in deze periode.*")
-    else:
-        # Groepeer items per dag
-        dagen = {}
-        for item in alle_items:
-            dag_key = item["wed_datum"].strftime("%Y-%m-%d")
-            if dag_key not in dagen:
-                dagen[dag_key] = []
-            dagen[dag_key].append(item)
+            # Groepeer items per dag
+            dagen = {}
+            for item in alle_items:
+                dag_key = item["wed_datum"].strftime("%Y-%m-%d")
+                if dag_key not in dagen:
+                    dagen[dag_key] = []
+                dagen[dag_key].append(item)
         
-        dag_nummer = 0
-        for dag_key, dag_items in dagen.items():
-            dag_nummer += 1
-            eerste_item = dag_items[0]
-            wed_datum = eerste_item["wed_datum"]
-            dag_naam = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"][wed_datum.weekday()]
-            buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
+            dag_nummer = 0
+            for dag_key, dag_items in dagen.items():
+                dag_nummer += 1
+                eerste_item = dag_items[0]
+                wed_datum = eerste_item["wed_datum"]
+                dag_naam = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"][wed_datum.weekday()]
+                buiten_doelmaand = wed_datum.month != doel_maand or wed_datum.year != doel_jaar
             
-            # Afwisselende kleuren voor dag-headers
-            if dag_nummer % 2 == 1:
-                header_kleur = "#1e88e5"  # Blauw
-                bg_kleur = "#e3f2fd"
-            else:
-                header_kleur = "#ff6b35"  # Oranje
-                bg_kleur = "#fff3e0"
+                # Afwisselende kleuren voor dag-headers
+                if dag_nummer % 2 == 1:
+                    header_kleur = "#1e88e5"  # Blauw
+                    bg_kleur = "#e3f2fd"
+                else:
+                    header_kleur = "#ff6b35"  # Oranje
+                    bg_kleur = "#fff3e0"
             
-            # Dag header met gekleurde balk
-            buiten_tekst = " *(buiten periode)*" if buiten_doelmaand else ""
-            st.markdown(f"""
-            <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem;">
-                <strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}
-            </div>
-            <div style="background-color: {bg_kleur}; padding: 0.5rem; border-radius: 0 0 0.5rem 0.5rem; margin-bottom: 1rem;">
-            </div>
-            """, unsafe_allow_html=True)
+                # Dag header met gekleurde balk
+                buiten_tekst = " *(buiten periode)*" if buiten_doelmaand else ""
+                st.markdown(f"""
+                <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem;">
+                    <strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}
+                </div>
+                <div style="background-color: {bg_kleur}; padding: 0.5rem; border-radius: 0 0 0.5rem 0.5rem; margin-bottom: 1rem;">
+                </div>
+                """, unsafe_allow_html=True)
             
-            # Container voor dag-inhoud
-            with st.container():
-                for item in dag_items:
-                    item_datum = item["wed_datum"]
+                # Container voor dag-inhoud
+                with st.container():
+                    for item in dag_items:
+                        item_datum = item["wed_datum"]
                     
-                    if item["type"] == "eigen_uit":
-                        # Eigen uitwedstrijd - opvallend blok
-                        st.warning(f"🚗 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
+                        if item["type"] == "eigen_uit":
+                            # Eigen uitwedstrijd - opvallend blok
+                            st.warning(f"🚗 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** @ {item['uitteam']}  \n*Jouw wedstrijd • Terug ±{item['terug_tijd'].strftime('%H:%M')}*")
                             
-                    elif item["type"] == "eigen_thuis":
-                        # Eigen thuiswedstrijd - opvallend blok
-                        st.warning(f"🏠 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
+                        elif item["type"] == "eigen_thuis":
+                            # Eigen thuiswedstrijd - opvallend blok
+                            st.warning(f"🏠 **{item_datum.strftime('%H:%M')} - {item['thuisteam']}** vs {item['uitteam']}  \n*Jouw wedstrijd • Klaar ±{item['eind_tijd'].strftime('%H:%M')}*")
                             
-                    else:
-                        # Wedstrijd om te fluiten
-                        wed = item
-                        niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
-                        
-                        # Bepaal of dit een wedstrijd op eigen niveau is
-                        eigen_niveau = scheids.get("niveau_1e_scheids", 1)
-                        is_eigen_niveau = wed["niveau"] == eigen_niveau
-                        
-                        # Bepaal status voor 1e scheidsrechter
-                        status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
-                        
-                        # Bepaal status voor 2e scheidsrechter  
-                        status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
-                        
-                        # Fluitwedstrijd - prominenter als op eigen niveau
-                        if is_eigen_niveau:
-                            # Eigen niveau: groene box met ster
-                            st.markdown(f"""
-                            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
-                                ⭐ <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <strong>Niveau {wed['niveau']}</strong> <em>(jouw niveau)</em>
-                            </div>
-                            """, unsafe_allow_html=True)
                         else:
-                            # Onder eigen niveau: grijze box (minder prominent)
-                            st.markdown(f"""
-                            <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
-                                🏀 <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <em>Niveau {wed['niveau']}</em>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # Wedstrijd om te fluiten
+                            wed = item
+                            niveau_tekst = instellingen["niveaus"].get(str(wed["niveau"]), "")
                         
-                        # Scheidsrechter opties
-                        col_1e, col_2e = st.columns(2)
+                            # Bepaal of dit een wedstrijd op eigen niveau is
+                            eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+                            is_eigen_niveau = wed["niveau"] == eigen_niveau
                         
-                        with col_1e:
-                            if status_1e["ingeschreven_zelf"]:
-                                st.markdown(f"🙋 **1e scheids:** Jij")
-                                if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_1"] = None
-                                    sla_wedstrijden_op(wedstrijden)
-                                    st.rerun()
-                            elif status_1e["bezet"]:
-                                st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
-                            elif status_1e["beschikbaar"]:
-                                # Bereken potentiële punten als boven minimum
-                                punten_info = None
-                                if op_niveau >= min_wed:
-                                    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                            # Bepaal status voor 1e scheidsrechter
+                            status_1e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=True)
+                        
+                            # Bepaal status voor 2e scheidsrechter  
+                            status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
+                        
+                            # Fluitwedstrijd - prominenter als op eigen niveau
+                            if is_eigen_niveau:
+                                # Eigen niveau: groene box met ster
+                                st.markdown(f"""
+                                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
+                                    ⭐ <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <strong>Niveau {wed['niveau']}</strong> <em>(jouw niveau)</em>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            else:
+                                # Onder eigen niveau: grijze box (minder prominent)
+                                st.markdown(f"""
+                                <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
+                                    🏀 <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <em>Niveau {wed['niveau']}</em>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        
+                            # Scheidsrechter opties
+                            col_1e, col_2e = st.columns(2)
+                        
+                            with col_1e:
+                                if status_1e["ingeschreven_zelf"]:
+                                    st.markdown(f"🙋 **1e scheids:** Jij")
+                                    if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_1"] = None
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                                elif status_1e["bezet"]:
+                                    st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
+                                elif status_1e["beschikbaar"]:
+                                    # Bereken potentiële punten als boven minimum
+                                    punten_info = None
+                                    if op_niveau >= min_wed:
+                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
                                 
-                                # Check of dit 2+ niveaus onder eigen niveau is
-                                niveau_verschil = eigen_niveau - wed["niveau"]
-                                is_laag_niveau = niveau_verschil >= 2
+                                    # Check of dit 2+ niveaus onder eigen niveau is
+                                    niveau_verschil = eigen_niveau - wed["niveau"]
+                                    is_laag_niveau = niveau_verschil >= 2
                                 
-                                button_label = "📋 1e scheids"
-                                if punten_info:
-                                    button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
+                                    button_label = "📋 1e scheids"
+                                    if punten_info:
+                                        button_label = f"📋 1e scheids (+{punten_info['totaal']}🏆)"
                                 
-                                # Check of er een pending bevestiging is voor deze wedstrijd
-                                bevestig_key = f"bevestig_1e_{wed['id']}"
+                                    # Check of er een pending bevestiging is voor deze wedstrijd
+                                    bevestig_key = f"bevestig_1e_{wed['id']}"
                                 
-                                if bevestig_key in st.session_state and st.session_state[bevestig_key]:
-                                    # Toon bevestigingsdialoog met alle tussenliggende niveaus
-                                    st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
+                                    if bevestig_key in st.session_state and st.session_state[bevestig_key]:
+                                        # Toon bevestigingsdialoog met alle tussenliggende niveaus
+                                        st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
                                     
-                                    # Toon open posities per niveau (van eigen niveau naar beneden tot wedstrijd niveau + 1)
-                                    st.write("**Open posities op hogere niveaus:**")
-                                    totaal_hoger = 0
-                                    for check_niveau in range(eigen_niveau, wed["niveau"], -1):
-                                        open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
-                                        totaal_hoger += open_op_niveau['totaal_open']
-                                        if open_op_niveau['totaal_open'] > 0:
-                                            st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
-                                        else:
-                                            st.write(f"- Niveau {check_niveau}: geen open posities")
-                                    
-                                    if totaal_hoger > 0:
-                                        st.write(f"")
-                                        st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
-                                    
-                                    col_ja, col_nee = st.columns(2)
-                                    with col_ja:
-                                        if st.button("✅ Toch inschrijven", key=f"bevestig_ja_1e_{wed['id']}", type="secondary"):
-                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                            wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                            sla_wedstrijden_op(wedstrijden)
-                                            
-                                            if punten_definitief:
-                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
-                                            
-                                            del st.session_state[bevestig_key]
-                                            st.rerun()
-                                    with col_nee:
-                                        if st.button("❌ Annuleren", key=f"bevestig_nee_1e_{wed['id']}"):
-                                            del st.session_state[bevestig_key]
-                                            st.rerun()
-                                else:
-                                    # Normale knop, maar bij laag niveau eerst bevestiging vragen
-                                    if is_laag_niveau:
-                                        # Toon subtiele hint met alle hogere niveaus
+                                        # Toon open posities per niveau (van eigen niveau naar beneden tot wedstrijd niveau + 1)
+                                        st.write("**Open posities op hogere niveaus:**")
                                         totaal_hoger = 0
-                                        niveau_hints = []
                                         for check_niveau in range(eigen_niveau, wed["niveau"], -1):
                                             open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                            totaal_hoger += open_op_niveau['totaal_open']
                                             if open_op_niveau['totaal_open'] > 0:
-                                                totaal_hoger += open_op_niveau['totaal_open']
-                                                niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
-                                        
+                                                st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
+                                            else:
+                                                st.write(f"- Niveau {check_niveau}: geen open posities")
+                                    
                                         if totaal_hoger > 0:
-                                            hint_tekst = ", ".join(niveau_hints)
-                                            st.caption(f"💡 *Open posities: {hint_tekst}*")
+                                            st.write(f"")
+                                            st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
                                     
-                                    if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                        col_ja, col_nee = st.columns(2)
+                                        with col_ja:
+                                            if st.button("✅ Toch inschrijven", key=f"bevestig_ja_1e_{wed['id']}", type="secondary"):
+                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                                wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                                sla_wedstrijden_op(wedstrijden)
+                                            
+                                                if punten_definitief:
+                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                            
+                                                del st.session_state[bevestig_key]
+                                                st.rerun()
+                                        with col_nee:
+                                            if st.button("❌ Annuleren", key=f"bevestig_nee_1e_{wed['id']}"):
+                                                del st.session_state[bevestig_key]
+                                                st.rerun()
+                                    else:
+                                        # Normale knop, maar bij laag niveau eerst bevestiging vragen
                                         if is_laag_niveau:
-                                            # Vraag bevestiging
-                                            st.session_state[bevestig_key] = True
-                                            st.rerun()
-                                        else:
-                                            # Direct inschrijven
-                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            # Toon subtiele hint met alle hogere niveaus
+                                            totaal_hoger = 0
+                                            niveau_hints = []
+                                            for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                                open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                                if open_op_niveau['totaal_open'] > 0:
+                                                    totaal_hoger += open_op_niveau['totaal_open']
+                                                    niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
+                                        
+                                            if totaal_hoger > 0:
+                                                hint_tekst = ", ".join(niveau_hints)
+                                                st.caption(f"💡 *Open posities: {hint_tekst}*")
+                                    
+                                        if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
+                                            if is_laag_niveau:
+                                                # Vraag bevestiging
+                                                st.session_state[bevestig_key] = True
+                                                st.rerun()
+                                            else:
+                                                # Direct inschrijven
+                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
                                             
-                                            wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                            sla_wedstrijden_op(wedstrijden)
+                                                wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
+                                                sla_wedstrijden_op(wedstrijden)
                                             
-                                            if punten_definitief:
-                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                if punten_definitief:
+                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
                                                 
-                                                if punten_definitief['inval_bonus'] > 0:
-                                                    st.success(f"""
-                                                    ✅ **Ingeschreven!**  
-                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                    🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                    """)
+                                                    if punten_definitief['inval_bonus'] > 0:
+                                                        st.success(f"""
+                                                        ✅ **Ingeschreven!**  
+                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                        🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                        """)
                                             
-                                            st.rerun()
-                            else:
-                                st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
-                        
-                        with col_2e:
-                            if status_2e["ingeschreven_zelf"]:
-                                st.markdown(f"🙋 **2e scheids:** Jij")
-                                if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
-                                    wedstrijden[wed["id"]]["scheids_2"] = None
-                                    sla_wedstrijden_op(wedstrijden)
-                                    st.rerun()
-                            elif status_2e["bezet"]:
-                                st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
-                            elif status_2e["beschikbaar"]:
-                                # Bereken potentiële punten als boven minimum
-                                punten_info = None
-                                if op_niveau >= min_wed:
-                                    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
-                                
-                                # Check of dit 2+ niveaus onder eigen niveau is
-                                niveau_verschil = eigen_niveau - wed["niveau"]
-                                is_laag_niveau = niveau_verschil >= 2
-                                
-                                # Check of dit 1 niveau HOGER is (positieve nudge voor 2e scheids)
-                                is_niveau_hoger = wed["niveau"] == eigen_niveau + 1
-                                heeft_1e_scheids = wed.get("scheids_1") is not None
-                                
-                                button_label = "📋 2e scheids"
-                                if punten_info:
-                                    button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
-                                
-                                # Positieve nudge voor niveau hoger met ervaren 1e scheids
-                                if is_niveau_hoger and heeft_1e_scheids:
-                                    eerste_scheids_naam = scheidsrechters.get(wed.get("scheids_1"), {}).get("naam", "ervaren scheids")
-                                    st.success(f"⭐ **Kans om hoger te fluiten!** Met {eerste_scheids_naam} als 1e scheids mag jij hier 2e zijn.")
-                                
-                                # Check of er een pending bevestiging is voor deze wedstrijd
-                                bevestig_key = f"bevestig_2e_{wed['id']}"
-                                
-                                if bevestig_key in st.session_state and st.session_state[bevestig_key]:
-                                    # Toon bevestigingsdialoog met alle tussenliggende niveaus
-                                    st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
-                                    
-                                    # Toon open posities per niveau
-                                    st.write("**Open posities op hogere niveaus:**")
-                                    totaal_hoger = 0
-                                    for check_niveau in range(eigen_niveau, wed["niveau"], -1):
-                                        open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
-                                        totaal_hoger += open_op_niveau['totaal_open']
-                                        if open_op_niveau['totaal_open'] > 0:
-                                            st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
-                                        else:
-                                            st.write(f"- Niveau {check_niveau}: geen open posities")
-                                    
-                                    if totaal_hoger > 0:
-                                        st.write(f"")
-                                        st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
-                                    
-                                    col_ja, col_nee = st.columns(2)
-                                    with col_ja:
-                                        if st.button("✅ Toch inschrijven", key=f"bevestig_ja_2e_{wed['id']}", type="secondary"):
-                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                            wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                            sla_wedstrijden_op(wedstrijden)
-                                            
-                                            if punten_definitief:
-                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
-                                            
-                                            del st.session_state[bevestig_key]
-                                            st.rerun()
-                                    with col_nee:
-                                        if st.button("❌ Annuleren", key=f"bevestig_nee_2e_{wed['id']}"):
-                                            del st.session_state[bevestig_key]
-                                            st.rerun()
+                                                st.rerun()
                                 else:
-                                    # Normale knop, maar bij laag niveau eerst bevestiging vragen
-                                    if is_laag_niveau:
-                                        # Toon subtiele hint met alle hogere niveaus
+                                    st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
+                        
+                            with col_2e:
+                                if status_2e["ingeschreven_zelf"]:
+                                    st.markdown(f"🙋 **2e scheids:** Jij")
+                                    if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["scheids_2"] = None
+                                        sla_wedstrijden_op(wedstrijden)
+                                        st.rerun()
+                                elif status_2e["bezet"]:
+                                    st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
+                                elif status_2e["beschikbaar"]:
+                                    # Bereken potentiële punten als boven minimum
+                                    punten_info = None
+                                    if op_niveau >= min_wed:
+                                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters)
+                                
+                                    # Check of dit 2+ niveaus onder eigen niveau is
+                                    niveau_verschil = eigen_niveau - wed["niveau"]
+                                    is_laag_niveau = niveau_verschil >= 2
+                                
+                                    # Check of dit 1 niveau HOGER is (positieve nudge voor 2e scheids)
+                                    is_niveau_hoger = wed["niveau"] == eigen_niveau + 1
+                                    heeft_1e_scheids = wed.get("scheids_1") is not None
+                                
+                                    button_label = "📋 2e scheids"
+                                    if punten_info:
+                                        button_label = f"📋 2e scheids (+{punten_info['totaal']}🏆)"
+                                
+                                    # Positieve nudge voor niveau hoger met ervaren 1e scheids
+                                    if is_niveau_hoger and heeft_1e_scheids:
+                                        eerste_scheids_naam = scheidsrechters.get(wed.get("scheids_1"), {}).get("naam", "ervaren scheids")
+                                        st.success(f"⭐ **Kans om hoger te fluiten!** Met {eerste_scheids_naam} als 1e scheids mag jij hier 2e zijn.")
+                                
+                                    # Check of er een pending bevestiging is voor deze wedstrijd
+                                    bevestig_key = f"bevestig_2e_{wed['id']}"
+                                
+                                    if bevestig_key in st.session_state and st.session_state[bevestig_key]:
+                                        # Toon bevestigingsdialoog met alle tussenliggende niveaus
+                                        st.warning(f"⚠️ **Let op:** Dit is een niveau {wed['niveau']} wedstrijd, {niveau_verschil} niveaus onder jouw niveau ({eigen_niveau}).")
+                                    
+                                        # Toon open posities per niveau
+                                        st.write("**Open posities op hogere niveaus:**")
                                         totaal_hoger = 0
-                                        niveau_hints = []
                                         for check_niveau in range(eigen_niveau, wed["niveau"], -1):
                                             open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                            totaal_hoger += open_op_niveau['totaal_open']
                                             if open_op_niveau['totaal_open'] > 0:
-                                                totaal_hoger += open_op_niveau['totaal_open']
-                                                niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
-                                        
-                                        if totaal_hoger > 0:
-                                            hint_tekst = ", ".join(niveau_hints)
-                                            st.caption(f"💡 *Open posities: {hint_tekst}*")
+                                                st.write(f"- Niveau {check_niveau}: **{open_op_niveau['totaal_open']}** open posities")
+                                            else:
+                                                st.write(f"- Niveau {check_niveau}: geen open posities")
                                     
-                                    if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau or (is_niveau_hoger and heeft_1e_scheids) else "secondary"):
+                                        if totaal_hoger > 0:
+                                            st.write(f"")
+                                            st.write(f"Er zijn **{totaal_hoger} posities** op hogere niveaus waar jij hard nodig bent!")
+                                    
+                                        col_ja, col_nee = st.columns(2)
+                                        with col_ja:
+                                            if st.button("✅ Toch inschrijven", key=f"bevestig_ja_2e_{wed['id']}", type="secondary"):
+                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            
+                                                wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                                sla_wedstrijden_op(wedstrijden)
+                                            
+                                                if punten_definitief:
+                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                            
+                                                del st.session_state[bevestig_key]
+                                                st.rerun()
+                                        with col_nee:
+                                            if st.button("❌ Annuleren", key=f"bevestig_nee_2e_{wed['id']}"):
+                                                del st.session_state[bevestig_key]
+                                                st.rerun()
+                                    else:
+                                        # Normale knop, maar bij laag niveau eerst bevestiging vragen
                                         if is_laag_niveau:
-                                            st.session_state[bevestig_key] = True
-                                            st.rerun()
-                                        else:
-                                            punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
+                                            # Toon subtiele hint met alle hogere niveaus
+                                            totaal_hoger = 0
+                                            niveau_hints = []
+                                            for check_niveau in range(eigen_niveau, wed["niveau"], -1):
+                                                open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
+                                                if open_op_niveau['totaal_open'] > 0:
+                                                    totaal_hoger += open_op_niveau['totaal_open']
+                                                    niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
+                                        
+                                            if totaal_hoger > 0:
+                                                hint_tekst = ", ".join(niveau_hints)
+                                                st.caption(f"💡 *Open posities: {hint_tekst}*")
+                                    
+                                        if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau or (is_niveau_hoger and heeft_1e_scheids) else "secondary"):
+                                            if is_laag_niveau:
+                                                st.session_state[bevestig_key] = True
+                                                st.rerun()
+                                            else:
+                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
                                             
-                                            wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                            sla_wedstrijden_op(wedstrijden)
+                                                wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
+                                                sla_wedstrijden_op(wedstrijden)
                                             
-                                            if punten_definitief:
-                                                voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                if punten_definitief:
+                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
                                                 
-                                                if punten_definitief['inval_bonus'] > 0:
-                                                    st.success(f"""
-                                                    ✅ **Ingeschreven!**  
-                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                    🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                    """)
+                                                    if punten_definitief['inval_bonus'] > 0:
+                                                        st.success(f"""
+                                                        ✅ **Ingeschreven!**  
+                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                        🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
+                                                        """)
                                             
-                                            st.rerun()
-                            else:
-                                st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
+                                                st.rerun()
+                                else:
+                                    st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
 
 # ============================================================
 # BEHEERDER VIEW
