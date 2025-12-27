@@ -16,9 +16,13 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.5.0"
+APP_VERSIE = "1.5.1"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.5.1 (2025-12-27)
+**Scrollbare container aangepast:**
+- 📐 Container hoogte verhoogd van 450px naar 600px
+
 ### v1.5.0 (2025-12-27)
 **Compacte header layout met scrollbare wedstrijden:**
 - 🎨 Twee logo's: Waterdragers links, BOB rechts
