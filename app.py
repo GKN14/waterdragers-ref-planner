@@ -16,9 +16,13 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.3"
+APP_VERSIE = "1.7.4"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.4 (2025-12-27)
+**Bugfix:**
+- 🐛 Sidebar toonde "max niveau 6" terwijl niveau 5 het hoogste is - nu gecorrigeerd
+
 ### v1.7.3 (2025-12-27)
 **Slimmere tellingen bij filters:**
 - 📊 Mijn niveau/Boven niveau tonen nu BESCHIKBARE wedstrijden (niet ingeschreven, nog plek)
@@ -1508,10 +1512,11 @@ def toon_speler_view(nbb_nummer: str):
         
         # Niveau regels
         st.markdown("**📐 Niveau regels**")
+        max_met_ervaren = min(niveau_2e + 1, 5)  # Max niveau is 5
         st.markdown(f"""
         - 1e scheids: max niveau **{eigen_niveau}**
         - 2e scheids: max niveau **{niveau_2e}**
-        - *Met ervaren 1e: max niveau **{niveau_2e + 1}***
+        - *Met ervaren 1e: max niveau **{max_met_ervaren}***
         - *Met MSE als 1e: **geen limiet** 🎓*
         - BS2 wedstrijden: alleen met diploma
         """)
