@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.9"
+APP_VERSIE = "1.9.0"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.9.0 (2025-12-27)
+**Filter verbeteringen:**
+- 📊 "Boven niveau" toont nu alleen wedstrijden waar je kunt inschrijven
+- 🔍 "Hele overzicht" toont ook wedstrijden waar je niet op kunt inschrijven
+- 📈 Telling bij filters klopt nu met daadwerkelijk beschikbare wedstrijden
+
 ### v1.8.9 (2025-12-27)
 **Bugfix niveau regels:**
 - 📐 2e scheids max niveau = eigen niveau + 1 (was onbeperkt)
@@ -1942,12 +1948,13 @@ def toon_speler_view(nbb_nummer: str):
                           and (any(team_match(wed["thuisteam"], et) for et in eigen_teams) 
                                or any(team_match(wed["uitteam"], et) for et in eigen_teams)))
     
-    # Tel BESCHIKBARE wedstrijden per niveau (niet ingeschreven, nog plek vrij)
+    # Tel BESCHIKBARE wedstrijden per niveau (niet ingeschreven, nog plek vrij, KAN inschrijven)
     aantal_mijn_niveau = 0
     aantal_boven_niveau = 0
     aantal_buiten_maand = 0
+    max_niveau_2e = min(eigen_niveau + 1, 5)  # Max niveau als 2e scheids
     
-    for wed in wedstrijden.values():
+    for wed_id, wed in wedstrijden.items():
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         if wed_datum < nu or wed.get("geannuleerd", False):
             continue
@@ -1964,7 +1971,7 @@ def toon_speler_view(nbb_nummer: str):
         if al_ingeschreven:
             continue  # Al ingeschreven, niet meer beschikbaar
         
-        # Check of er nog plek is
+        # Check of er nog plek is en of je kunt inschrijven
         scheids_1_bezet = wed.get("scheids_1") is not None
         scheids_2_bezet = wed.get("scheids_2") is not None
         if scheids_1_bezet and scheids_2_bezet:
@@ -1973,13 +1980,29 @@ def toon_speler_view(nbb_nummer: str):
         wed_niveau = wed.get("niveau", 1)
         is_in_doelmaand = wed_datum.month == doel_maand and wed_datum.year == doel_jaar
         
+        # Check of je kunt inschrijven op deze wedstrijd
+        kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau
+        kan_als_2e = not scheids_2_bezet
+        
+        if kan_als_2e and wed_niveau > max_niveau_2e:
+            # Boven max niveau voor 2e scheids - check of er MSE als 1e is
+            if scheids_1_bezet:
+                eerste_scheids = scheidsrechters.get(wed.get("scheids_1"), {})
+                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                kan_als_2e = is_mse  # Alleen mogelijk met MSE
+            else:
+                kan_als_2e = False  # Geen 1e scheids, niveau te hoog
+        
+        kan_inschrijven = kan_als_1e or kan_als_2e
+        
         if is_in_doelmaand:
-            if wed_niveau == eigen_niveau:
+            if wed_niveau == eigen_niveau and kan_inschrijven:
                 aantal_mijn_niveau += 1
-            elif wed_niveau > eigen_niveau:
+            elif wed_niveau > eigen_niveau and kan_inschrijven:
                 aantal_boven_niveau += 1
         else:
-            aantal_buiten_maand += 1
+            if kan_inschrijven:
+                aantal_buiten_maand += 1
     
     # Filter toggles in compacte rij
     st.markdown("**Filters:**")
@@ -2185,22 +2208,47 @@ def toon_speler_view(nbb_nummer: str):
                 else:
                     # Wedstrijd om te fluiten - pas niveau filters toe
                     wed_niveau = wed.get("niveau", 1)
+                    max_niveau_2e = min(eigen_niveau + 1, 5)
                     
                     # Filter op niveau
                     is_eigen_niv = wed_niveau == eigen_niveau
                     is_boven_niv = wed_niveau > eigen_niveau
                     
+                    # Check of je kunt inschrijven op deze wedstrijd
+                    scheids_1_bezet = wed.get("scheids_1") is not None
+                    scheids_2_bezet = wed.get("scheids_2") is not None
+                    
+                    kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau
+                    kan_als_2e = not scheids_2_bezet
+                    
+                    if kan_als_2e and wed_niveau > max_niveau_2e:
+                        # Boven max niveau voor 2e scheids - check of er MSE als 1e is
+                        if scheids_1_bezet:
+                            eerste_scheids = scheidsrechters.get(wed.get("scheids_1"), {})
+                            is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                            kan_als_2e = is_mse
+                        else:
+                            kan_als_2e = False
+                    
+                    kan_inschrijven = kan_als_1e or kan_als_2e
+                    
                     # Check filters
                     if is_eigen_niv and not filter_eigen_niveau:
                         continue
-                    if is_boven_niv and not filter_boven_niveau:
-                        continue
+                    if is_boven_niv:
+                        if not filter_boven_niveau:
+                            continue
+                        # Bij "Boven niveau": alleen tonen als je kunt inschrijven
+                        # Tenzij "Hele overzicht" aan staat
+                        if not kan_inschrijven and not filter_hele_overzicht:
+                            continue
                     
                     alle_items.append({
                         "id": wed_id,
                         "type": "fluiten",
                         "datum": wed["datum"],
                         "wed_datum": wed_datum,
+                        "kan_inschrijven": kan_inschrijven,
                         **wed
                     })
     
