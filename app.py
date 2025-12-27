@@ -16,9 +16,14 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.6"
+APP_VERSIE = "1.7.7"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.7 (2025-12-27)
+**Bugfix + Huisstijl:**
+- 🐛 Sticky header hersteld (CSS selector verwijderd)
+- 🟠 Gebogen oranje lijn nu via HTML element
+
 ### v1.7.6 (2025-12-27)
 **Huisstijl:**
 - 🟠 Gebogen oranje lijn direct onder de statistieken blokken
@@ -1399,14 +1404,6 @@ def toon_speler_view(nbb_nummer: str):
             color: #003082 !important;
         }
         
-        /* Gebogen oranje lijn onder metrics rij */
-        [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
-            border-bottom: 3px solid #FF6600 !important;
-            border-radius: 0 0 1rem 1rem !important;
-            padding-bottom: 0.5rem !important;
-            margin-bottom: 0.5rem !important;
-        }
-        
         /* Divider/horizontal rule in oranje */
         hr {
             border-color: #FF6600 !important;
@@ -1663,6 +1660,11 @@ def toon_speler_view(nbb_nummer: str):
             st.metric("⚠️ Strikes", strikes, delta="Let op", delta_color="inverse")
         else:
             st.metric("Strikes", strikes)
+    
+    # Gebogen oranje lijn onder metrics
+    st.markdown("""
+    <div style="border-bottom: 3px solid #FF6600; border-radius: 0 0 1rem 1rem; margin: 0.3rem 0 0.5rem 0;"></div>
+    """, unsafe_allow_html=True)
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
