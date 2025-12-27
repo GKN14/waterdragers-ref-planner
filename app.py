@@ -926,86 +926,61 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
     scheids = scheidsrechters[nbb_nummer]
     max_niveau = scheids["niveau_1e_scheids"] if als_eerste else scheids["niveau_2e_scheids"]
     
-    # DEBUG
-    import streamlit as st
-    debug_info = []
-    
     beschikbaar = []
     for wed_id, wed in wedstrijden.items():
-        skip_reden = None
-        
         # Alleen thuiswedstrijden tonen (uitwedstrijden zijn alleen voor blokkade)
         if wed.get("type") == "uit":
-            skip_reden = "uitwedstrijd"
+            continue
         
         # Check BS2 vereiste - dit geldt ALTIJD
-        elif wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
-            skip_reden = "BS2 vereist"
+        if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
+            continue
         
         # Check niveau
-        else:
-            wed_niveau = wed["niveau"]
-            if wed_niveau > max_niveau:
-                # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
-                if not als_eerste and wed.get("scheids_1"):
-                    eerste_scheids_nbb = wed.get("scheids_1")
-                    eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
-                    
-                    # Check of 1e scheids MSE is (niveau 5 of team MSE)
-                    is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
-                    
-                    if is_mse:
-                        pass  # MSE als 1e scheids: geen niveau-restrictie
-                    elif wed_niveau <= max_niveau + 1:
-                        pass  # Normale situatie: max 1 niveau hoger toegestaan
-                    else:
-                        skip_reden = f"niveau te hoog ({wed_niveau} > {max_niveau}+1, geen MSE)"
+        wed_niveau = wed["niveau"]
+        if wed_niveau > max_niveau:
+            # Uitzondering voor 2e scheidsrechter: mag hoger als er een ervaren 1e is
+            if not als_eerste and wed.get("scheids_1"):
+                eerste_scheids_nbb = wed.get("scheids_1")
+                eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
+                
+                # Check of 1e scheids MSE is (niveau 5 of team MSE)
+                is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
+                
+                if is_mse:
+                    pass  # MSE als 1e scheids: geen niveau-restrictie
+                elif wed_niveau <= max_niveau + 1:
+                    pass  # Normale situatie: max 1 niveau hoger toegestaan
                 else:
-                    skip_reden = f"niveau te hoog ({wed_niveau} > {max_niveau}, geen 1e scheids)"
+                    continue  # Te hoog, zelfs met 1e scheids erbij
+            else:
+                continue  # Geen uitzondering mogelijk
         
-        if skip_reden is None:
-            # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
-            eigen_teams = scheids.get("eigen_teams", [])
-            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
-            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
-            if is_eigen_thuis or is_eigen_uit:
-                skip_reden = f"eigen team ({wed['thuisteam']} vs {wed['uitteam']})"
-        
-        if skip_reden is None:
-            # Check zondag
-            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-            if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
-                skip_reden = "zondag"
-        
-        if skip_reden is None:
-            # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
-            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-            if heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
-                skip_reden = "eigen wedstrijd overlap"
-        
-        if skip_reden is None:
-            # Check of al ingeschreven of toegewezen
-            positie = "scheids_1" if als_eerste else "scheids_2"
-            if wed.get(positie):
-                skip_reden = f"positie {positie} al bezet"
-        
-        # DEBUG: log niveau 5 wedstrijden
-        if wed.get("niveau") == 5:
-            eerste_nbb = wed.get("scheids_1", "geen")
-            eerste_data = scheidsrechters.get(eerste_nbb, {})
-            debug_info.append(f"Wed {wed_id}: {wed.get('thuisteam')} vs {wed.get('uitteam')}, 1e={eerste_nbb} (niv={eerste_data.get('niveau_1e_scheids', '?')}, teams={eerste_data.get('eigen_teams', [])}), skip={skip_reden}")
-        
-        if skip_reden:
+        # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
+        eigen_teams = scheids.get("eigen_teams", [])
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
+        if is_eigen_thuis or is_eigen_uit:
             continue
-            
+        
+        # Check zondag
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
+            continue
+        
+        # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
+        if heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
+            continue
+        
+        # Check of al ingeschreven of toegewezen
+        positie = "scheids_1" if als_eerste else "scheids_2"
+        if wed.get(positie):
+            continue
+        
         beschikbaar.append({
             "id": wed_id,
             **wed
         })
-    
-    # DEBUG: toon info
-    if debug_info and not als_eerste:
-        st.sidebar.warning("DEBUG niveau 5 wedstrijden:\n" + "\n".join(debug_info))
     
     # Sorteer: eerst wedstrijden van eigen niveau (hoogste dat ze mogen), dan aflopend niveau, dan datum
     # Voorbeeld: scheids niveau 3 ziet eerst niveau 3, dan 2, dan 1
