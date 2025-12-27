@@ -16,9 +16,14 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.5.1"
+APP_VERSIE = "1.5.2"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.5.2 (2025-12-27)
+**Minder witruimte bovenaan:**
+- 📐 Padding-top verwijderd (was 0.5rem)
+- 🔧 Toolbar verborgen
+
 ### v1.5.1 (2025-12-27)
 **Scrollbare container aangepast:**
 - 📐 Container hoogte verhoogd van 450px naar 600px
@@ -1273,10 +1278,15 @@ def toon_speler_view(nbb_nummer: str):
             display: none;
         }
         
-        /* Minimale padding */
+        /* Minimale padding - zo min mogelijk witruimte */
         .main .block-container {
-            padding-top: 0.5rem !important;
+            padding-top: 0 !important;
             padding-bottom: 0.5rem !important;
+        }
+        
+        /* Verberg ook de toolbar bovenaan */
+        [data-testid="stToolbar"] {
+            display: none;
         }
         
         /* Compactere metrics */
