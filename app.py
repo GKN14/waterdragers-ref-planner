@@ -16,9 +16,18 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.6.0"
+APP_VERSIE = "1.7.0"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.0 (2025-12-27)
+**BOB Huisstijl geïmplementeerd:**
+- 🎨 Sidebar: wit met blauwe border (#003082)
+- 🎨 Sidebar titels: blauw met oranje onderstreping
+- 📊 Metrics: blauwe top border, oranje waarden
+- 📦 Wedstrijden container: oranje border
+- 🔵 Subheaders in blauw
+- 🟠 Buttons en accenten in huisstijl
+
 ### v1.6.0 (2025-12-27)
 **Filter toggles in header:**
 - 🎯 Ingeschreven (X) - toon/verberg ingeschreven wedstrijden met aantal
@@ -1282,9 +1291,15 @@ def toon_speler_view(nbb_nummer: str):
     # Haal speler stats vroeg op voor gebruik in sidebar
     speler_stats = get_speler_stats(nbb_nummer)
     
-    # CSS voor compacte layout
+    # CSS voor compacte layout met BOB huisstijl (optie 4: subtiel met gekleurde borders)
     st.markdown("""
     <style>
+        /* BOB Huisstijl kleuren */
+        :root {
+            --bob-blauw: #003082;
+            --bob-oranje: #FF6600;
+        }
+        
         /* Verberg standaard Streamlit header */
         header[data-testid="stHeader"] {
             display: none;
@@ -1323,17 +1338,37 @@ def toon_speler_view(nbb_nummer: str):
             padding-top: 0 !important;
         }
         
-        /* Compactere metrics */
+        /* Sidebar styling - wit met blauwe border */
+        section[data-testid="stSidebar"] {
+            background-color: white !important;
+            border-right: 3px solid #003082 !important;
+        }
+        
+        section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3 {
+            color: #003082 !important;
+            border-bottom: 2px solid #FF6600 !important;
+            padding-bottom: 5px !important;
+        }
+        
+        /* Metrics met blauwe top border en oranje waarden */
         [data-testid="stMetric"] {
             background-color: #f8f9fa;
             padding: 0.3rem;
             border-radius: 0.5rem;
+            border-top: 3px solid #003082 !important;
         }
         [data-testid="stMetricValue"] {
             font-size: 1.2rem;
+            color: #FF6600 !important;
         }
         [data-testid="stMetricLabel"] {
             font-size: 0.7rem;
+            color: #003082 !important;
+        }
+        
+        /* Divider in huisstijl */
+        [data-testid="stHorizontalBlock"] hr {
+            border-color: #FF6600 !important;
         }
         
         /* Compacte alerts */
@@ -1351,10 +1386,42 @@ def toon_speler_view(nbb_nummer: str):
             font-size: 0.9rem;
         }
         
-        /* Scrollbare container styling */
+        /* Scrollbare container styling - oranje border */
         [data-testid="stVerticalBlockBorderWrapper"] {
-            border: 1px solid #e0e0e0 !important;
+            border: 2px solid #FF6600 !important;
             border-radius: 0.5rem;
+        }
+        
+        /* Subheaders in blauw */
+        .main [data-testid="stMarkdown"] h2,
+        .main [data-testid="stMarkdown"] h3,
+        .main [data-testid="stSubheader"] {
+            color: #003082 !important;
+        }
+        
+        /* Success alerts met oranje accent */
+        .stAlert[data-baseweb="notification"] {
+            border-left-color: #FF6600 !important;
+        }
+        
+        /* Warning in oranje */
+        div[data-testid="stAlert"][kind="warning"] {
+            border-left-color: #FF6600 !important;
+        }
+        
+        /* Buttons */
+        .stButton > button[kind="primary"] {
+            background-color: #003082 !important;
+            border-color: #003082 !important;
+        }
+        .stButton > button[kind="primary"]:hover {
+            background-color: #004db3 !important;
+            border-color: #004db3 !important;
+        }
+        
+        /* Toggle switches */
+        [data-testid="stToggle"] label span {
+            color: #003082 !important;
         }
     </style>
     """, unsafe_allow_html=True)
