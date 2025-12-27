@@ -16,9 +16,13 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.5"
+APP_VERSIE = "1.7.6"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.6 (2025-12-27)
+**Huisstijl:**
+- 🟠 Gebogen oranje lijn direct onder de statistieken blokken
+
 ### v1.7.5 (2025-12-27)
 **Huisstijl:**
 - 🟠 Oranje divider lijnen toegevoegd (zoals in mockup optie 4)
@@ -1393,6 +1397,14 @@ def toon_speler_view(nbb_nummer: str):
         [data-testid="stMetricLabel"] {
             font-size: 0.7rem;
             color: #003082 !important;
+        }
+        
+        /* Gebogen oranje lijn onder metrics rij */
+        [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
+            border-bottom: 3px solid #FF6600 !important;
+            border-radius: 0 0 1rem 1rem !important;
+            padding-bottom: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
         }
         
         /* Divider/horizontal rule in oranje */
