@@ -57,18 +57,25 @@ def laad_scheidsrechters() -> dict:
         return {}
 
 def sla_scheidsrechters_op(scheidsrechters: dict) -> bool:
-    """Sla alle scheidsrechters op naar Supabase"""
+    """Sla alle scheidsrechters op naar Supabase (bulk)"""
     try:
         supabase = get_supabase_client()
         
+        records = []
         for nbb_nummer, data in scheidsrechters.items():
             record = {
                 "nbb_nummer": nbb_nummer,
                 "updated_at": datetime.now().isoformat(),
                 **data
             }
-            # Upsert (insert or update)
-            supabase.table("scheidsrechters").upsert(record).execute()
+            records.append(record)
+        
+        # Bulk upsert in batches van 100
+        batch_size = 100
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            supabase.table("scheidsrechters").upsert(batch).execute()
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan scheidsrechters: {e}")
@@ -127,10 +134,11 @@ def laad_wedstrijden() -> dict:
         return {}
 
 def sla_wedstrijden_op(wedstrijden: dict) -> bool:
-    """Sla alle wedstrijden op naar Supabase"""
+    """Sla alle wedstrijden op naar Supabase (bulk)"""
     try:
         supabase = get_supabase_client()
         
+        records = []
         for wed_id, data in wedstrijden.items():
             # Converteer datum naar ISO formaat
             datum_str = data.get("datum", "")
@@ -157,7 +165,14 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "geannuleerd": data.get("geannuleerd", False),
                 "updated_at": datetime.now().isoformat()
             }
-            supabase.table("wedstrijden").upsert(record).execute()
+            records.append(record)
+        
+        # Bulk upsert in batches van 100
+        batch_size = 100
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            supabase.table("wedstrijden").upsert(batch).execute()
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan wedstrijden: {e}")

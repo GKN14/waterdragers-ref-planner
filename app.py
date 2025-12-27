@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.8.4"
+APP_VERSIE = "1.8.5"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.5 (2025-12-27)
+**Performance:**
+- ⚡ Bulk import voor wedstrijden en scheidsrechters (veel sneller)
+- 🔄 Batches van 100 items tegelijk
+
 ### v1.8.4 (2025-12-27)
 **Bugfix:**
 - 🔄 Import nu via bevestigingsknop (voorkomt rerun loop)
