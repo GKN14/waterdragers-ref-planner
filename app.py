@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.1"
+APP_VERSIE = "1.9.2"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.9.2 (2025-12-27)
+**Bugfix tellingen:**
+- 📊 Tellers bij filters kloppen nu exact met weergave
+- 🚫 Uitwedstrijden worden niet meer meegeteld
+- ✅ Alleen wedstrijden waar je daadwerkelijk kunt inschrijven worden geteld
+
 ### v1.9.1 (2025-12-27)
 **Filter verbeteringen:**
 - 🚫 Wedstrijden waar je niet op kunt inschrijven (eigen wedstrijd, overlap, zondag, BS2) worden nu ook gefilterd
@@ -1961,11 +1967,15 @@ def toon_speler_view(nbb_nummer: str):
     max_niveau_2e = min(eigen_niveau + 1, 5)  # Max niveau als 2e scheids
     
     for wed_id, wed in wedstrijden.items():
+        # Skip uitwedstrijden (die zijn voor blokkade, niet voor fluiten)
+        if wed.get("type") == "uit":
+            continue
+            
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         if wed_datum < nu or wed.get("geannuleerd", False):
             continue
         
-        # Check of dit een eigen wedstrijd is
+        # Check of dit een eigen wedstrijd is (waar je zelf speelt)
         is_eigen = (any(team_match(wed["thuisteam"], et) for et in eigen_teams) 
                     or any(team_match(wed["uitteam"], et) for et in eigen_teams))
         
@@ -2018,14 +2028,16 @@ def toon_speler_view(nbb_nummer: str):
         
         kan_inschrijven = kan_als_1e or kan_als_2e
         
+        if not kan_inschrijven:
+            continue  # Kan niet inschrijven, niet meetellen
+        
         if is_in_doelmaand:
-            if wed_niveau == eigen_niveau and kan_inschrijven:
+            if wed_niveau == eigen_niveau:
                 aantal_mijn_niveau += 1
-            elif wed_niveau > eigen_niveau and kan_inschrijven:
+            elif wed_niveau > eigen_niveau:
                 aantal_boven_niveau += 1
         else:
-            if kan_inschrijven:
-                aantal_buiten_maand += 1
+            aantal_buiten_maand += 1
     
     # Filter toggles in compacte rij
     st.markdown("**Filters:**")
