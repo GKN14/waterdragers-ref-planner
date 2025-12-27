@@ -16,9 +16,14 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.5.2"
+APP_VERSIE = "1.5.3"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.5.3 (2025-12-27)
+**Agressievere CSS voor witruimte:**
+- 📐 Extra selectors voor margin/padding removal
+- 🔧 Deploy button verborgen
+
 ### v1.5.2 (2025-12-27)
 **Minder witruimte bovenaan:**
 - 📐 Padding-top verwijderd (was 0.5rem)
@@ -1273,20 +1278,42 @@ def toon_speler_view(nbb_nummer: str):
     # CSS voor compacte layout
     st.markdown("""
     <style>
-        /* Verberg standaard Streamlit header voor meer ruimte */
+        /* Verberg standaard Streamlit header */
         header[data-testid="stHeader"] {
             display: none;
         }
         
-        /* Minimale padding - zo min mogelijk witruimte */
+        /* Verberg toolbar */
+        [data-testid="stToolbar"] {
+            display: none;
+        }
+        
+        /* Verberg deploy button */
+        .stDeployButton {
+            display: none;
+        }
+        
+        /* Minimale padding op alle niveaus */
         .main .block-container {
             padding-top: 0 !important;
             padding-bottom: 0.5rem !important;
+            margin-top: 0 !important;
         }
         
-        /* Verberg ook de toolbar bovenaan */
-        [data-testid="stToolbar"] {
-            display: none;
+        /* App container */
+        .stApp {
+            margin-top: 0 !important;
+        }
+        
+        /* Eerste element naar boven duwen */
+        .main .block-container > div:first-child {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+        }
+        
+        /* Section padding */
+        section[data-testid="stMain"] > div {
+            padding-top: 0 !important;
         }
         
         /* Compactere metrics */
