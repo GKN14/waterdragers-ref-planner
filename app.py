@@ -16,9 +16,13 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.7.4"
+APP_VERSIE = "1.7.5"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.7.5 (2025-12-27)
+**Huisstijl:**
+- 🟠 Oranje divider lijnen toegevoegd (zoals in mockup optie 4)
+
 ### v1.7.4 (2025-12-27)
 **Bugfix:**
 - 🐛 Sidebar toonde "max niveau 6" terwijl niveau 5 het hoogste is - nu gecorrigeerd
@@ -1391,9 +1395,10 @@ def toon_speler_view(nbb_nummer: str):
             color: #003082 !important;
         }
         
-        /* Divider in huisstijl */
-        [data-testid="stHorizontalBlock"] hr {
+        /* Divider/horizontal rule in oranje */
+        hr {
             border-color: #FF6600 !important;
+            border-top: 2px solid #FF6600 !important;
         }
         
         /* Compacte alerts */
