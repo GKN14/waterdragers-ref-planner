@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.2"
+APP_VERSIE = "1.9.3"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.9.3 (2025-12-27)
+**UI:**
+- 🟠 Gebogen oranje lijn hersteld met SVG curve
+
 ### v1.9.2 (2025-12-27)
 **Bugfix tellingen:**
 - 📊 Tellers bij filters kloppen nu exact met weergave
@@ -1730,9 +1734,11 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.metric("Strikes", strikes)
     
-    # Gebogen oranje lijn onder metrics
+    # Gebogen oranje lijn onder metrics (SVG voor echte curve)
     st.markdown("""
-    <div style="border-bottom: 3px solid #FF6600; border-radius: 0 0 1rem 1rem; margin: 0.3rem 0 0.5rem 0;"></div>
+    <svg width="100%" height="20" viewBox="0 0 100 20" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0 0.5rem 0;">
+        <path d="M 0 0 Q 50 20 100 0" stroke="#FF6600" stroke-width="3" fill="none"/>
+    </svg>
     """, unsafe_allow_html=True)
     
     # Status + Deadline in één rij
