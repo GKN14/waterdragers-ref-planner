@@ -15,10 +15,20 @@ from pathlib import Path
 import hashlib
 from io import BytesIO
 
+# Database module voor Supabase
+import database as db
+
 # Versie informatie
-APP_VERSIE = "1.7.7"
+APP_VERSIE = "1.8.0"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.8.0 (2025-12-27)
+**Supabase Database integratie:**
+- 💾 Alle data nu opgeslagen in Supabase (PostgreSQL)
+- 🔄 Data blijft behouden na reboot/redeploy
+- ⚡ Snellere dataverwerking
+- 🔒 Robuuste opslag
+
 ### v1.7.7 (2025-12-27)
 **Bugfix + Huisstijl:**
 - 🐛 Sticky header hersteld (CSS selector verwijderd)
@@ -348,120 +358,72 @@ DEFAULT_BELONINGSINSTELLINGEN = {
 }
 
 def laad_beloningsinstellingen() -> dict:
-    """Laad beloningsinstellingen met defaults."""
-    def _load():
-        instellingen = laad_json("beloningsinstellingen.json")
-        if not instellingen:
-            instellingen = DEFAULT_BELONINGSINSTELLINGEN.copy()
-            sla_json_op("beloningsinstellingen.json", instellingen)
-        else:
-            # Voeg eventueel ontbrekende keys toe met defaults
-            for key, default in DEFAULT_BELONINGSINSTELLINGEN.items():
-                if key not in instellingen:
-                    instellingen[key] = default
-        return instellingen
-    return _get_cached("beloningsinstellingen.json", _load)
+    """Laad beloningsinstellingen uit database."""
+    return db.laad_beloningsinstellingen()
 
 def sla_beloningsinstellingen_op(data: dict):
-    sla_json_op("beloningsinstellingen.json", data)
+    db.sla_beloningsinstellingen_op(data)
 
 def laad_scheidsrechters() -> dict:
-    return _get_cached("scheidsrechters.json", lambda: laad_json("scheidsrechters.json"))
+    return db.laad_scheidsrechters()
 
 def laad_wedstrijden() -> dict:
-    return _get_cached("wedstrijden.json", lambda: laad_json("wedstrijden.json"))
+    return db.laad_wedstrijden()
 
 def laad_inschrijvingen() -> dict:
-    return _get_cached("inschrijvingen.json", lambda: laad_json("inschrijvingen.json"))
+    # Inschrijvingen zitten nu in wedstrijden (scheids_1, scheids_2)
+    return {}
 
 def laad_instellingen() -> dict:
-    def _load():
-        instellingen = laad_json("instellingen.json")
-        if not instellingen:
-            instellingen = {
-                "inschrijf_deadline": (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"),
-                "niveaus": {
-                    "1": "X10-1, X10-2, X12-2, V12-2",
-                    "2": "X12-1, V12-1, X14-2, M16-2", 
-                    "3": "X14-1, M16-1, V16-2",
-                    "4": "V16-1, M18-2, M18-3",
-                    "5": "M18-1, M20-1, MSE (BS2 vereist)"
-                }
-            }
-            sla_json_op("instellingen.json", instellingen)
-        return instellingen
-    return _get_cached("instellingen.json", _load)
+    return db.laad_instellingen()
 
 def sla_scheidsrechters_op(data: dict):
-    sla_json_op("scheidsrechters.json", data)
+    db.sla_scheidsrechters_op(data)
 
 def sla_wedstrijden_op(data: dict):
-    sla_json_op("wedstrijden.json", data)
+    db.sla_wedstrijden_op(data)
 
 def sla_inschrijvingen_op(data: dict):
-    sla_json_op("inschrijvingen.json", data)
+    # Niet meer nodig - inschrijvingen zitten in wedstrijden
+    pass
 
 def sla_instellingen_op(data: dict):
-    sla_json_op("instellingen.json", data)
+    db.sla_instellingen_op(data)
 
 def laad_beloningen() -> dict:
     """Laad beloningen (punten, strikes per speler)."""
-    def _load():
-        beloningen = laad_json("beloningen.json")
-        if not beloningen:
-            beloningen = {
-                "seizoen": "2024-2025",
-                "spelers": {}
-            }
-            sla_json_op("beloningen.json", beloningen)
-        return beloningen
-    return _get_cached("beloningen.json", _load)
+    return db.laad_beloningen()
 
 def sla_beloningen_op(data: dict):
-    sla_json_op("beloningen.json", data)
+    db.sla_beloningen_op(data)
 
 def laad_klusjes() -> dict:
     """Laad klusjes (toegewezen aan spelers)."""
-    return _get_cached("klusjes.json", lambda: laad_json("klusjes.json"))
+    return db.laad_klusjes()
 
 def sla_klusjes_op(data: dict):
-    sla_json_op("klusjes.json", data)
+    db.sla_klusjes_op(data)
 
 def laad_vervangingsverzoeken() -> dict:
     """Laad openstaande vervangingsverzoeken."""
-    return _get_cached("vervangingsverzoeken.json", lambda: laad_json("vervangingsverzoeken.json"))
+    return db.laad_vervangingsverzoeken()
 
 def sla_vervangingsverzoeken_op(data: dict):
-    sla_json_op("vervangingsverzoeken.json", data)
+    db.sla_vervangingsverzoeken_op(data)
 
 def laad_begeleidingsuitnodigingen() -> dict:
     """Laad begeleidingsuitnodigingen (MSE nodigt speler uit als 2e scheids)."""
-    return _get_cached("begeleidingsuitnodigingen.json", lambda: laad_json("begeleidingsuitnodigingen.json") or {})
+    return db.laad_begeleidingsuitnodigingen()
 
 def sla_begeleidingsuitnodigingen_op(data: dict):
-    sla_json_op("begeleidingsuitnodigingen.json", data)
-    _clear_cache("begeleidingsuitnodigingen.json")
+    db.sla_begeleidingsuitnodigingen_op(data)
 
 def laad_beschikbare_klusjes() -> list:
     """Laad de lijst met beschikbare klusjes die TC kan toewijzen."""
-    def _load():
-        data = laad_json("beschikbare_klusjes.json")
-        if not data:
-            # Default klusjes
-            data = [
-                {"id": "ballen_oppompen", "naam": "Ballen oppompen", "omschrijving": "Ballen oppompen op alle 3 locaties", "strikes_waarde": 1},
-                {"id": "coach_ondersteunen", "naam": "Coach ondersteunen (2x)", "omschrijving": "2x een coach ondersteunen bij een training, bijv. 1-op-1 fundamental training met een speler", "strikes_waarde": 1},
-                {"id": "tafel_dienst", "naam": "Tafeldienst (2x)", "omschrijving": "2x tafeldienst draaien bij thuiswedstrijden", "strikes_waarde": 1},
-                {"id": "materiaal_check", "naam": "Materiaal check", "omschrijving": "Alle scheidsrechtersmaterialen controleren en aanvullen (fluit, kaarten, etc.)", "strikes_waarde": 1},
-                {"id": "clinic_assisteren", "naam": "Clinic assisteren", "omschrijving": "Assisteren bij een scheidsrechters clinic of training", "strikes_waarde": 1},
-                {"id": "nieuwe_scheids_begeleiden", "naam": "Nieuwe scheids begeleiden", "omschrijving": "Een nieuwe scheidsrechter begeleiden tijdens 2 wedstrijden", "strikes_waarde": 2},
-            ]
-            sla_json_op("beschikbare_klusjes.json", data)
-        return data
-    return _get_cached("beschikbare_klusjes.json", _load)
+    return db.laad_beschikbare_klusjes()
 
 def sla_beschikbare_klusjes_op(data: list):
-    sla_json_op("beschikbare_klusjes.json", data)
+    db.sla_beschikbare_klusjes_op(data)
 
 # ============================================================
 # BELONINGSSYSTEEM FUNCTIES
