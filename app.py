@@ -16,9 +16,16 @@ import hashlib
 from io import BytesIO
 
 # Versie informatie
-APP_VERSIE = "1.5.3"
+APP_VERSIE = "1.6.0"
 APP_VERSIE_DATUM = "2025-12-27"
 APP_CHANGELOG = """
+### v1.6.0 (2025-12-27)
+**Filter toggles in header:**
+- 🎯 Ingeschreven (X) - toon/verberg ingeschreven wedstrijden met aantal
+- 📊 Mijn niveau - filter wedstrijden op eigen niveau
+- 📈 Boven niveau - filter wedstrijden boven eigen niveau  
+- 📅 Buiten [maand] - toon wedstrijden buiten doelmaand
+
 ### v1.5.3 (2025-12-27)
 **Agressievere CSS voor witruimte:**
 - 📐 Extra selectors voor margin/padding removal
@@ -1735,29 +1742,68 @@ def toon_speler_view(nbb_nummer: str):
                     st.session_state[f"begeleiding_expander_{nbb_nummer}"] = True
                     st.rerun()
     
+    # ============================================================
+    # FILTER TOGGLES
+    # ============================================================
+    
+    # Bereken doelmaand voor filter
+    deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    if deadline_dt.day <= 15:
+        doel_maand = deadline_dt.month
+        doel_jaar = deadline_dt.year
+    else:
+        if deadline_dt.month == 12:
+            doel_maand = 1
+            doel_jaar = deadline_dt.year + 1
+        else:
+            doel_maand = deadline_dt.month + 1
+            doel_jaar = deadline_dt.year
+    
+    maand_namen_kort = ["", "jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
+    
+    # Tel ingeschreven wedstrijden (toekomstige)
+    nu = datetime.now()
+    aantal_ingeschreven = sum(1 for wed in wedstrijden.values() 
+                              if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
+                              and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu)
+    
+    # Filter toggles in compacte rij
+    st.markdown("**Filters:**")
+    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+    
+    with col_f1:
+        filter_ingeschreven = st.toggle(f"Ingeschreven ({aantal_ingeschreven})", value=True, key="filter_ingeschreven")
+    with col_f2:
+        filter_eigen_niveau = st.toggle("Mijn niveau", value=True, key="filter_eigen_niveau")
+    with col_f3:
+        filter_boven_niveau = st.toggle("Boven niveau", value=True, key="filter_boven_niveau")
+    with col_f4:
+        filter_alle_maanden = st.toggle(f"Buiten {maand_namen_kort[doel_maand]}", value=False, key="filter_alle_maanden")
+    
     st.divider()
     
     # Scrollbare container voor wedstrijden
     with st.container(height=600):
         
-        # Toon huidige inschrijvingen
-        st.subheader("🎯 Ingeschreven")
+        # Toon huidige inschrijvingen (indien filter aan)
+        if filter_ingeschreven:
+            st.subheader(f"🎯 Ingeschreven ({aantal_ingeschreven})")
     
-        mijn_wedstrijden = []
-        for wed_id, wed in wedstrijden.items():
-            if wed.get("scheids_1") == nbb_nummer:
-                mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "1e scheidsrechter"})
-            elif wed.get("scheids_2") == nbb_nummer:
-                mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "2e scheidsrechter"})
+            mijn_wedstrijden = []
+            for wed_id, wed in wedstrijden.items():
+                if wed.get("scheids_1") == nbb_nummer:
+                    mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "1e scheidsrechter"})
+                elif wed.get("scheids_2") == nbb_nummer:
+                    mijn_wedstrijden.append({**wed, "id": wed_id, "rol": "2e scheidsrechter"})
     
-        if mijn_wedstrijden:
-            for wed in sorted(mijn_wedstrijden, key=lambda x: x["datum"]):
-                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-                dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            if mijn_wedstrijden:
+                for wed in sorted(mijn_wedstrijden, key=lambda x: x["datum"]):
+                    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
             
-                # Check of er al een openstaand vervangingsverzoek is
-                verzoeken = laad_vervangingsverzoeken()
-                heeft_openstaand_verzoek = any(
+                    # Check of er al een openstaand vervangingsverzoek is
+                    verzoeken = laad_vervangingsverzoeken()
+                    heeft_openstaand_verzoek = any(
                     v.get("wed_id") == wed["id"] and 
                     v.get("aanvrager_nbb") == nbb_nummer and 
                     v.get("status") == "pending"
@@ -1853,8 +1899,8 @@ def toon_speler_view(nbb_nummer: str):
                                         st.rerun()
                                 else:
                                     st.caption("*Geen geschikte vervangers beschikbaar*")
-        else:
-            st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
+            else:
+                st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
     
         if not kan_inschrijven:
             return
@@ -1863,27 +1909,6 @@ def toon_speler_view(nbb_nummer: str):
     
         # Gecombineerd wedstrijdenoverzicht
         st.subheader("📝 Wedstrijdenoverzicht")
-    
-        # Bepaal welke maand getoond moet worden op basis van deadline
-        deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    
-        if deadline_dt.day <= 15:
-            doel_maand = deadline_dt.month
-            doel_jaar = deadline_dt.year
-        else:
-            if deadline_dt.month == 12:
-                doel_maand = 1
-                doel_jaar = deadline_dt.year + 1
-            else:
-                doel_maand = deadline_dt.month + 1
-                doel_jaar = deadline_dt.year
-    
-        maand_namen = ["", "januari", "februari", "maart", "april", "mei", "juni", 
-                       "juli", "augustus", "september", "oktober", "november", "december"]
-    
-        # Filter optie
-        toon_alle = st.toggle(f"Toon ook wedstrijden buiten {maand_namen[doel_maand]}", value=False, 
-                              help=f"Standaard zie je alleen wedstrijden van {maand_namen[doel_maand]} {doel_jaar}. Zet aan om alle toekomstige wedstrijden te zien.")
     
         eigen_teams = scheids.get("eigen_teams", [])
     
@@ -1902,7 +1927,7 @@ def toon_speler_view(nbb_nummer: str):
                 continue
         
             # Filter op doelmaand indien nodig
-            if not toon_alle:
+            if not filter_alle_maanden:
                 if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
                     continue
         
@@ -1939,7 +1964,19 @@ def toon_speler_view(nbb_nummer: str):
                         "eind_tijd": eind_tijd
                     })
                 else:
-                    # Wedstrijd om te fluiten
+                    # Wedstrijd om te fluiten - pas niveau filters toe
+                    wed_niveau = wed.get("niveau", 1)
+                    
+                    # Filter op niveau
+                    is_eigen_niv = wed_niveau == eigen_niveau
+                    is_boven_niv = wed_niveau > eigen_niveau
+                    
+                    # Check filters
+                    if is_eigen_niv and not filter_eigen_niveau:
+                        continue
+                    if is_boven_niv and not filter_boven_niveau:
+                        continue
+                    
                     alle_items.append({
                         "id": wed_id,
                         "type": "fluiten",
