@@ -292,7 +292,13 @@ def verwijder_alle_wedstrijden() -> bool:
 # ============================================================
 
 def laad_instellingen() -> dict:
-    """Laad instellingen uit Supabase"""
+    """Laad instellingen uit Supabase (met caching)"""
+    cache_key = "_db_cache_instellingen"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("instellingen").select("*").execute()
@@ -308,10 +314,12 @@ def laad_instellingen() -> dict:
                 except:
                     pass
             result[key] = value
+        
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden instellingen: {e}")
-        return {"inschrijf_deadline": "2025-01-08", "niveaus": {}}
+        return st.session_state.get(cache_key, {"inschrijf_deadline": "2025-01-08", "niveaus": {}})
 
 def sla_instellingen_op(instellingen: dict) -> bool:
     """Sla instellingen op naar Supabase"""
@@ -325,6 +333,11 @@ def sla_instellingen_op(instellingen: dict) -> bool:
                 "updated_at": datetime.now().isoformat()
             }
             supabase.table("instellingen").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_instellingen" in st.session_state:
+            st.session_state["_db_cache_instellingen"] = instellingen
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan instellingen: {e}")
@@ -335,21 +348,31 @@ def sla_instellingen_op(instellingen: dict) -> bool:
 # ============================================================
 
 def laad_beloningen() -> dict:
-    """Laad beloningen uit Supabase"""
+    """Laad beloningen uit Supabase (met caching)"""
+    cache_key = "_db_cache_beloningen"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("beloningen").select("*").order("seizoen", desc=True).limit(1).execute()
         
         if response.data:
             row = response.data[0]
-            return {
+            result = {
                 "seizoen": row.get("seizoen", "2024-2025"),
                 "spelers": row.get("spelers", {})
             }
-        return {"seizoen": "2024-2025", "spelers": {}}
+        else:
+            result = {"seizoen": "2024-2025", "spelers": {}}
+        
+        st.session_state[cache_key] = result
+        return result
     except Exception as e:
         st.error(f"Fout bij laden beloningen: {e}")
-        return {"seizoen": "2024-2025", "spelers": {}}
+        return st.session_state.get(cache_key, {"seizoen": "2024-2025", "spelers": {}})
 
 def sla_beloningen_op(beloningen: dict) -> bool:
     """Sla beloningen op naar Supabase"""
@@ -361,6 +384,11 @@ def sla_beloningen_op(beloningen: dict) -> bool:
             "updated_at": datetime.now().isoformat()
         }
         supabase.table("beloningen").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_beloningen" in st.session_state:
+            st.session_state["_db_cache_beloningen"] = beloningen
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan beloningen: {e}")
@@ -371,7 +399,35 @@ def sla_beloningen_op(beloningen: dict) -> bool:
 # ============================================================
 
 def laad_beloningsinstellingen() -> dict:
-    """Laad beloningsinstellingen uit Supabase"""
+    """Laad beloningsinstellingen uit Supabase (met caching)"""
+    cache_key = "_db_cache_beloningsinstellingen"
+    
+    # Default waarden
+    defaults = {
+        "punten_per_wedstrijd": 1,
+        "punten_eigen_niveau": 2,
+        "punten_2e_scheids": 1,
+        "punten_bonus_niveau_hoger": 1,
+        "punten_lastig_tijdstip": 1,
+        "punten_inval_48u": 3,
+        "punten_inval_24u": 5,
+        "punten_voor_voucher": 15,
+        "strikes_afmelden_48u": 1,
+        "strikes_afmelden_24u": 2,
+        "strikes_afmelding_48u": 1,
+        "strikes_afmelding_24u": 2,
+        "strikes_no_show": 5,
+        "strikes_waarschuwing_bij": 2,
+        "strikes_gesprek_bij": 3,
+        "strike_reductie_extra_wedstrijd": 1,
+        "strike_reductie_invallen": 2,
+        "strikes_vervallen_einde_seizoen": False
+    }
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("beloningsinstellingen").select("*").eq("id", 1).execute()
@@ -381,78 +437,18 @@ def laad_beloningsinstellingen() -> dict:
             row.pop("id", None)
             row.pop("updated_at", None)
             # Voeg eventueel ontbrekende keys toe met defaults
-            defaults = {
-                # Punten
-                "punten_per_wedstrijd": 1,
-                "punten_eigen_niveau": 2,
-                "punten_2e_scheids": 1,
-                "punten_bonus_niveau_hoger": 1,
-                "punten_lastig_tijdstip": 1,
-                "punten_inval_48u": 3,
-                "punten_inval_24u": 5,
-                "punten_voor_voucher": 15,
-                # Strikes
-                "strikes_afmelden_48u": 1,
-                "strikes_afmelden_24u": 2,
-                "strikes_afmelding_48u": 1,
-                "strikes_afmelding_24u": 2,
-                "strikes_no_show": 5,
-                "strikes_waarschuwing_bij": 2,
-                "strikes_gesprek_bij": 3,
-                # Strike reductie
-                "strike_reductie_extra_wedstrijd": 1,
-                "strike_reductie_invallen": 2,
-                # Seizoen
-                "strikes_vervallen_einde_seizoen": False
-            }
             for key, val in defaults.items():
                 if key not in row:
                     row[key] = val
-            return row
+            result = row
+        else:
+            result = defaults.copy()
         
-        # Default waarden
-        return {
-            "punten_per_wedstrijd": 1,
-            "punten_eigen_niveau": 2,
-            "punten_2e_scheids": 1,
-            "punten_bonus_niveau_hoger": 1,
-            "punten_lastig_tijdstip": 1,
-            "punten_inval_48u": 3,
-            "punten_inval_24u": 5,
-            "punten_voor_voucher": 15,
-            "strikes_afmelden_48u": 1,
-            "strikes_afmelden_24u": 2,
-            "strikes_afmelding_48u": 1,
-            "strikes_afmelding_24u": 2,
-            "strikes_no_show": 5,
-            "strikes_waarschuwing_bij": 2,
-            "strikes_gesprek_bij": 3,
-            "strike_reductie_extra_wedstrijd": 1,
-            "strike_reductie_invallen": 2,
-            "strikes_vervallen_einde_seizoen": False
-        }
+        st.session_state[cache_key] = result
+        return result
     except Exception as e:
         st.error(f"Fout bij laden beloningsinstellingen: {e}")
-        return {
-            "punten_per_wedstrijd": 1,
-            "punten_eigen_niveau": 2,
-            "punten_2e_scheids": 1,
-            "punten_bonus_niveau_hoger": 1,
-            "punten_lastig_tijdstip": 1,
-            "punten_inval_48u": 3,
-            "punten_inval_24u": 5,
-            "punten_voor_voucher": 15,
-            "strikes_afmelden_48u": 1,
-            "strikes_afmelden_24u": 2,
-            "strikes_afmelding_48u": 1,
-            "strikes_afmelding_24u": 2,
-            "strikes_no_show": 5,
-            "strikes_waarschuwing_bij": 2,
-            "strikes_gesprek_bij": 3,
-            "strike_reductie_extra_wedstrijd": 1,
-            "strike_reductie_invallen": 2,
-            "strikes_vervallen_einde_seizoen": False
-        }
+        return st.session_state.get(cache_key, defaults.copy())
 
 def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
     """Sla beloningsinstellingen op naar Supabase"""
@@ -464,6 +460,11 @@ def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
             "updated_at": datetime.now().isoformat()
         }
         supabase.table("beloningsinstellingen").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_beloningsinstellingen" in st.session_state:
+            st.session_state["_db_cache_beloningsinstellingen"] = instellingen
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan beloningsinstellingen: {e}")

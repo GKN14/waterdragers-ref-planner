@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.24"
+APP_VERSIE = "1.9.25"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.25 (2025-12-28)
+**Performance verbetering - complete caching:**
+- 🚀 Caching toegevoegd aan alle resterende database functies
+- 💾 laad_beloningen, laad_beloningsinstellingen, laad_instellingen nu gecached
+- 🔧 Voorkomt "Resource temporarily unavailable" fouten volledig
+
 ### v1.9.24 (2025-12-28)
 **Bugfixes feedback systeem:**
 - 🐛 TC Monitoring: "Wacht op feedback" telt nu correct (1 echte feedback = klaar)
