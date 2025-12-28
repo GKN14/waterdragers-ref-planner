@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.16"
+APP_VERSIE = "1.9.17"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.17 (2025-12-28)
+**Bugfix:**
+- 🐛 Begeleider knop verborgen bij wedstrijden waar MSE zelf moet spelen
+
 ### v1.9.16 (2025-12-28)
 **MSE functies geïntegreerd in wedstrijdoverzicht:**
 - 🎓 Begeleider knop direct bij elke wedstrijd voor MSE's
@@ -2818,11 +2822,14 @@ def toon_speler_view(nbb_nummer: str):
                                                             sla_begeleidingsuitnodigingen_op(mse_uitnodigingen)
                                                             st.rerun()
                                     elif not al_scheids:
-                                        # MSE kan zich aanmelden als begeleider
-                                        if st.button("🎓 Begeleider", key=f"beg_aanmeld_{wed['id']}", help="Aanmelden als begeleider (niet fluiten)"):
-                                            wedstrijden[wed["id"]]["begeleider"] = nbb_nummer
-                                            sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                            st.rerun()
+                                        # MSE kan zich aanmelden als begeleider, maar niet bij eigen wedstrijd
+                                        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                                        heeft_eigen = heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters)
+                                        if not heeft_eigen:
+                                            if st.button("🎓 Begeleider", key=f"beg_aanmeld_{wed['id']}", help="Aanmelden als begeleider (niet fluiten)"):
+                                                wedstrijden[wed["id"]]["begeleider"] = nbb_nummer
+                                                sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                                st.rerun()
 
 # ============================================================
 # BEHEERDER VIEW
