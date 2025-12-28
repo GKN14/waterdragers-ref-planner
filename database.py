@@ -858,7 +858,8 @@ def sla_begeleiding_feedback_op(feedback_id: str, data: dict) -> bool:
             "opmerking": data.get("opmerking", ""),
             "updated_at": datetime.now().isoformat()
         }
-        supabase.table("begeleiding_feedback").upsert(record).execute()
+        
+        result = supabase.table("begeleiding_feedback").upsert(record).execute()
         
         # Clear cache zodat data opnieuw wordt geladen
         cache_key = "_db_cache_begeleiding_feedback"
@@ -867,7 +868,11 @@ def sla_begeleiding_feedback_op(feedback_id: str, data: dict) -> bool:
         
         return True
     except Exception as e:
+        # Toon volledige foutmelding voor debugging
+        import traceback
         st.error(f"Fout bij opslaan feedback: {e}")
+        st.error(f"Details: {traceback.format_exc()}")
+        st.error(f"Record: {record}")
         return False
 
 def verwijder_begeleiding_feedback(feedback_id: str) -> bool:

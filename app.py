@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.27"
+APP_VERSIE = "1.9.28"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.28 (2025-12-28)
+**Debug OK-knop:**
+- 🔍 Uitgebreide debug informatie bij OK-knop
+- 📝 Volledige error logging in database functie
+- ⏳ Visuele feedback bij klikken
+
 ### v1.9.27 (2025-12-28)
 **Begeleiding indicator voor MSE's:**
 - 🎓 Bij scheidsrechter naam: indicator als speler open staat voor begeleiding
@@ -2168,16 +2174,27 @@ def toon_speler_view(nbb_nummer: str):
                 st.markdown(f"**{dag} {wed_datum.strftime('%d-%m')}** - {wed['thuisteam']} vs {wed['uitteam']}")
                 st.markdown(f"*{collega_naam}* gaf aan dat **{begeleider_naam}** {status_tekst}")
                 
-                if st.button("✓ OK", key=f"fb_ok_{fb_item['feedback_id']}", help="Bevestig dat je dit gezien hebt"):
+                col_btn, col_space = st.columns([1, 3])
+                with col_btn:
+                    ok_clicked = st.button("✓ OK", key=f"fb_ok_{fb_item['feedback_id']}", help="Bevestig dat je dit gezien hebt")
+                
+                if ok_clicked:
+                    st.info(f"Bezig met opslaan... feedback_id={fb_item['feedback_id']}")
                     # Sla op als "bevestigd" - dit betekent dat de speler gezien heeft wat collega zei
-                    sla_begeleiding_feedback_op(fb_item["feedback_id"], {
+                    success = sla_begeleiding_feedback_op(fb_item["feedback_id"], {
                         "wed_id": fb_item["wed_id"],
                         "speler_nbb": nbb_nummer,
                         "begeleider_nbb": fb_item["begeleider_nbb"],
                         "status": "bevestigd",
                         "feedback_datum": datetime.now().isoformat()
                     })
-                    st.rerun()
+                    if success:
+                        st.success("Opgeslagen! Pagina wordt herladen...")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Fout bij opslaan - zie foutmelding hierboven")
                 st.divider()
     
     # Toon feedback enquête voor wedstrijden waar nog geen feedback is
