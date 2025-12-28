@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.33"
+APP_VERSIE = "1.9.34"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.34 (2025-12-28)
+**Bugfix sidebar feedback:**
+- 🐛 "Gegeven feedback" toont nu alleen feedback die je als scheidsrechter hebt gegeven
+- 🐛 Begeleider_gezien records worden niet meer getoond in sidebar
+
 ### v1.9.33 (2025-12-28)
 **Begeleider feedback melding:**
 - 🎓 Begeleider ziet nu feedback in hoofdscherm (niet meer sidebar)
@@ -1900,8 +1905,12 @@ def toon_speler_view(nbb_nummer: str):
             st.markdown("🎓 Open voor begeleiding")
         
         # Mijn gegeven feedback (voor wijzigen)
+        # Alleen feedback die ik als scheidsrechter heb gegeven, niet "begeleider_gezien" records
         feedback_data = laad_begeleiding_feedback()
-        mijn_feedback = [fb for fb_id, fb in feedback_data.items() if fb.get("speler_nbb") == nbb_nummer]
+        mijn_feedback = [fb for fb_id, fb in feedback_data.items() 
+                         if fb.get("speler_nbb") == nbb_nummer 
+                         and fb.get("status") != "begeleider_gezien"
+                         and fb.get("begeleider_nbb") != nbb_nummer]  # Niet waar ik zelf begeleider was
         
         if mijn_feedback:
             st.divider()
