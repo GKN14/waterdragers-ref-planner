@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.25"
+APP_VERSIE = "1.9.26"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.26 (2025-12-28)
+**Bugfix OK-knop feedback:**
+- 🐛 Cache wordt nu correct gecleared na opslaan feedback
+- ✅ OK-knop zou nu moeten werken
+
 ### v1.9.25 (2025-12-28)
 **Performance verbetering - complete caching:**
 - 🚀 Caching toegevoegd aan alle resterende database functies
