@@ -18,6 +18,9 @@ from io import BytesIO
 # Database module voor Supabase
 import database as db
 
+# Geofiltering - alleen toegang vanuit Nederland
+db.check_geo_access()
+
 # Versie informatie
 APP_VERSIE = "1.9.34"
 APP_VERSIE_DATUM = "2025-12-28"
@@ -467,7 +470,7 @@ def inject_custom_css():
 
 # Configuratie
 DATA_DIR = Path(__file__).parent / "data"
-BEHEERDER_WACHTWOORD = "waterdragers2025"  # Pas aan!
+# Wachtwoord wordt nu veilig beheerd via database en Streamlit Secrets
 
 # Teams waaruit scheidsrechters komen (vanaf U16, plus coaches van lagere teams)
 SCHEIDSRECHTER_TEAMS = [
@@ -3340,6 +3343,19 @@ def toon_beheerder_view():
         else:
             st.metric("Compleet", "-")
     
+    # Beheerder opties in sidebar
+    with st.sidebar:
+        st.divider()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔓 Uitloggen", use_container_width=True):
+                st.session_state.beheerder_ingelogd = False
+                st.rerun()
+        with col2:
+            if st.button("🔑 Wachtwoord", use_container_width=True, help="Wachtwoord wijzigen"):
+                st.session_state.moet_wachtwoord_wijzigen = True
+                st.rerun()
+    
     st.divider()
     
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
@@ -5767,7 +5783,7 @@ def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
     
     with tab1:
         st.write("**Import wedstrijden uit NBB export**")
@@ -6079,6 +6095,50 @@ def toon_import_export():
                 st.code(traceback.format_exc())
     
     with tab3:
+        st.write("**Import ledengegevens (geboortedatum & teams)**")
+        st.write("Upload een NBB/FOYS ledenexport om geboortedatum en teams bij te werken bij bestaande scheidsrechters.")
+        st.write("**Verwachte kolommen:** Lidnummer, Geboortedatum, Team")
+        
+        st.info("""
+        **Team parsing:** Alleen teams met '(Teamspeler)' worden overgenomen.
+        
+        Voorbeeld: `V12-2 (Technische staf), V16-1 (Teamspeler)` → alleen `V16-1` wordt opgeslagen.
+        """)
+        
+        uploaded_leden = st.file_uploader("Upload Excel of CSV", type=["xlsx", "xls", "csv"], key="import_leden")
+        
+        if uploaded_leden:
+            try:
+                import pandas as pd
+                if uploaded_leden.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_leden, sep=None, engine='python')
+                else:
+                    df = pd.read_excel(uploaded_leden)
+                
+                st.write(f"**{len(df)} rijen gevonden**")
+                st.write("Kolommen:", ", ".join(df.columns.tolist()))
+                
+                # Preview
+                preview_cols = [c for c in df.columns if any(x in c.lower() for x in ['lidnummer', 'geboortedatum', 'team'])]
+                if preview_cols:
+                    st.dataframe(df[preview_cols].head(10))
+                
+                if st.button("🔄 Importeer ledengegevens", key="btn_import_leden"):
+                    bijgewerkt, niet_gevonden, errors = db.import_ledengegevens(df)
+                    
+                    if bijgewerkt > 0:
+                        st.success(f"✅ {bijgewerkt} scheidsrechters bijgewerkt")
+                    if niet_gevonden > 0:
+                        st.warning(f"⚠️ {niet_gevonden} lidnummers niet gevonden in scheidsrechterslijst (importeer eerst scheidsrechters)")
+                    if errors > 0:
+                        st.error(f"❌ {errors} fouten")
+                    
+                    if bijgewerkt > 0:
+                        st.rerun()
+            except Exception as e:
+                st.error(f"Fout bij lezen bestand: {e}")
+    
+    with tab4:
         st.write("**Import scheidsrechters (CSV)**")
         st.write("Verwacht formaat:")
         st.code("nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams")
@@ -6118,7 +6178,7 @@ def toon_import_export():
                 st.success(f"✅ {count} scheidsrechters geïmporteerd!")
                 st.rerun()
     
-    with tab4:
+    with tab5:
         st.write("**Import wedstrijden (CSV)**")
         st.write("Verwacht formaat:")
         st.code("datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten")
@@ -6170,7 +6230,7 @@ def toon_import_export():
                 st.success(f"✅ {count} wedstrijden geïmporteerd!")
                 st.rerun()
     
-    with tab5:
+    with tab6:
         st.write("**Export planning (CSV)**")
         
         col1, col2 = st.columns(2)
@@ -6221,6 +6281,129 @@ def toon_import_export():
                 )
 
 # ============================================================
+# BEHEERDER AUTHENTICATIE
+# ============================================================
+
+def _toon_beheerder_login():
+    """Toon beheerder login formulier"""
+    st.title("🔐 Beheerder Login")
+    
+    # Check of force reset actief is
+    try:
+        if st.secrets.get("FORCE_RESET", False):
+            st.warning("⚠️ Wachtwoord reset modus actief. Log in met het standaard wachtwoord.")
+    except:
+        pass
+    
+    with st.form("login_form"):
+        wachtwoord = st.text_input("Wachtwoord", type="password")
+        submitted = st.form_submit_button("Inloggen", use_container_width=True)
+        
+        if submitted:
+            if not wachtwoord:
+                st.error("Voer een wachtwoord in")
+                return
+            
+            if db.verify_admin_password(wachtwoord):
+                st.session_state.beheerder_ingelogd = True
+                # Check of wachtwoord gewijzigd moet worden
+                if db.needs_password_change():
+                    st.session_state.moet_wachtwoord_wijzigen = True
+                    st.success("✅ Ingelogd. Je moet nu een nieuw wachtwoord instellen.")
+                st.rerun()
+            else:
+                st.error("❌ Onjuist wachtwoord")
+
+
+def _toon_wachtwoord_wijzigen():
+    """Toon wachtwoord wijzigen formulier"""
+    st.title("🔑 Nieuw Wachtwoord Instellen")
+    
+    try:
+        if st.secrets.get("FORCE_RESET", False):
+            st.info("💡 Na het instellen van je nieuwe wachtwoord, verwijder `FORCE_RESET` uit je Streamlit Cloud Secrets.")
+    except:
+        pass
+    
+    with st.form("change_password_form"):
+        nieuw_wachtwoord = st.text_input("Nieuw wachtwoord", type="password")
+        bevestig_wachtwoord = st.text_input("Bevestig wachtwoord", type="password")
+        submitted = st.form_submit_button("Wachtwoord opslaan", use_container_width=True)
+        
+        if submitted:
+            if not nieuw_wachtwoord or not bevestig_wachtwoord:
+                st.error("Vul beide velden in")
+                return
+            
+            if nieuw_wachtwoord != bevestig_wachtwoord:
+                st.error("Wachtwoorden komen niet overeen")
+                return
+            
+            if len(nieuw_wachtwoord) < 8:
+                st.error("Wachtwoord moet minimaal 8 tekens zijn")
+                return
+            
+            if nieuw_wachtwoord == db.get_default_admin_password():
+                st.error("Kies een ander wachtwoord dan het standaard wachtwoord")
+                return
+            
+            # Opslaan
+            if db.save_admin_password_hash(nieuw_wachtwoord):
+                st.session_state.moet_wachtwoord_wijzigen = False
+                st.success("✅ Wachtwoord gewijzigd!")
+                st.rerun()
+            else:
+                st.error("Fout bij opslaan wachtwoord")
+
+
+def _check_device_verificatie(nbb_nummer: str) -> bool:
+    """
+    Check of device geverifieerd is. Toont verificatie scherm indien nodig.
+    Returns True als geverifieerd, False als verificatie scherm getoond wordt.
+    """
+    # Check of speler geboortedatum heeft
+    geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
+    if not geboortedatum:
+        # Geen geboortedatum = geen verificatie vereist (nog niet geïmporteerd)
+        return True
+    
+    # Check bestaande token in session state
+    token_key = f"device_token_{nbb_nummer}"
+    token = st.session_state.get(token_key)
+    
+    if token and db.verify_device_token(nbb_nummer, token):
+        return True
+    
+    # Nieuw device - verificatie nodig
+    st.title("🔐 Verificatie")
+    st.write("Dit is een nieuw apparaat. Bevestig je identiteit door je geboortedatum in te voeren.")
+    
+    with st.form("verificatie_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            dag = st.number_input("Dag", min_value=1, max_value=31, value=1)
+        with col2:
+            maand = st.number_input("Maand", min_value=1, max_value=12, value=1)
+        with col3:
+            jaar = st.number_input("Jaar", min_value=1950, max_value=2020, value=2005)
+        
+        submitted = st.form_submit_button("Verifiëren", use_container_width=True)
+        
+        if submitted:
+            if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
+                # Verificatie geslaagd - registreer device
+                new_token = db._generate_device_token()
+                if db.register_device(nbb_nummer, new_token):
+                    st.session_state[token_key] = new_token
+                    st.success("✅ Geverifieerd!")
+                    st.rerun()
+            else:
+                st.error("❌ Geboortedatum komt niet overeen")
+    
+    return False
+
+
+# ============================================================
 # MAIN ROUTING
 # ============================================================
 
@@ -6255,24 +6438,30 @@ def main():
     # Route: /inschrijven/{nbb_nummer}
     if "nbb" in query_params:
         nbb_nummer = query_params["nbb"]
+        
+        # Device verificatie
+        if not _check_device_verificatie(nbb_nummer):
+            return
+        
         toon_speler_view(nbb_nummer)
         return
     
     # Route: /beheer
     if "beheer" in query_params:
-        # Simpele wachtwoord check via session state
+        # Initialiseer session state
         if "beheerder_ingelogd" not in st.session_state:
             st.session_state.beheerder_ingelogd = False
+        if "moet_wachtwoord_wijzigen" not in st.session_state:
+            st.session_state.moet_wachtwoord_wijzigen = False
         
+        # Wachtwoord wijzigen scherm
+        if st.session_state.moet_wachtwoord_wijzigen:
+            _toon_wachtwoord_wijzigen()
+            return
+        
+        # Login scherm
         if not st.session_state.beheerder_ingelogd:
-            st.title("🔐 Beheerder Login")
-            wachtwoord = st.text_input("Wachtwoord", type="password")
-            if st.button("Inloggen"):
-                if wachtwoord == BEHEERDER_WACHTWOORD:
-                    st.session_state.beheerder_ingelogd = True
-                    st.rerun()
-                else:
-                    st.error("Onjuist wachtwoord")
+            _toon_beheerder_login()
             return
         
         toon_beheerder_view()

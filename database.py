@@ -1,6 +1,11 @@
 """
 Database module voor Supabase connectie
 Ref Planner - BV Waterdragers
+
+Inclusief:
+- Admin authenticatie (wachtwoord in database)
+- Device verificatie (geboortedatum check)
+- Geofiltering (alleen Nederland)
 """
 
 import os
@@ -8,23 +13,30 @@ import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime
 import json
+import hashlib
+import secrets
+import requests
+import re
 
-# Supabase configuratie - eerst secrets proberen, dan environment variables, dan defaults
+# Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
-    """Haal Supabase configuratie op uit secrets of environment"""
+    """Haal Supabase configuratie op uit secrets"""
     try:
-        # Probeer Streamlit secrets
         url = st.secrets.get("SUPABASE_URL")
         key = st.secrets.get("SUPABASE_KEY")
         if url and key:
             return url, key
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Supabase configuratie niet gevonden in secrets: {e}")
     
-    # Fallback naar environment variables of defaults
-    url = os.environ.get("SUPABASE_URL", "https://xgtopzblkoyygcdnvtuv.supabase.co")
-    key = os.environ.get("SUPABASE_KEY", "sb_publishable_CMPQ44NKT0G1bTVoXYSJgQ_pSkOfy4C")
-    return url, key
+    # Fallback naar environment variables (voor lokaal development)
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if url and key:
+        return url, key
+    
+    st.error("SUPABASE_URL en SUPABASE_KEY moeten geconfigureerd zijn in Streamlit Secrets")
+    st.stop()
 
 SUPABASE_URL, SUPABASE_KEY = get_supabase_config()
 
@@ -32,6 +44,337 @@ SUPABASE_URL, SUPABASE_KEY = get_supabase_config()
 def get_supabase_client() -> Client:
     """Maak een Supabase client (cached)"""
     return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ============================================================
+# GEOFILTERING
+# ============================================================
+
+@st.cache_data(ttl=3600)
+def _get_country_from_ip(ip: str) -> str:
+    """Haal land op via IP adres (cached voor 1 uur)"""
+    try:
+        response = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
+        return response.json().get("countryCode", "NL")
+    except:
+        return "NL"  # Bij fout: toegang geven
+
+def check_geo_access() -> bool:
+    """
+    Check of gebruiker uit Nederland komt.
+    Stopt de app als toegang geweigerd wordt.
+    """
+    try:
+        ip = st.context.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    except:
+        ip = ""
+    
+    if not ip:
+        return True  # Geen IP = lokaal development
+    
+    country = _get_country_from_ip(ip)
+    
+    if country != "NL":
+        st.error("🚫 Deze app is alleen toegankelijk vanuit Nederland.")
+        st.stop()
+        return False
+    
+    return True
+
+# ============================================================
+# ADMIN AUTHENTICATIE
+# ============================================================
+
+def _hash_password(password: str) -> str:
+    """Hash een wachtwoord met SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def get_stored_admin_password_hash() -> str | None:
+    """Haal opgeslagen admin wachtwoord hash op uit database"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("admin_settings").select("value").eq("key", "password_hash").execute()
+        if response.data:
+            return response.data[0]["value"]
+        return None
+    except Exception as e:
+        return None
+
+def save_admin_password_hash(password: str) -> bool:
+    """Sla nieuwe admin wachtwoord hash op in database"""
+    try:
+        supabase = get_supabase_client()
+        password_hash = _hash_password(password)
+        record = {
+            "key": "password_hash",
+            "value": password_hash,
+            "updated_at": datetime.now().isoformat()
+        }
+        supabase.table("admin_settings").upsert(record).execute()
+        return True
+    except Exception as e:
+        st.error(f"Fout bij opslaan wachtwoord: {e}")
+        return False
+
+def verify_admin_password(input_password: str) -> bool:
+    """Verifieer admin wachtwoord tegen database of default"""
+    stored_hash = get_stored_admin_password_hash()
+    
+    # Check of force reset actief is
+    force_reset = st.secrets.get("FORCE_RESET", False)
+    if force_reset:
+        default_password = st.secrets.get("ADMIN_PASSWORD", "")
+        return input_password == default_password
+    
+    # Geen hash in database = eerste keer, gebruik default
+    if stored_hash is None:
+        default_password = st.secrets.get("ADMIN_PASSWORD", "")
+        return input_password == default_password
+    
+    # Vergelijk met opgeslagen hash
+    return _hash_password(input_password) == stored_hash
+
+def needs_password_change() -> bool:
+    """Check of wachtwoord gewijzigd moet worden (eerste login of force reset)"""
+    force_reset = st.secrets.get("FORCE_RESET", False)
+    if force_reset:
+        return True
+    
+    stored_hash = get_stored_admin_password_hash()
+    return stored_hash is None
+
+def get_default_admin_password() -> str:
+    """Haal default admin wachtwoord op uit secrets"""
+    return st.secrets.get("ADMIN_PASSWORD", "")
+
+# ============================================================
+# DEVICE VERIFICATIE
+# ============================================================
+
+def _generate_device_token() -> str:
+    """Genereer een unieke device token"""
+    return secrets.token_urlsafe(32)
+
+def get_device_count(speler_id: str) -> int:
+    """Tel aantal gekoppelde devices voor speler"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("id", count="exact").eq("speler_id", speler_id).execute()
+        return response.count or 0
+    except:
+        return 0
+
+def get_devices(speler_id: str) -> list:
+    """Haal alle devices op voor een speler"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("*").eq("speler_id", speler_id).order("created_at", desc=True).execute()
+        return response.data or []
+    except:
+        return []
+
+def remove_device(device_id: int, speler_id: str) -> bool:
+    """Verwijder een device"""
+    try:
+        supabase = get_supabase_client()
+        supabase.table("device_tokens").delete().eq("id", device_id).eq("speler_id", speler_id).execute()
+        return True
+    except:
+        return False
+
+def verify_device_token(speler_id: str, token: str) -> bool:
+    """Check of device token geldig is voor speler"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("id").eq("speler_id", speler_id).eq("token", token).execute()
+        
+        if response.data:
+            # Update last_used
+            supabase.table("device_tokens").update({"last_used": datetime.now().isoformat()}).eq("id", response.data[0]["id"]).execute()
+            return True
+        return False
+    except:
+        return False
+
+def register_device(speler_id: str, token: str, device_name: str = None) -> bool:
+    """Registreer een nieuw device"""
+    try:
+        supabase = get_supabase_client()
+        
+        if not device_name:
+            try:
+                user_agent = st.context.headers.get("User-Agent", "")
+                if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
+                    device_name = "Mobiel"
+                elif "Tablet" in user_agent or "iPad" in user_agent:
+                    device_name = "Tablet"
+                else:
+                    device_name = "Computer"
+            except:
+                device_name = "Apparaat"
+            
+            count = get_device_count(speler_id)
+            device_name = f"{device_name} {count + 1}"
+        
+        record = {
+            "speler_id": speler_id,
+            "token": token,
+            "device_name": device_name,
+            "last_used": datetime.now().isoformat()
+        }
+        supabase.table("device_tokens").insert(record).execute()
+        return True
+    except Exception as e:
+        st.error(f"Fout bij registreren device: {e}")
+        return False
+
+def get_speler_geboortedatum(nbb_nummer: str) -> str | None:
+    """Haal geboortedatum op voor een speler"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("scheidsrechters").select("geboortedatum").eq("nbb_nummer", nbb_nummer).execute()
+        if response.data and response.data[0].get("geboortedatum"):
+            return response.data[0]["geboortedatum"]
+        return None
+    except:
+        return None
+
+def verify_geboortedatum(nbb_nummer: str, dag: int, maand: int, jaar: int) -> bool:
+    """Verifieer geboortedatum voor een speler"""
+    stored_date = get_speler_geboortedatum(nbb_nummer)
+    if not stored_date:
+        return False
+    
+    # Format ingevoerde datum
+    try:
+        ingevoerde_datum = f"{jaar:04d}-{maand:02d}-{dag:02d}"
+    except:
+        return False
+    
+    # Vergelijk (stored_date kan YYYY-MM-DD of datetime string zijn)
+    stored_date_str = str(stored_date)[:10]
+    return ingevoerde_datum == stored_date_str
+
+# ============================================================
+# IMPORT LEDENGEGEVENS (geboortedatum + teams)
+# ============================================================
+
+def _parse_teams_from_cell(team_cell: str) -> list:
+    """
+    Parse teams uit een cel. Filtert alleen 'Teamspeler' teams.
+    
+    Voorbeelden:
+    - "V12-2 (Technische staf), V16-1 (Teamspeler)" -> ["V16-1"]
+    - "HS1*, DS2 (Teamspeler)" -> ["DS2"]
+    - "U18-1 (Teamspeler), HS2 (Teamspeler)" -> ["U18-1", "HS2"]
+    """
+    if not team_cell or not isinstance(team_cell, str):
+        return []
+    
+    teams = []
+    # Split op komma
+    parts = team_cell.split(",")
+    
+    for part in parts:
+        part = part.strip()
+        # Check of dit een Teamspeler is
+        if "(Teamspeler)" in part:
+            # Haal teamnaam (alles voor de haakjes)
+            team_name = part.split("(")[0].strip()
+            # Verwijder sterretjes
+            team_name = team_name.replace("*", "").strip()
+            if team_name:
+                teams.append(team_name)
+    
+    return teams
+
+def import_ledengegevens(df) -> tuple[int, int, int]:
+    """
+    Importeer ledengegevens (geboortedatum en teams) uit pandas DataFrame.
+    Matcht op Lidnummer met bestaande scheidsrechters.
+    
+    Verwachte kolommen: Lidnummer, Geboortedatum, Team
+    
+    Returns: (bijgewerkt, niet_gevonden, errors)
+    """
+    bijgewerkt = 0
+    niet_gevonden = 0
+    errors = 0
+    
+    supabase = get_supabase_client()
+    
+    # Bepaal kolomnamen (case-insensitive)
+    kolommen = {col.lower(): col for col in df.columns}
+    
+    lidnummer_col = kolommen.get("lidnummer")
+    geboortedatum_col = kolommen.get("geboortedatum")
+    team_col = kolommen.get("team")
+    
+    if not lidnummer_col:
+        st.error("Kolom 'Lidnummer' niet gevonden in bestand")
+        return 0, 0, len(df)
+    
+    for _, row in df.iterrows():
+        try:
+            # Haal lidnummer op
+            nbb_nummer = str(row[lidnummer_col]).strip()
+            if not nbb_nummer or nbb_nummer == "nan":
+                continue
+            
+            # Check of scheidsrechter bestaat
+            response = supabase.table("scheidsrechters").select("nbb_nummer").eq("nbb_nummer", nbb_nummer).execute()
+            if not response.data:
+                niet_gevonden += 1
+                continue
+            
+            # Bouw update record
+            update_data = {"updated_at": datetime.now().isoformat()}
+            
+            # Geboortedatum
+            if geboortedatum_col and row.get(geboortedatum_col):
+                geb_value = row[geboortedatum_col]
+                # Converteer naar date string
+                if hasattr(geb_value, 'strftime'):
+                    # pandas Timestamp of datetime
+                    geboortedatum = geb_value.strftime("%Y-%m-%d")
+                else:
+                    # String - probeer te parsen
+                    geb_str = str(geb_value).strip()
+                    if geb_str and geb_str != "nan":
+                        # Probeer verschillende formaten
+                        for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d"]:
+                            try:
+                                dt = datetime.strptime(geb_str, fmt)
+                                geboortedatum = dt.strftime("%Y-%m-%d")
+                                break
+                            except:
+                                continue
+                        else:
+                            geboortedatum = None
+                    else:
+                        geboortedatum = None
+                
+                if geboortedatum:
+                    update_data["geboortedatum"] = geboortedatum
+            
+            # Teams
+            if team_col and row.get(team_col):
+                teams = _parse_teams_from_cell(str(row[team_col]))
+                if teams:
+                    update_data["eigen_teams"] = teams
+            
+            # Update alleen als er data is (naast updated_at)
+            if len(update_data) > 1:
+                supabase.table("scheidsrechters").update(update_data).eq("nbb_nummer", nbb_nummer).execute()
+                bijgewerkt += 1
+            
+        except Exception as e:
+            errors += 1
+    
+    # Invalideer cache
+    if "_db_cache_scheidsrechters" in st.session_state:
+        del st.session_state["_db_cache_scheidsrechters"]
+    
+    return bijgewerkt, niet_gevonden, errors
 
 # ============================================================
 # SCHEIDSRECHTERS
@@ -128,7 +471,6 @@ def verwijder_scheidsrechter(nbb_nummer: str) -> bool:
     except Exception as e:
         st.error(f"Fout bij verwijderen scheidsrechter: {e}")
         return False
-
 # ============================================================
 # WEDSTRIJDEN
 # ============================================================
