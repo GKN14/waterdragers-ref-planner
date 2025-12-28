@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.5"
+APP_VERSIE = "1.9.6"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.6 (2025-12-28)
+**UI:**
+- 🟠 Oranje lijn met afgeronde uiteinden (sluit aan bij metric blokken)
+
 ### v1.9.5 (2025-12-28)
 **Ontwikkelstimulans:**
 - 📈 Wedstrijden op hoger niveau tellen nu ook mee voor minimum
@@ -1746,10 +1750,10 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.metric("Strikes", strikes)
     
-    # Gebogen oranje lijn onder metrics (SVG voor echte curve)
+    # Gebogen oranje lijn onder metrics (SVG met afgeronde uiteinden zoals metric blokken)
     st.markdown("""
-    <svg width="100%" height="15" viewBox="0 0 100 15" preserveAspectRatio="none" style="display: block; margin: 0.5rem 0;">
-        <path d="M 0 2 Q 50 15 100 2" stroke="#FF6600" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <svg width="100%" height="18" viewBox="0 0 100 18" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0;">
+        <path d="M 0 0 C 0 8, 8 12, 50 12 C 92 12, 100 8, 100 0" stroke="#FF6600" stroke-width="3" fill="none"/>
     </svg>
     """, unsafe_allow_html=True)
     
