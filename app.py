@@ -22,13 +22,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.41-debug"
+APP_VERSIE = "1.9.42-debug"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
-### v1.9.41-debug (2025-12-28)
-**Nieuwe localStorage aanpak:**
-- 🔧 Overgestapt van extra-streamlit-components naar streamlit-js-eval
-- 🔧 Tokens worden nu in browser localStorage opgeslagen (per browser uniek)
+### v1.9.42-debug (2025-12-28)
+**Fix dubbele registratie:**
+- 🔧 Session state als primaire token opslag
+- 🔧 Doorgaan knop na verificatie ipv automatische rerun
+- 🔧 Extra debug info voor session state
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6614,10 +6615,27 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     # DEBUG MODE
     DEBUG = True
     
+    session_key = f"device_token_{nbb_nummer}"
+    verified_key = f"device_verified_{nbb_nummer}"
+    
     if DEBUG:
         st.sidebar.markdown("### 🐛 Debug Info")
         st.sidebar.write(f"NBB: {nbb_nummer}")
-        st.sidebar.write(f"JS eval: {db._js_eval_available}")
+        st.sidebar.write(f"Session token exists: {session_key in st.session_state}")
+        st.sidebar.write(f"Verified flag: {st.session_state.get(verified_key, False)}")
+    
+    # Check of we net geverifieerd zijn (flag gezet in vorige run)
+    if st.session_state.get(verified_key, False):
+        token = st.session_state.get(session_key)
+        if DEBUG:
+            st.sidebar.write(f"Just verified, token: {token[:20] if token else 'GEEN'}...")
+        if token and db.token_exists_in_database(nbb_nummer, token):
+            if db.verify_device_token(nbb_nummer, token):
+                # Wis de flag, we zijn nu ingelogd
+                del st.session_state[verified_key]
+                if DEBUG:
+                    st.sidebar.success("✅ Toegang verleend (net geverifieerd)")
+                return True
     
     # Check of speler geboortedatum heeft
     geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
@@ -6630,8 +6648,19 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             st.sidebar.warning("Geen geboortedatum - verificatie overgeslagen")
         return True
     
-    # Check bestaande token uit localStorage
-    token = db.get_device_token_from_cookie(nbb_nummer)
+    # Check bestaande token uit session state
+    token = st.session_state.get(session_key)
+    
+    # Als geen token in session, probeer localStorage
+    if not token and db._js_eval_available:
+        try:
+            from streamlit_js_eval import streamlit_js_eval
+            key = f"device_token_{nbb_nummer}"
+            token = streamlit_js_eval(js_expressions=f"localStorage.getItem('{key}')", key=f"get_{key}")
+            if token:
+                st.session_state[session_key] = token
+        except:
+            pass
     
     if DEBUG:
         st.sidebar.write(f"Token: {token[:20] if token else 'GEEN'}...")
@@ -6644,8 +6673,9 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             st.sidebar.write(f"Token in DB: {token_exists}")
         
         if not token_exists:
-            # Token is verwijderd uit database - wis localStorage
-            db.clear_device_token_cookie(nbb_nummer)
+            # Token is verwijderd uit database - wis session
+            if session_key in st.session_state:
+                del st.session_state[session_key]
             st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
             token = None  # Ga door naar verificatie
         else:
@@ -6710,7 +6740,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         
         if submitted:
             if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
-                # Verificatie geslaagd - registreer device met mogelijke approval
+                # Verificatie geslaagd - registreer device
                 new_token = db._generate_device_token()
                 
                 if DEBUG:
@@ -6722,12 +6752,18 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                     st.sidebar.write(f"Registratie: success={success}, needs_approval={needs_approval}")
                 
                 if success:
+                    # Sla token op in session state
+                    st.session_state[session_key] = new_token
+                    st.session_state[verified_key] = True
+                    
+                    # Probeer ook localStorage
                     db.save_device_token_to_cookie(nbb_nummer, new_token)
                     
                     if needs_approval:
-                        st.warning("✅ Geverifieerd! Dit apparaat wacht nu op goedkeuring via een ander apparaat.")
+                        st.warning("✅ Geverifieerd! Dit apparaat wacht nu op goedkeuring.")
                     else:
                         st.success("✅ Geverifieerd!")
+                    
                     st.rerun()
                 else:
                     st.error("❌ Fout bij registreren apparaat. Probeer opnieuw.")

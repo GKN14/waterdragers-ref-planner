@@ -162,37 +162,51 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit localStorage"""
+    """Haal device token op uit localStorage of session state"""
+    session_key = f"device_token_{nbb_nummer}"
+    
+    # Eerst session state checken (meest betrouwbaar na registratie)
+    if session_key in st.session_state:
+        return st.session_state[session_key]
+    
+    # Dan localStorage proberen
     if not _js_eval_available:
-        # Fallback naar session state
-        return st.session_state.get(f"device_token_{nbb_nummer}")
+        return None
     
     try:
         key = f"device_token_{nbb_nummer}"
         token = streamlit_js_eval(js_expressions=f"localStorage.getItem('{key}')", key=f"get_{key}")
+        if token:
+            # Cache in session state voor snellere toegang
+            st.session_state[session_key] = token
         return token if token else None
     except Exception as e:
-        return st.session_state.get(f"device_token_{nbb_nummer}")
+        return None
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in localStorage"""
-    # Altijd ook session state voor huidige sessie
-    st.session_state[f"device_token_{nbb_nummer}"] = token
+    """Sla device token op in localStorage en session state"""
+    session_key = f"device_token_{nbb_nummer}"
+    
+    # Altijd session state voor huidige sessie (dit is synchroon en betrouwbaar)
+    st.session_state[session_key] = token
     
     if not _js_eval_available:
         return True
     
     try:
         key = f"device_token_{nbb_nummer}"
-        streamlit_js_eval(js_expressions=f"localStorage.setItem('{key}', '{token}')", key=f"set_{key}_{token[:8]}")
+        # Gebruik unieke key om caching te voorkomen
+        unique_key = f"set_{key}_{secrets.token_hex(4)}"
+        streamlit_js_eval(js_expressions=f"localStorage.setItem('{key}', '{token}')", key=unique_key)
         return True
     except:
         return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token uit localStorage"""
-    # Clear session state
+    """Verwijder device token uit localStorage en session state"""
     session_key = f"device_token_{nbb_nummer}"
+    
+    # Clear session state
     if session_key in st.session_state:
         del st.session_state[session_key]
     
@@ -201,7 +215,8 @@ def clear_device_token_cookie(nbb_nummer: str) -> bool:
     
     try:
         key = f"device_token_{nbb_nummer}"
-        streamlit_js_eval(js_expressions=f"localStorage.removeItem('{key}')", key=f"del_{key}")
+        unique_key = f"del_{key}_{secrets.token_hex(4)}"
+        streamlit_js_eval(js_expressions=f"localStorage.removeItem('{key}')", key=unique_key)
         return True
     except:
         return True
