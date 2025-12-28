@@ -22,13 +22,12 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.39"
+APP_VERSIE = "1.9.40-debug"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
-### v1.9.39 (2025-12-28)
-**Bugfix device registratie:**
-- 🔧 Betere error handling bij registratie
-- 🔧 Approved kolom toegevoegd aan register_device functie
+### v1.9.40-debug (2025-12-28)
+**Debug versie:**
+- 🐛 Debug info in sidebar voor device verificatie troubleshooting
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6611,29 +6610,61 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     Check of device geverifieerd is. Toont verificatie scherm indien nodig.
     Returns True als geverifieerd, False als verificatie scherm getoond wordt.
     """
+    # DEBUG MODE
+    DEBUG = True
+    
+    if DEBUG:
+        st.sidebar.markdown("### 🐛 Debug Info")
+        st.sidebar.write(f"NBB: {nbb_nummer}")
+    
     # Check of speler geboortedatum heeft
     geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
+    
+    if DEBUG:
+        st.sidebar.write(f"Geboortedatum: {geboortedatum}")
+    
     if not geboortedatum:
-        # Geen geboortedatum = geen verificatie vereist (nog niet geïmporteerd)
+        if DEBUG:
+            st.sidebar.warning("Geen geboortedatum - verificatie overgeslagen")
         return True
     
     # Check bestaande token uit cookie
     token = db.get_device_token_from_cookie(nbb_nummer)
     
+    if DEBUG:
+        st.sidebar.write(f"Token uit cookie: {token[:20] if token else 'GEEN'}...")
+    
     if token:
         # Check of token überhaupt nog in database staat
-        if not db.token_exists_in_database(nbb_nummer, token):
+        token_exists = db.token_exists_in_database(nbb_nummer, token)
+        
+        if DEBUG:
+            st.sidebar.write(f"Token in DB: {token_exists}")
+        
+        if not token_exists:
             # Token is verwijderd uit database - wis de cookie
             db.clear_device_token_cookie(nbb_nummer)
             st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
             token = None  # Ga door naar verificatie
         else:
             # Token bestaat - check of het geldig en goedgekeurd is
-            if db.verify_device_token(nbb_nummer, token):
+            is_valid = db.verify_device_token(nbb_nummer, token)
+            
+            if DEBUG:
+                st.sidebar.write(f"Token geldig+approved: {is_valid}")
+            
+            if is_valid:
+                if DEBUG:
+                    st.sidebar.success("✅ Toegang verleend")
                 return True
             
             # Check of device wacht op goedkeuring
-            if db.is_device_pending(nbb_nummer, token):
+            is_pending = db.is_device_pending(nbb_nummer, token)
+            
+            if DEBUG:
+                st.sidebar.write(f"Token pending: {is_pending}")
+            
+            if is_pending:
                 st.title("⏳ Wachten op goedkeuring")
                 st.info("Dit apparaat wacht op goedkeuring. Keur het goed via een ander apparaat dat al gekoppeld is.")
                 st.caption("Ververs deze pagina nadat je het apparaat hebt goedgekeurd.")
@@ -6643,6 +6674,14 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     
     # Check of we een nieuw device kunnen toevoegen
     can_add, reason = db.can_add_device(nbb_nummer)
+    device_count = db.get_device_count(nbb_nummer)
+    settings = db.get_speler_device_settings(nbb_nummer)
+    
+    if DEBUG:
+        st.sidebar.write(f"Device count: {device_count}")
+        st.sidebar.write(f"Settings: {settings}")
+        st.sidebar.write(f"Can add: {can_add}, reason: {reason}")
+    
     if not can_add:
         st.title("🚫 Apparaat limiet bereikt")
         st.error(reason)
@@ -6652,6 +6691,9 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     # Nieuw device - verificatie nodig
     st.title("🔐 Verificatie")
     st.write("Dit is een nieuw apparaat. Bevestig je identiteit door je geboortedatum in te voeren.")
+    
+    if DEBUG:
+        st.sidebar.info("Wacht op geboortedatum verificatie")
     
     with st.form("verificatie_form"):
         col1, col2, col3 = st.columns(3)
@@ -6668,7 +6710,14 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
                 # Verificatie geslaagd - registreer device met mogelijke approval
                 new_token = db._generate_device_token()
+                
+                if DEBUG:
+                    st.sidebar.write(f"Nieuwe token: {new_token[:20]}...")
+                
                 success, needs_approval = db.register_device_with_approval(nbb_nummer, new_token)
+                
+                if DEBUG:
+                    st.sidebar.write(f"Registratie: success={success}, needs_approval={needs_approval}")
                 
                 if success:
                     db.save_device_token_to_cookie(nbb_nummer, new_token)

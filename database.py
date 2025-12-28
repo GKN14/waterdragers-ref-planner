@@ -163,29 +163,31 @@ def _generate_device_token() -> str:
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
     """Haal device token op uit cookie"""
+    # Probeer eerst session state (fallback)
+    session_token = st.session_state.get(f"device_token_{nbb_nummer}")
+    
     if _cookie_manager is None:
-        # Fallback naar session state
-        return st.session_state.get(f"device_token_{nbb_nummer}")
+        return session_token
     
     try:
-        token = _cookie_manager.get(f"device_token_{nbb_nummer}")
-        return token
-    except:
-        return None
+        cookie_token = _cookie_manager.get(f"device_token_{nbb_nummer}")
+        # Return cookie token als die bestaat, anders session state
+        return cookie_token if cookie_token else session_token
+    except Exception as e:
+        return session_token
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
     """Sla device token op in cookie (90 dagen geldig)"""
+    # Altijd ook in session state opslaan als backup
+    st.session_state[f"device_token_{nbb_nummer}"] = token
+    
     if _cookie_manager is None:
-        # Fallback naar session state
-        st.session_state[f"device_token_{nbb_nummer}"] = token
         return True
     
     try:
         _cookie_manager.set(f"device_token_{nbb_nummer}", token, max_age=90*24*60*60)
         return True
     except:
-        # Fallback naar session state
-        st.session_state[f"device_token_{nbb_nummer}"] = token
         return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
