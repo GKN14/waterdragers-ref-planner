@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.22"
+APP_VERSIE = "1.9.23"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.23 (2025-12-28)
+**Feedback systeem verbeteringen:**
+- 🏆 Top Begeleiders telt alleen begeleidingen met positieve feedback
+- 👥 Als collega al feedback gaf: alleen OK-knop nodig (geen enquête)
+- ℹ️ Toon wat collega aangaf bij bevestiging
+
 ### v1.9.22 (2025-12-28)
 **Bugfix feedback enquête:**
 - 🐛 Begeleider krijgt niet langer feedback vraag over zichzelf
@@ -650,29 +656,43 @@ def get_top_scheidsrechters(n: int = 3) -> list:
 
 def get_top_begeleiders(n: int = 3) -> list:
     """
-    Haal top N begeleiders (MSE's) op basis van aantal begeleidingen.
-    Een begeleiding telt als:
-    1. MSE als 1e scheids met iemand van lager niveau als 2e scheids
-    2. MSE aangemeld als begeleider (niet-fluitend)
+    Haal top N begeleiders (MSE's) op basis van aantal bevestigde begeleidingen.
+    Een begeleiding telt alleen als er positieve feedback is ontvangen.
     """
     scheidsrechters = laad_scheidsrechters()
     wedstrijden = laad_wedstrijden()
+    feedback_data = laad_begeleiding_feedback()
     
-    # Tel begeleidingen per MSE
+    # Tel begeleidingen per MSE (alleen met positieve feedback)
     begeleiding_count = {}
     
     for wed_id, wed in wedstrijden.items():
-        scheids_1_nbb = wed.get("scheids_1")
-        scheids_2_nbb = wed.get("scheids_2")
         begeleider_nbb = wed.get("begeleider")
         
-        # Tel niet-fluitende begeleider
+        # Tel niet-fluitende begeleider (alleen met positieve feedback)
         if begeleider_nbb and begeleider_nbb in scheidsrechters:
-            if begeleider_nbb not in begeleiding_count:
-                begeleiding_count[begeleider_nbb] = 0
-            begeleiding_count[begeleider_nbb] += 1
+            # Check of er positieve feedback is van een van de scheidsrechters
+            scheids_1 = wed.get("scheids_1")
+            scheids_2 = wed.get("scheids_2")
+            
+            heeft_positieve_feedback = False
+            for scheids_nbb in [scheids_1, scheids_2]:
+                if scheids_nbb:
+                    fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
+                    if fb and fb.get("status") == "aanwezig_geholpen":
+                        heeft_positieve_feedback = True
+                        break
+            
+            if heeft_positieve_feedback:
+                if begeleider_nbb not in begeleiding_count:
+                    begeleiding_count[begeleider_nbb] = 0
+                begeleiding_count[begeleider_nbb] += 1
         
         # Tel fluitende begeleiding (MSE als 1e met lager niveau 2e)
+        # Dit telt altijd mee want de MSE is zelf aanwezig als scheidsrechter
+        scheids_1_nbb = wed.get("scheids_1")
+        scheids_2_nbb = wed.get("scheids_2")
+        
         if not scheids_1_nbb or not scheids_2_nbb:
             continue
         
@@ -2038,6 +2058,8 @@ def toon_speler_view(nbb_nummer: str):
     
     # Zoek wedstrijden waar ik scheidsrechter was, met begeleider, die al gespeeld zijn
     wedstrijden_voor_feedback = []
+    wedstrijden_collega_feedback = []  # Wedstrijden waar collega al feedback gaf
+    
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
             continue
@@ -2063,17 +2085,71 @@ def toon_speler_view(nbb_nummer: str):
         # Heb ik al feedback gegeven?
         feedback_id = f"fb_{wed_id}_{nbb_nummer}"
         if feedback_id in feedback_data:
-            continue  # Al feedback gegeven
+            continue  # Al feedback gegeven (of bevestigd)
         
-        wedstrijden_voor_feedback.append({
-            "wed_id": wed_id,
-            "wed": wed,
-            "wed_datum": wed_datum,
-            "begeleider_nbb": begeleider_nbb,
-            "feedback_id": feedback_id
-        })
+        # Check of de andere scheidsrechter al feedback heeft gegeven
+        andere_scheids = wed.get("scheids_2") if wed.get("scheids_1") == nbb_nummer else wed.get("scheids_1")
+        andere_feedback = None
+        if andere_scheids:
+            andere_feedback_id = f"fb_{wed_id}_{andere_scheids}"
+            andere_feedback = feedback_data.get(andere_feedback_id)
+        
+        if andere_feedback:
+            # Collega heeft al feedback gegeven
+            wedstrijden_collega_feedback.append({
+                "wed_id": wed_id,
+                "wed": wed,
+                "wed_datum": wed_datum,
+                "begeleider_nbb": begeleider_nbb,
+                "feedback_id": feedback_id,
+                "collega_nbb": andere_scheids,
+                "collega_feedback": andere_feedback
+            })
+        else:
+            # Nog geen feedback van collega
+            wedstrijden_voor_feedback.append({
+                "wed_id": wed_id,
+                "wed": wed,
+                "wed_datum": wed_datum,
+                "begeleider_nbb": begeleider_nbb,
+                "feedback_id": feedback_id
+            })
     
-    # Toon feedback enquête als eerste (hoogste prioriteit)
+    # Toon wedstrijden waar collega al feedback gaf (alleen OK knop nodig)
+    if wedstrijden_collega_feedback:
+        st.info(f"ℹ️ **Collega heeft al feedback gegeven over {len(wedstrijden_collega_feedback)} begeleiding(en)**")
+        for fb_item in wedstrijden_collega_feedback:
+            wed = fb_item["wed"]
+            wed_datum = fb_item["wed_datum"]
+            begeleider_naam = scheidsrechters.get(fb_item["begeleider_nbb"], {}).get("naam", "Onbekend")
+            collega_naam = scheidsrechters.get(fb_item["collega_nbb"], {}).get("naam", "Collega")
+            collega_status = fb_item["collega_feedback"].get("status", "")
+            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            
+            status_tekst = {
+                "aanwezig_geholpen": "✅ was aanwezig en heeft geholpen",
+                "aanwezig_niet_geholpen": "⚠️ was aanwezig maar heeft niet geholpen",
+                "niet_aanwezig": "❌ is niet komen opdagen",
+                "bevestigd": "heeft bevestigd"
+            }.get(collega_status, collega_status)
+            
+            with st.container():
+                st.markdown(f"**{dag} {wed_datum.strftime('%d-%m')}** - {wed['thuisteam']} vs {wed['uitteam']}")
+                st.markdown(f"*{collega_naam}* gaf aan dat **{begeleider_naam}** {status_tekst}")
+                
+                if st.button("✓ OK", key=f"fb_ok_{fb_item['feedback_id']}", help="Bevestig dat je dit gezien hebt"):
+                    # Sla op als "bevestigd" - dit betekent dat de speler gezien heeft wat collega zei
+                    sla_begeleiding_feedback_op(fb_item["feedback_id"], {
+                        "wed_id": fb_item["wed_id"],
+                        "speler_nbb": nbb_nummer,
+                        "begeleider_nbb": fb_item["begeleider_nbb"],
+                        "status": "bevestigd",
+                        "feedback_datum": datetime.now().isoformat()
+                    })
+                    st.rerun()
+                st.divider()
+    
+    # Toon feedback enquête voor wedstrijden waar nog geen feedback is
     if wedstrijden_voor_feedback:
         st.warning(f"📋 **Feedback gevraagd over {len(wedstrijden_voor_feedback)} begeleiding(en)**")
         for fb_item in wedstrijden_voor_feedback:
