@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.20"
+APP_VERSIE = "1.9.21"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.21 (2025-12-28)
+**Performance verbetering:**
+- 🚀 Caching toegevoegd aan alle database functies
+- 🔧 Voorkomt "Resource temporarily unavailable" fouten
+- 💾 Fallback naar oude cache bij connectieproblemen
+
 ### v1.9.20 (2025-12-28)
 **Begeleiding Feedback Systeem:**
 - 📋 Mini-enquête voor spelers na wedstrijd met begeleider

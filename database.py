@@ -474,7 +474,13 @@ def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
 # ============================================================
 
 def laad_beschikbare_klusjes() -> list:
-    """Laad beschikbare klusjes uit Supabase"""
+    """Laad beschikbare klusjes uit Supabase (met caching)"""
+    cache_key = "_db_cache_beschikbare_klusjes"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("beschikbare_klusjes").select("*").execute()
@@ -483,10 +489,12 @@ def laad_beschikbare_klusjes() -> list:
         for row in response.data:
             row.pop("created_at", None)
             result.append(row)
+        
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden beschikbare klusjes: {e}")
-        return []
+        return st.session_state.get(cache_key, [])  # Return oude cache als fallback
 
 def sla_beschikbare_klusjes_op(klusjes: list) -> bool:
     """Sla beschikbare klusjes op naar Supabase"""
@@ -504,6 +512,11 @@ def sla_beschikbare_klusjes_op(klusjes: list) -> bool:
                 "strikes_waarde": klusje.get("strikes_waarde", 1)
             }
             supabase.table("beschikbare_klusjes").insert(record).execute()
+        
+        # Clear cache zodat wijzigingen zichtbaar zijn
+        if "_db_cache_beschikbare_klusjes" in st.session_state:
+            del st.session_state["_db_cache_beschikbare_klusjes"]
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan beschikbare klusjes: {e}")
@@ -514,7 +527,13 @@ def sla_beschikbare_klusjes_op(klusjes: list) -> bool:
 # ============================================================
 
 def laad_klusjes() -> dict:
-    """Laad uitgevoerde klusjes uit Supabase"""
+    """Laad uitgevoerde klusjes uit Supabase (met caching)"""
+    cache_key = "_db_cache_klusjes"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("klusjes").select("*").execute()
@@ -528,10 +547,12 @@ def laad_klusjes() -> dict:
             if row.get("datum"):
                 row["datum"] = str(row["datum"])
             result[klusje_id] = row
+        
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden klusjes: {e}")
-        return {}
+        return st.session_state.get(cache_key, {})  # Return oude cache als fallback
 
 def sla_klusjes_op(klusjes: dict) -> bool:
     """Sla uitgevoerde klusjes op naar Supabase"""
@@ -552,6 +573,11 @@ def sla_klusjes_op(klusjes: dict) -> bool:
             else:
                 record["id"] = int(klusje_id)
                 supabase.table("klusjes").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_klusjes" in st.session_state:
+            st.session_state["_db_cache_klusjes"] = klusjes
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan klusjes: {e}")
@@ -578,7 +604,13 @@ def voeg_klusje_toe(nbb_nummer: str, klusje_id: str) -> bool:
 # ============================================================
 
 def laad_vervangingsverzoeken() -> dict:
-    """Laad vervangingsverzoeken uit Supabase"""
+    """Laad vervangingsverzoeken uit Supabase (met caching)"""
+    cache_key = "_db_cache_vervangingsverzoeken"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("vervangingsverzoeken").select("*").execute()
@@ -589,10 +621,12 @@ def laad_vervangingsverzoeken() -> dict:
             row.pop("created_at", None)
             row.pop("updated_at", None)
             result[verzoek_id] = row
+        
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden vervangingsverzoeken: {e}")
-        return {}
+        return st.session_state.get(cache_key, {})  # Return oude cache als fallback
 
 def sla_vervangingsverzoeken_op(verzoeken: dict) -> bool:
     """Sla vervangingsverzoeken op naar Supabase"""
@@ -611,6 +645,11 @@ def sla_vervangingsverzoeken_op(verzoeken: dict) -> bool:
             if verzoek_id.isdigit():
                 record["id"] = int(verzoek_id)
             supabase.table("vervangingsverzoeken").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_vervangingsverzoeken" in st.session_state:
+            st.session_state["_db_cache_vervangingsverzoeken"] = verzoeken
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan vervangingsverzoeken: {e}")
@@ -638,7 +677,13 @@ def voeg_vervangingsverzoek_toe(wed_id: str, aanvrager_nbb: str, vervanger_nbb: 
 # ============================================================
 
 def laad_begeleidingsuitnodigingen() -> dict:
-    """Laad begeleidingsuitnodigingen uit Supabase"""
+    """Laad begeleidingsuitnodigingen uit Supabase (met caching)"""
+    cache_key = "_db_cache_begeleidingsuitnodigingen"
+    
+    # Return cached versie als beschikbaar
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
     try:
         supabase = get_supabase_client()
         response = supabase.table("begeleidingsuitnodigingen").select("*").execute()
@@ -649,10 +694,12 @@ def laad_begeleidingsuitnodigingen() -> dict:
             row.pop("created_at", None)
             row.pop("updated_at", None)
             result[uitnodiging_id] = row
+        
+        st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden begeleidingsuitnodigingen: {e}")
-        return {}
+        return st.session_state.get(cache_key, {})  # Return oude cache als fallback
 
 def sla_begeleidingsuitnodigingen_op(uitnodigingen: dict) -> bool:
     """Sla begeleidingsuitnodigingen op naar Supabase"""
@@ -670,6 +717,11 @@ def sla_begeleidingsuitnodigingen_op(uitnodigingen: dict) -> bool:
             if uitnodiging_id.isdigit():
                 record["id"] = int(uitnodiging_id)
             supabase.table("begeleidingsuitnodigingen").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_begeleidingsuitnodigingen" in st.session_state:
+            st.session_state["_db_cache_begeleidingsuitnodigingen"] = uitnodigingen
+        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan begeleidingsuitnodigingen: {e}")
