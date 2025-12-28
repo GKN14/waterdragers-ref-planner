@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.11"
+APP_VERSIE = "1.9.12"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.12 (2025-12-28)
+**Bugfix:**
+- 🐛 NameError opgelost in get_kandidaten_voor_wedstrijd (eigen_niveau → niveau_1e)
+
 ### v1.9.11 (2025-12-28)
 **UI:**
 - 🟠 Oranje lijn: zelfde CSS als blauwe border-top, 180° geroteerd (exacte match)
@@ -1373,7 +1377,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         op_niveau = niveau_stats["op_niveau"]
         
         # Is deze wedstrijd op eigen niveau of hoger?
-        is_op_eigen_niveau_of_hoger = wed_niveau >= eigen_niveau
+        is_op_eigen_niveau_of_hoger = wed_niveau >= niveau_1e
         
         # Tekort berekenen: relevant als wedstrijd op eigen niveau of hoger is
         if is_op_eigen_niveau_of_hoger:
@@ -1386,7 +1390,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "naam": scheids["naam"],
             "huidig_aantal": huidig_totaal,
             "op_niveau": op_niveau,
-            "eigen_niveau": eigen_niveau,
+            "eigen_niveau": niveau_1e,
             "min_wedstrijden": min_wed,
             "tekort": tekort,
             "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger
