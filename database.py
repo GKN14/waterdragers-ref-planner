@@ -473,6 +473,7 @@ def register_device(speler_id: str, token: str, device_name: str = None) -> bool
             "speler_id": speler_id,
             "token": token,
             "device_name": device_name,
+            "approved": True,
             "last_used": datetime.now().isoformat()
         }
         supabase.table("device_tokens").insert(record).execute()

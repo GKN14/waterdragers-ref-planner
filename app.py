@@ -22,9 +22,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.38"
+APP_VERSIE = "1.9.39"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.39 (2025-12-28)
+**Bugfix device registratie:**
+- 🔧 Betere error handling bij registratie
+- 🔧 Approved kolom toegevoegd aan register_device functie
+
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
 - 🔐 Cookie wordt gewist als apparaat verwijderd is uit database
@@ -6670,10 +6675,11 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                     
                     if needs_approval:
                         st.warning("✅ Geverifieerd! Dit apparaat wacht nu op goedkeuring via een ander apparaat.")
-                        st.rerun()
                     else:
                         st.success("✅ Geverifieerd!")
-                        st.rerun()
+                    st.rerun()
+                else:
+                    st.error("❌ Fout bij registreren apparaat. Probeer opnieuw.")
             else:
                 st.error("❌ Geboortedatum komt niet overeen")
     
