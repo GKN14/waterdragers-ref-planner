@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.10"
+APP_VERSIE = "1.9.11"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.11 (2025-12-28)
+**UI:**
+- 🟠 Oranje lijn: zelfde CSS als blauwe border-top, 180° geroteerd (exacte match)
+
 ### v1.9.10 (2025-12-28)
 **UI:**
 - 🟠 Oranje lijn met taps toelopende uiteinden naar een punt (gevulde vorm)
@@ -1766,11 +1770,15 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.metric("Strikes", strikes)
     
-    # Gebogen oranje lijn onder metrics (taps toelopend naar punt aan uiteinden)
+    # Gebogen oranje lijn onder metrics (zelfde styling als blauwe border-top, 180° geroteerd)
     st.markdown("""
-    <svg width="100%" height="12" viewBox="0 0 200 12" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0;">
-        <path d="M 0 0 Q 2 6, 10 5 L 190 5 Q 198 6, 200 0 Q 198 6, 190 7 L 10 7 Q 2 6, 0 0 Z" fill="#FF6600"/>
-    </svg>
+    <div style="
+        border-top: 3px solid #FF6600;
+        border-radius: 0.5rem;
+        height: 0.5rem;
+        transform: rotate(180deg);
+        margin: 0.3rem 0;
+    "></div>
     """, unsafe_allow_html=True)
     
     # Status + Deadline in één rij
