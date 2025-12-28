@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.31"
+APP_VERSIE = "1.9.32"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.32 (2025-12-28)
+**Beheerder refresh knop:**
+- 🔄 "Ververs data" knop in header beheerder view
+- Laadt alle data opnieuw zonder uitloggen
+
 ### v1.9.31 (2025-12-28)
 **Debug voor TC Monitoring:**
 - 🔍 Debug expander toont alle feedback records in database
@@ -3213,18 +3218,36 @@ def toon_speler_view(nbb_nummer: str):
 
 def toon_beheerder_view():
     """Toon het beheerderspaneel."""
-    # Header met logo
+    # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"
     if logo_path.exists():
-        col_logo, col_title = st.columns([1, 4])
+        col_logo, col_title, col_refresh = st.columns([1, 3, 1])
         with col_logo:
             st.image(str(logo_path), width=100)
         with col_title:
             st.title("Beheerder - Scheidsrechter Planning")
             st.caption(f"Ref Planner v{APP_VERSIE}")
+        with col_refresh:
+            st.write("")  # Spacing
+            if st.button("🔄 Ververs data", help="Laad alle data opnieuw uit de database"):
+                # Clear alle database caches
+                cache_keys = [key for key in st.session_state.keys() if key.startswith("_db_cache_")]
+                for key in cache_keys:
+                    del st.session_state[key]
+                st.rerun()
     else:
-        st.title("🔧 Beheerder - Scheidsrechter Planning")
-        st.caption(f"Ref Planner v{APP_VERSIE}")
+        col_title, col_refresh = st.columns([4, 1])
+        with col_title:
+            st.title("🔧 Beheerder - Scheidsrechter Planning")
+            st.caption(f"Ref Planner v{APP_VERSIE}")
+        with col_refresh:
+            st.write("")  # Spacing
+            if st.button("🔄 Ververs data", help="Laad alle data opnieuw uit de database"):
+                # Clear alle database caches
+                cache_keys = [key for key in st.session_state.keys() if key.startswith("_db_cache_")]
+                for key in cache_keys:
+                    del st.session_state[key]
+                st.rerun()
     
     # Statistieken berekenen
     wedstrijden = laad_wedstrijden()
