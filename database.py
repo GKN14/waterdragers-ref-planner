@@ -215,6 +215,49 @@ def remove_device(device_id: int, speler_id: str) -> bool:
     except:
         return False
 
+def remove_device_admin(device_id: int) -> bool:
+    """Verwijder een device (beheerder - geen speler_id check)"""
+    try:
+        supabase = get_supabase_client()
+        supabase.table("device_tokens").delete().eq("id", device_id).execute()
+        return True
+    except:
+        return False
+
+def get_all_devices() -> list:
+    """Haal alle devices op (voor beheerder)"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("*").order("created_at", desc=True).execute()
+        return response.data or []
+    except:
+        return []
+
+def get_device_stats() -> dict:
+    """Haal device statistieken op (voor beheerder)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Alle devices
+        all_devices = supabase.table("device_tokens").select("speler_id", count="exact").execute()
+        total_devices = all_devices.count or 0
+        
+        # Unieke spelers met devices
+        devices_data = supabase.table("device_tokens").select("speler_id").execute()
+        unique_spelers = len(set(d["speler_id"] for d in devices_data.data)) if devices_data.data else 0
+        
+        # Spelers met geboortedatum (kunnen verifiëren)
+        spelers_met_geb = supabase.table("scheidsrechters").select("nbb_nummer").neq("geboortedatum", None).execute()
+        spelers_met_geboortedatum = len(spelers_met_geb.data) if spelers_met_geb.data else 0
+        
+        return {
+            "total_devices": total_devices,
+            "unique_spelers": unique_spelers,
+            "spelers_met_geboortedatum": spelers_met_geboortedatum
+        }
+    except:
+        return {"total_devices": 0, "unique_spelers": 0, "spelers_met_geboortedatum": 0}
+
 def verify_device_token(speler_id: str, token: str) -> bool:
     """Check of device token geldig is voor speler"""
     try:

@@ -22,12 +22,19 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.35"
+APP_VERSIE = "1.9.36"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.36 (2025-12-28)
+**Apparaatbeheer:**
+- 📱 Spelers kunnen gekoppelde apparaten zien in sidebar
+- 🗑️ Spelers kunnen eigen apparaten verwijderen
+- 🔐 Beheerder tab voor apparaatoverzicht
+- 👥 Beheerder kan apparaten per speler bekijken/verwijderen
+
 ### v1.9.35 (2025-12-28)
 **Beveiliging update:**
-- 🔐 Device verificatie met cookies (persistent)
+- 🔐 Device verificatie met cookies (90 dagen)
 - 🌍 Geofiltering (alleen Nederland)
 - 🔑 Admin wachtwoord in database (niet meer in code)
 - 📥 Ledengegevens import (geboortedatum + teams)
@@ -2062,6 +2069,31 @@ def toon_speler_view(nbb_nummer: str):
                         teken = "+" if strike["strikes"] > 0 else ""
                         st.markdown(f"**{teken}{strike['strikes']}** - {strike['reden']}")
         
+        # Device beheer sectie
+        st.divider()
+        st.markdown("### 📱 Apparaten")
+        device_count = db.get_device_count(nbb_nummer)
+        st.caption(f"{device_count} apparaat{'en' if device_count != 1 else ''} gekoppeld")
+        
+        with st.expander("Apparaten beheren"):
+            devices = db.get_devices(nbb_nummer)
+            if devices:
+                for device in devices:
+                    col_info, col_btn = st.columns([3, 1])
+                    with col_info:
+                        device_name = device.get("device_name", "Onbekend")
+                        created = device.get("created_at", "")[:10] if device.get("created_at") else "?"
+                        last_used = device.get("last_used", "")[:10] if device.get("last_used") else "?"
+                        st.markdown(f"**{device_name}**")
+                        st.caption(f"Toegevoegd: {created} | Laatst: {last_used}")
+                    with col_btn:
+                        if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder apparaat"):
+                            if db.remove_device(device["id"], nbb_nummer):
+                                st.success("Verwijderd!")
+                                st.rerun()
+            else:
+                st.caption("*Geen apparaten gekoppeld*")
+        
         # Versie info onderaan sidebar
         st.divider()
         st.caption(f"Ref Planner v{APP_VERSIE}")
@@ -3365,14 +3397,15 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
         "📈 Capaciteit",
         "🏆 Beloningen",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
-        "📊 Import/Export"
+        "📊 Import/Export",
+        "🔐 Apparaten"
     ])
     
     with tab1:
@@ -3395,6 +3428,107 @@ def toon_beheerder_view():
     
     with tab7:
         toon_import_export()
+    
+    with tab8:
+        toon_apparaten_beheer()
+
+def toon_apparaten_beheer():
+    """Beheer van gekoppelde apparaten per speler."""
+    st.subheader("🔐 Apparaatbeheer")
+    
+    # Statistieken
+    stats = db.get_device_stats()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Totaal apparaten", stats["total_devices"])
+    with col2:
+        st.metric("Spelers met apparaat", stats["unique_spelers"])
+    with col3:
+        st.metric("Spelers met verificatie", stats["spelers_met_geboortedatum"], 
+                  help="Spelers met geboortedatum in systeem")
+    
+    st.divider()
+    
+    # Alle devices ophalen
+    all_devices = db.get_all_devices()
+    scheidsrechters = laad_scheidsrechters()
+    
+    if not all_devices:
+        st.info("Nog geen apparaten gekoppeld.")
+        return
+    
+    # Groepeer per speler
+    devices_per_speler = {}
+    for device in all_devices:
+        speler_id = device["speler_id"]
+        if speler_id not in devices_per_speler:
+            devices_per_speler[speler_id] = []
+        devices_per_speler[speler_id].append(device)
+    
+    # Zoekfunctie
+    zoek = st.text_input("🔍 Zoek speler (naam of NBB-nummer)", key="zoek_apparaat")
+    
+    # Filter op zoekterm
+    gefilterde_spelers = devices_per_speler.keys()
+    if zoek:
+        zoek_lower = zoek.lower()
+        gefilterde_spelers = [
+            speler_id for speler_id in devices_per_speler.keys()
+            if zoek_lower in speler_id.lower() or 
+               zoek_lower in scheidsrechters.get(speler_id, {}).get("naam", "").lower()
+        ]
+    
+    # Toon per speler
+    for speler_id in sorted(gefilterde_spelers, key=lambda x: scheidsrechters.get(x, {}).get("naam", x)):
+        devices = devices_per_speler[speler_id]
+        speler_naam = scheidsrechters.get(speler_id, {}).get("naam", "Onbekend")
+        
+        with st.expander(f"**{speler_naam}** ({speler_id}) - {len(devices)} apparaat{'en' if len(devices) != 1 else ''}"):
+            for device in devices:
+                col_info, col_delete = st.columns([4, 1])
+                
+                with col_info:
+                    device_name = device.get("device_name", "Onbekend apparaat")
+                    created = device.get("created_at", "")[:10] if device.get("created_at") else "?"
+                    last_used = device.get("last_used", "")[:10] if device.get("last_used") else "Nooit"
+                    
+                    st.markdown(f"📱 **{device_name}**")
+                    st.caption(f"Gekoppeld: {created} | Laatst gebruikt: {last_used}")
+                
+                with col_delete:
+                    if st.button("🗑️", key=f"admin_del_{device['id']}", help="Verwijder apparaat"):
+                        if db.remove_device_admin(device["id"]):
+                            st.success(f"Apparaat verwijderd!")
+                            st.rerun()
+                        else:
+                            st.error("Fout bij verwijderen")
+                
+                st.divider()
+    
+    # Bulk acties
+    st.divider()
+    st.markdown("### ⚠️ Bulk acties")
+    
+    with st.expander("Alle apparaten van een speler verwijderen"):
+        speler_opties = {
+            f"{scheidsrechters.get(sid, {}).get('naam', 'Onbekend')} ({sid})": sid 
+            for sid in devices_per_speler.keys()
+        }
+        
+        if speler_opties:
+            geselecteerde = st.selectbox("Selecteer speler", options=list(speler_opties.keys()))
+            
+            if geselecteerde:
+                speler_id = speler_opties[geselecteerde]
+                aantal = len(devices_per_speler[speler_id])
+                
+                st.warning(f"Dit verwijdert {aantal} apparaat{'en' if aantal != 1 else ''} van {geselecteerde}")
+                
+                if st.button(f"🗑️ Verwijder alle {aantal} apparaten", type="primary"):
+                    for device in devices_per_speler[speler_id]:
+                        db.remove_device_admin(device["id"])
+                    st.success(f"Alle apparaten van {geselecteerde} verwijderd!")
+                    st.rerun()
 
 def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, scheidsrechters: dict) -> bytes:
     """Genereer een PNG afbeelding van het scheidsrechteroverzicht."""
