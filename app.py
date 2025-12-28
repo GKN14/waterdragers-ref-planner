@@ -19,9 +19,16 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.29"
+APP_VERSIE = "1.9.30"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.30 (2025-12-28)
+**Feedback systeem fixes:**
+- 🔄 Feedback altijd vers laden (geen caching meer)
+- 🔒 Verbeterde wijzig-blokkade check
+- 🎓 Begeleider melding voor alle begeleiders (niet alleen MSE)
+- 🐛 TC Monitoring tellers nu correct na reset
+
 ### v1.9.29 (2025-12-28)
 **Feedback systeem verfijningen:**
 - 🔒 Feedback niet wijzigbaar als collega al bevestigd heeft
@@ -1903,10 +1910,23 @@ def toon_speler_view(nbb_nummer: str):
                     if fb.get("status") != "bevestigd":
                         # Check of de andere scheidsrechter al bevestigd heeft
                         wed_id = fb.get("wed_id")
-                        andere_scheids = wed.get("scheids_2") if wed.get("scheids_1") == nbb_nummer else wed.get("scheids_1")
+                        mijn_nbb = fb.get("speler_nbb")  # Gebruik speler_nbb uit feedback, niet nbb_nummer
+                        
+                        # Bepaal wie de andere scheidsrechter is
+                        scheids_1_nbb = wed.get("scheids_1")
+                        scheids_2_nbb = wed.get("scheids_2")
+                        
+                        if mijn_nbb == scheids_1_nbb:
+                            andere_scheids = scheids_2_nbb
+                        elif mijn_nbb == scheids_2_nbb:
+                            andere_scheids = scheids_1_nbb
+                        else:
+                            andere_scheids = None
+                        
                         andere_bevestigd = False
                         if andere_scheids:
-                            andere_fb = feedback_data.get(f"fb_{wed_id}_{andere_scheids}")
+                            andere_fb_id = f"fb_{wed_id}_{andere_scheids}"
+                            andere_fb = feedback_data.get(andere_fb_id)
                             if andere_fb and andere_fb.get("status") == "bevestigd":
                                 andere_bevestigd = True
                         
@@ -1917,12 +1937,13 @@ def toon_speler_view(nbb_nummer: str):
                                 verwijder_begeleiding_feedback(fb.get("feedback_id"))
                                 st.rerun()
         
-        # Feedback over mijn begeleidingen (voor begeleiders/MSE's)
-        if is_mse:
-            feedback_over_mij = [fb for fb_id, fb in feedback_data.items() 
-                                 if fb.get("begeleider_nbb") == nbb_nummer 
-                                 and fb.get("status") != "bevestigd"]  # Alleen echte feedback
-            
+        # Feedback over mijn begeleidingen (voor iedereen die begeleider was)
+        # Check of er feedback is waar ik de begeleider was
+        feedback_over_mij = [fb for fb_id, fb in feedback_data.items() 
+                             if fb.get("begeleider_nbb") == nbb_nummer 
+                             and fb.get("status") != "bevestigd"]  # Alleen echte feedback
+        
+        if feedback_over_mij:
             # Filter: alleen feedback die nog niet door begeleider is gezien
             begeleider_gezien_key = f"_begeleider_gezien_{nbb_nummer}"
             gezien_feedbacks = st.session_state.get(begeleider_gezien_key, set())

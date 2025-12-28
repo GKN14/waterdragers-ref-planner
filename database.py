@@ -813,12 +813,8 @@ def import_wedstrijden_bulk(wedstrijden: dict) -> tuple[int, int]:
 # ============================================================
 
 def laad_begeleiding_feedback() -> dict:
-    """Laad alle begeleiding feedback uit Supabase (met caching)"""
-    cache_key = "_db_cache_begeleiding_feedback"
-    
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
-    
+    """Laad alle begeleiding feedback uit Supabase (geen caching - altijd verse data)"""
+    # Geen caching voor feedback - andere gebruikers kunnen feedback hebben gegeven
     try:
         supabase = get_supabase_client()
         response = supabase.table("begeleiding_feedback").select("*").execute()
@@ -832,12 +828,11 @@ def laad_begeleiding_feedback() -> dict:
                     "wed_id": row.get("wed_id"),
                     "speler_nbb": row.get("speler_nbb"),
                     "begeleider_nbb": row.get("begeleider_nbb"),
-                    "status": row.get("status"),  # "aanwezig_geholpen", "aanwezig_niet_geholpen", "niet_aanwezig"
+                    "status": row.get("status"),
                     "feedback_datum": row.get("feedback_datum"),
                     "opmerking": row.get("opmerking", "")
                 }
         
-        st.session_state[cache_key] = feedback_dict
         return feedback_dict
     except Exception as e:
         st.error(f"Fout bij laden feedback: {e}")
@@ -860,12 +855,6 @@ def sla_begeleiding_feedback_op(feedback_id: str, data: dict) -> bool:
         }
         
         supabase.table("begeleiding_feedback").upsert(record).execute()
-        
-        # Clear cache zodat data opnieuw wordt geladen
-        cache_key = "_db_cache_begeleiding_feedback"
-        if cache_key in st.session_state:
-            del st.session_state[cache_key]
-        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan feedback: {e}")
@@ -876,12 +865,6 @@ def verwijder_begeleiding_feedback(feedback_id: str) -> bool:
     try:
         supabase = get_supabase_client()
         supabase.table("begeleiding_feedback").delete().eq("feedback_id", feedback_id).execute()
-        
-        # Update cache
-        if "_db_cache_begeleiding_feedback" in st.session_state:
-            if feedback_id in st.session_state["_db_cache_begeleiding_feedback"]:
-                del st.session_state["_db_cache_begeleiding_feedback"][feedback_id]
-        
         return True
     except Exception as e:
         st.error(f"Fout bij verwijderen feedback: {e}")
