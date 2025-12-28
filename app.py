@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.26"
+APP_VERSIE = "1.9.27"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.27 (2025-12-28)
+**Begeleiding indicator voor MSE's:**
+- 🎓 Bij scheidsrechter naam: indicator als speler open staat voor begeleiding
+- 👤🎓 Alleen zichtbaar voor MSE begeleiders
+- 📋 Legenda uitgebreid voor MSE's
+
 ### v1.9.26 (2025-12-28)
 **Bugfix OK-knop feedback:**
 - 🐛 Cache wordt nu correct gecleared na opslaan feedback
@@ -1192,7 +1198,8 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
         andere_nbb = wed.get(positie)
         andere_scheids = scheidsrechters.get(andere_nbb, {})
         naam = andere_scheids.get("naam", "Onbekend")
-        return {"ingeschreven_zelf": False, "bezet": True, "naam": naam, "beschikbaar": False, "reden": ""}
+        wil_begeleiding = andere_scheids.get("open_voor_begeleiding", False)
+        return {"ingeschreven_zelf": False, "bezet": True, "naam": naam, "beschikbaar": False, "reden": "", "nbb": andere_nbb, "wil_begeleiding": wil_begeleiding}
     
     # Positie is open - check of speler mag inschrijven
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
@@ -1606,6 +1613,9 @@ def toon_speler_view(nbb_nummer: str):
     # Haal speler stats vroeg op voor gebruik in sidebar
     speler_stats = get_speler_stats(nbb_nummer)
     
+    # Bepaal of speler MSE is (voor begeleiding features)
+    is_mse = scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in scheids.get("eigen_teams", []))
+    
     # CSS voor compacte layout met BOB huisstijl (optie 4: subtiel met gekleurde borders)
     st.markdown("""
     <style>
@@ -1831,6 +1841,8 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown("👤 Iemand anders")
         st.markdown("📋 Beschikbaar")
         st.markdown("🎓 Begeleider (MSE)")
+        if is_mse:
+            st.markdown("👤🎓 Wil begeleiding ontvangen")
         
         st.divider()
         
@@ -2056,7 +2068,6 @@ def toon_speler_view(nbb_nummer: str):
     open_voor_begeleiding = scheids.get("open_voor_begeleiding", False)
     begeleiding_reden = scheids.get("begeleiding_reden", "")
     telefoon_begeleiding = scheids.get("telefoon_begeleiding", "")
-    is_mse = scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in scheids.get("eigen_teams", []))
     
     # Klusjes, uitnodigingen en verzoeken ophalen voor header alerts
     klusjes = laad_klusjes()
@@ -2825,7 +2836,9 @@ def toon_speler_view(nbb_nummer: str):
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
                                 elif status_1e["bezet"]:
-                                    st.markdown(f"👤 **1e scheids:** {status_1e['naam']}")
+                                    # Toon begeleiding indicator voor MSE's
+                                    begel_indicator = " 🎓" if is_mse and status_1e.get("wil_begeleiding", False) else ""
+                                    st.markdown(f"👤 **1e scheids:** {status_1e['naam']}{begel_indicator}")
                                 elif status_1e["beschikbaar"]:
                                     # Bereken potentiële punten als boven minimum
                                     punten_info = None
@@ -2930,7 +2943,9 @@ def toon_speler_view(nbb_nummer: str):
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
                                 elif status_2e["bezet"]:
-                                    st.markdown(f"👤 **2e scheids:** {status_2e['naam']}")
+                                    # Toon begeleiding indicator voor MSE's
+                                    begel_indicator = " 🎓" if is_mse and status_2e.get("wil_begeleiding", False) else ""
+                                    st.markdown(f"👤 **2e scheids:** {status_2e['naam']}{begel_indicator}")
                                 elif status_2e["beschikbaar"]:
                                     # Bereken potentiële punten als boven minimum
                                     punten_info = None
