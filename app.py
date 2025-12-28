@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.30"
+APP_VERSIE = "1.9.31"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.31 (2025-12-28)
+**Debug voor TC Monitoring:**
+- 🔍 Debug expander toont alle feedback records in database
+- 🔍 Per wedstrijd: toont welke feedback_id wordt gezocht
+
 ### v1.9.30 (2025-12-28)
 **Feedback systeem fixes:**
 - 🔄 Feedback altijd vers laden (geen caching meer)
@@ -5231,6 +5236,14 @@ def toon_beloningen_beheer():
         feedback_data = laad_begeleiding_feedback()
         nu = datetime.now()
         
+        # Debug: toon feedback records
+        with st.expander("🔍 Debug: Feedback records in database", expanded=False):
+            if feedback_data:
+                for fb_id, fb in feedback_data.items():
+                    st.caption(f"`{fb_id}` → status: {fb.get('status')}, speler: {fb.get('speler_nbb')}")
+            else:
+                st.caption("Geen feedback records gevonden")
+        
         # Vind wedstrijden met begeleider die al gespeeld zijn
         wedstrijden_met_begeleiding = []
         for wed_id, wed in wedstrijden.items():
@@ -5324,6 +5337,9 @@ def toon_beloningen_beheer():
             }
             
             with st.expander(f"{item['wed_datum'].strftime('%d-%m %H:%M')} - {wed['thuisteam']} vs {wed['uitteam']} | Begeleider: **{begeleider_naam}**"):
+                # Debug info
+                st.caption(f"🔍 wed_id: `{item['wed_id']}` | Zoek: `fb_{item['wed_id']}_{item['scheids_1']}` en `fb_{item['wed_id']}_{item['scheids_2']}`")
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
