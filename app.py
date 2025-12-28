@@ -22,13 +22,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.10.3-debug"
+APP_VERSIE = "1.10.4-debug"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
-### v1.10.3-debug (2025-12-28)
-**Cookie-based storage:**
-- 🔧 Overgestapt van localStorage naar cookies
-- 🍪 Cookies werken beter cross-origin dan localStorage
+### v1.10.4-debug (2025-12-28)
+**Query parameter opslag:**
+- 🔧 Token opgeslagen in URL query parameter (gegarandeerd werkend)
+- 🔧 Geen JavaScript timing issues meer
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6616,13 +6616,12 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     
     session_key = f"device_token_{nbb_nummer}"
     verified_key = f"device_verified_{nbb_nummer}"
-    cookie_checked_key = f"cookie_checked_{nbb_nummer}"
     
     if DEBUG:
         st.sidebar.markdown("### 🐛 Debug Info")
         st.sidebar.write(f"NBB: {nbb_nummer}")
-        st.sidebar.write(f"Session token exists: {session_key in st.session_state}")
-        st.sidebar.write(f"Cookie checked: {st.session_state.get(cookie_checked_key, False)}")
+        st.sidebar.write(f"Session token: {session_key in st.session_state}")
+        st.sidebar.write(f"Query param: {st.query_params.get(f'dt_{nbb_nummer}', 'GEEN')[:20] if st.query_params.get(f'dt_{nbb_nummer}') else 'GEEN'}...")
         st.sidebar.write(f"Verified flag: {st.session_state.get(verified_key, False)}")
     
     # Check of we net geverifieerd zijn (flag gezet in vorige run)
@@ -6631,6 +6630,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         if token and db.token_exists_in_database(nbb_nummer, token):
             if db.verify_device_token(nbb_nummer, token):
                 del st.session_state[verified_key]
+                if DEBUG:
+                    st.sidebar.success("✅ Net geverifieerd")
                 return True
     
     # Check of speler geboortedatum heeft
@@ -6642,41 +6643,24 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     if not geboortedatum:
         return True
     
-    # Check bestaande token uit session state
-    token = st.session_state.get(session_key)
-    
-    # Als geen token in session EN cookie nog niet gecheckt, probeer cookie
-    if not token and not st.session_state.get(cookie_checked_key, False):
-        # Markeer als gecheckt om infinite loop te voorkomen
-        st.session_state[cookie_checked_key] = True
-        
-        # Probeer token uit cookie te halen
-        token = db.get_device_token_from_cookie(nbb_nummer)
-        
-        if DEBUG:
-            st.sidebar.write(f"Cookie token: {token[:20] if token else 'GEEN'}...")
-        
-        if token:
-            st.session_state[session_key] = token
-        else:
-            # Geen token in cookie - doe een rerun zodat JS kan uitvoeren
-            st.rerun()
+    # Check bestaande token (session state of query param)
+    token = db.get_device_token_from_cookie(nbb_nummer)
     
     if DEBUG:
         st.sidebar.write(f"Token: {token[:20] if token else 'GEEN'}...")
     
     if token:
-        # Check of token überhaupt nog in database staat
+        # Check of token in database staat
         token_exists = db.token_exists_in_database(nbb_nummer, token)
         
         if DEBUG:
             st.sidebar.write(f"Token in DB: {token_exists}")
         
         if not token_exists:
-            if session_key in st.session_state:
-                del st.session_state[session_key]
+            # Token is verwijderd - wis alles
+            db.clear_device_token_cookie(nbb_nummer)
             st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
-            token = None
+            st.rerun()
         else:
             if db.verify_device_token(nbb_nummer, token):
                 if DEBUG:
@@ -6685,30 +6669,28 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             
             if db.is_device_pending(nbb_nummer, token):
                 st.title("⏳ Wachten op goedkeuring")
-                st.info("Dit apparaat wacht op goedkeuring. Keur het goed via een ander apparaat dat al gekoppeld is.")
-                if st.button("🔄 Ververs pagina"):
+                st.info("Dit apparaat wacht op goedkeuring.")
+                if st.button("🔄 Ververs"):
                     st.rerun()
                 return False
     
     # Check of we een nieuw device kunnen toevoegen
     can_add, reason = db.can_add_device(nbb_nummer)
     device_count = db.get_device_count(nbb_nummer)
-    settings = db.get_speler_device_settings(nbb_nummer)
     
     if DEBUG:
         st.sidebar.write(f"Device count: {device_count}")
-        st.sidebar.write(f"Settings: {settings}")
-        st.sidebar.write(f"Can add: {can_add}, reason: {reason}")
+        st.sidebar.write(f"Can add: {can_add}")
     
     if not can_add:
         st.title("🚫 Apparaat limiet bereikt")
         st.error(reason)
-        st.info("Verwijder eerst een ander apparaat via een bestaand gekoppeld apparaat, of pas je instellingen aan.")
+        st.info("Verwijder eerst een ander apparaat.")
         return False
     
     # Nieuw device - verificatie nodig
     st.title("🔐 Verificatie")
-    st.write("Dit is een nieuw apparaat. Bevestig je identiteit door je geboortedatum in te voeren.")
+    st.write("Bevestig je identiteit met je geboortedatum.")
     
     with st.form("verificatie_form"):
         col1, col2, col3 = st.columns(3)
@@ -6726,20 +6708,23 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                 new_token = db._generate_device_token()
                 success, needs_approval = db.register_device_with_approval(nbb_nummer, new_token)
                 
+                if DEBUG:
+                    st.sidebar.write(f"Registratie: {success}")
+                
                 if success:
                     st.session_state[session_key] = new_token
                     st.session_state[verified_key] = True
                     db.save_device_token_to_cookie(nbb_nummer, new_token)
                     
                     if needs_approval:
-                        st.warning("✅ Geverifieerd! Dit apparaat wacht nu op goedkeuring.")
+                        st.warning("✅ Geverifieerd! Wacht op goedkeuring.")
                     else:
                         st.success("✅ Geverifieerd!")
                     st.rerun()
                 else:
-                    st.error("❌ Fout bij registreren apparaat. Probeer opnieuw.")
+                    st.error("❌ Fout bij registreren.")
             else:
-                st.error("❌ Geboortedatum komt niet overeen")
+                st.error("❌ Geboortedatum klopt niet")
     
     return False
 

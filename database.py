@@ -17,14 +17,9 @@ import hashlib
 import secrets
 import requests
 import re
-import streamlit.components.v1 as components
 
-# Cookies via streamlit_js_eval
-try:
-    from streamlit_js_eval import streamlit_js_eval, get_geolocation
-    _js_eval_available = True
-except ImportError:
-    _js_eval_available = False
+# Flag voor backward compatibility (niet meer nodig maar kan in andere code staan)
+_js_eval_available = True
 
 # Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
@@ -163,76 +158,56 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit cookie of session state"""
+    """Haal device token op uit query parameter of session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Eerst session state checken (meest betrouwbaar na registratie)
     if session_key in st.session_state:
         return st.session_state[session_key]
     
-    # Dan cookie proberen via JavaScript
-    if not _js_eval_available:
-        return None
-    
+    # Dan query parameter checken
     try:
-        key = f"device_token_{nbb_nummer}"
-        # Lees cookie waarde via JavaScript
-        js_expr = f"""
-        (function() {{
-            const name = "{key}=";
-            const cookies = document.cookie.split(';');
-            for (let c of cookies) {{
-                c = c.trim();
-                if (c.indexOf(name) === 0) {{
-                    return c.substring(name.length);
-                }}
-            }}
-            return null;
-        }})()
-        """
-        token = streamlit_js_eval(js_expressions=js_expr, key=f"get_cookie_{nbb_nummer}")
+        query_key = f"dt_{nbb_nummer}"
+        token = st.query_params.get(query_key)
         if token:
-            # Cache in session state voor snellere toegang
             st.session_state[session_key] = token
-        return token if token else None
-    except Exception as e:
-        return None
+            return token
+    except:
+        pass
+    
+    return None
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in browser cookie en session state"""
+    """Sla device token op in query parameter en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
-    # Altijd session state voor huidige sessie (dit is synchroon en betrouwbaar)
+    # Session state voor huidige sessie
     st.session_state[session_key] = token
     
-    # Schrijf naar cookie via streamlit_js_eval (draait in parent window context)
-    if _js_eval_available:
-        try:
-            key = f"device_token_{nbb_nummer}"
-            max_age = 90 * 24 * 60 * 60  # 90 dagen
-            js_expr = f"document.cookie = '{key}={token}; path=/; max-age={max_age}; SameSite=Lax'"
-            streamlit_js_eval(js_expressions=js_expr, key=f"set_cookie_{secrets.token_hex(4)}")
-        except:
-            pass
+    # Query parameter voor persistentie
+    try:
+        query_key = f"dt_{nbb_nummer}"
+        st.query_params[query_key] = token
+    except:
+        pass
     
     return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token cookie en session state"""
+    """Verwijder device token uit query parameter en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Clear session state
     if session_key in st.session_state:
         del st.session_state[session_key]
     
-    # Verwijder cookie via streamlit_js_eval
-    if _js_eval_available:
-        try:
-            key = f"device_token_{nbb_nummer}"
-            js_expr = f"document.cookie = '{key}=; path=/; max-age=0'"
-            streamlit_js_eval(js_expressions=js_expr, key=f"del_cookie_{secrets.token_hex(4)}")
-        except:
-            pass
+    # Clear query parameter
+    try:
+        query_key = f"dt_{nbb_nummer}"
+        if query_key in st.query_params:
+            del st.query_params[query_key]
+    except:
+        pass
     
     return True
 
