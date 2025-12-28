@@ -18,6 +18,13 @@ import secrets
 import requests
 import re
 
+# Cookie manager voor device tokens
+try:
+    import extra_streamlit_components as stx
+    _cookie_manager = stx.CookieManager(key="device_cookie_manager")
+except ImportError:
+    _cookie_manager = None
+
 # Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
     """Haal Supabase configuratie op uit secrets"""
@@ -153,6 +160,33 @@ def get_default_admin_password() -> str:
 def _generate_device_token() -> str:
     """Genereer een unieke device token"""
     return secrets.token_urlsafe(32)
+
+def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
+    """Haal device token op uit cookie"""
+    if _cookie_manager is None:
+        # Fallback naar session state
+        return st.session_state.get(f"device_token_{nbb_nummer}")
+    
+    try:
+        token = _cookie_manager.get(f"device_token_{nbb_nummer}")
+        return token
+    except:
+        return None
+
+def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
+    """Sla device token op in cookie (90 dagen geldig)"""
+    if _cookie_manager is None:
+        # Fallback naar session state
+        st.session_state[f"device_token_{nbb_nummer}"] = token
+        return True
+    
+    try:
+        _cookie_manager.set(f"device_token_{nbb_nummer}", token, max_age=90*24*60*60)
+        return True
+    except:
+        # Fallback naar session state
+        st.session_state[f"device_token_{nbb_nummer}"] = token
+        return True
 
 def get_device_count(speler_id: str) -> int:
     """Tel aantal gekoppelde devices voor speler"""

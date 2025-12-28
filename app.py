@@ -22,9 +22,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.34"
+APP_VERSIE = "1.9.35"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.35 (2025-12-28)
+**Beveiliging update:**
+- 🔐 Device verificatie met cookies (persistent)
+- 🌍 Geofiltering (alleen Nederland)
+- 🔑 Admin wachtwoord in database (niet meer in code)
+- 📥 Ledengegevens import (geboortedatum + teams)
+
 ### v1.9.34 (2025-12-28)
 **Bugfix sidebar feedback:**
 - 🐛 "Gegeven feedback" toont nu alleen feedback die je als scheidsrechter hebt gegeven
@@ -6367,9 +6374,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         # Geen geboortedatum = geen verificatie vereist (nog niet geïmporteerd)
         return True
     
-    # Check bestaande token in session state
-    token_key = f"device_token_{nbb_nummer}"
-    token = st.session_state.get(token_key)
+    # Check bestaande token uit cookie
+    token = db.get_device_token_from_cookie(nbb_nummer)
     
     if token and db.verify_device_token(nbb_nummer, token):
         return True
@@ -6394,7 +6400,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                 # Verificatie geslaagd - registreer device
                 new_token = db._generate_device_token()
                 if db.register_device(nbb_nummer, new_token):
-                    st.session_state[token_key] = new_token
+                    db.save_device_token_to_cookie(nbb_nummer, new_token)
                     st.success("✅ Geverifieerd!")
                     st.rerun()
             else:
