@@ -18,12 +18,12 @@ import secrets
 import requests
 import re
 
-# Cookie manager voor device tokens
+# LocalStorage via streamlit_js_eval
 try:
-    import extra_streamlit_components as stx
-    _cookie_manager = stx.CookieManager(key="device_cookie_manager")
+    from streamlit_js_eval import streamlit_js_eval, get_geolocation
+    _js_eval_available = True
 except ImportError:
-    _cookie_manager = None
+    _js_eval_available = False
 
 # Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
@@ -162,46 +162,46 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit cookie"""
-    # Probeer eerst session state (fallback)
-    session_token = st.session_state.get(f"device_token_{nbb_nummer}")
-    
-    if _cookie_manager is None:
-        return session_token
+    """Haal device token op uit localStorage"""
+    if not _js_eval_available:
+        # Fallback naar session state
+        return st.session_state.get(f"device_token_{nbb_nummer}")
     
     try:
-        cookie_token = _cookie_manager.get(f"device_token_{nbb_nummer}")
-        # Return cookie token als die bestaat, anders session state
-        return cookie_token if cookie_token else session_token
+        key = f"device_token_{nbb_nummer}"
+        token = streamlit_js_eval(js_expressions=f"localStorage.getItem('{key}')", key=f"get_{key}")
+        return token if token else None
     except Exception as e:
-        return session_token
+        return st.session_state.get(f"device_token_{nbb_nummer}")
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in cookie (90 dagen geldig)"""
-    # Altijd ook in session state opslaan als backup
+    """Sla device token op in localStorage"""
+    # Altijd ook session state voor huidige sessie
     st.session_state[f"device_token_{nbb_nummer}"] = token
     
-    if _cookie_manager is None:
+    if not _js_eval_available:
         return True
     
     try:
-        _cookie_manager.set(f"device_token_{nbb_nummer}", token, max_age=90*24*60*60)
+        key = f"device_token_{nbb_nummer}"
+        streamlit_js_eval(js_expressions=f"localStorage.setItem('{key}', '{token}')", key=f"set_{key}_{token[:8]}")
         return True
     except:
         return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token uit cookie"""
+    """Verwijder device token uit localStorage"""
     # Clear session state
     session_key = f"device_token_{nbb_nummer}"
     if session_key in st.session_state:
         del st.session_state[session_key]
     
-    if _cookie_manager is None:
+    if not _js_eval_available:
         return True
     
     try:
-        _cookie_manager.delete(f"device_token_{nbb_nummer}")
+        key = f"device_token_{nbb_nummer}"
+        streamlit_js_eval(js_expressions=f"localStorage.removeItem('{key}')", key=f"del_{key}")
         return True
     except:
         return True

@@ -22,12 +22,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.40-debug"
+APP_VERSIE = "1.9.41-debug"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
-### v1.9.40-debug (2025-12-28)
-**Debug versie:**
-- 🐛 Debug info in sidebar voor device verificatie troubleshooting
+### v1.9.41-debug (2025-12-28)
+**Nieuwe localStorage aanpak:**
+- 🔧 Overgestapt van extra-streamlit-components naar streamlit-js-eval
+- 🔧 Tokens worden nu in browser localStorage opgeslagen (per browser uniek)
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6616,6 +6617,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     if DEBUG:
         st.sidebar.markdown("### 🐛 Debug Info")
         st.sidebar.write(f"NBB: {nbb_nummer}")
+        st.sidebar.write(f"JS eval: {db._js_eval_available}")
     
     # Check of speler geboortedatum heeft
     geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
@@ -6628,11 +6630,11 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             st.sidebar.warning("Geen geboortedatum - verificatie overgeslagen")
         return True
     
-    # Check bestaande token uit cookie
+    # Check bestaande token uit localStorage
     token = db.get_device_token_from_cookie(nbb_nummer)
     
     if DEBUG:
-        st.sidebar.write(f"Token uit cookie: {token[:20] if token else 'GEEN'}...")
+        st.sidebar.write(f"Token: {token[:20] if token else 'GEEN'}...")
     
     if token:
         # Check of token überhaupt nog in database staat
@@ -6642,7 +6644,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             st.sidebar.write(f"Token in DB: {token_exists}")
         
         if not token_exists:
-            # Token is verwijderd uit database - wis de cookie
+            # Token is verwijderd uit database - wis localStorage
             db.clear_device_token_cookie(nbb_nummer)
             st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
             token = None  # Ga door naar verificatie
