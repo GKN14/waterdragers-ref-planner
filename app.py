@@ -19,9 +19,18 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.13"
+APP_VERSIE = "1.9.14"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.14 (2025-12-28)
+**Begeleider functie:**
+- 🎓 MSE kan zich aanmelden als begeleider (niet-fluitend) bij wedstrijden
+- 📋 "Mijn begeleidingen" overzicht voor MSE's
+- 👀 "Beschikbaar voor begeleiding" lijst met aanmeldknop
+- 🏆 Begeleider telt mee voor Top Begeleiders klassement
+- 👤 Begeleider zichtbaar bij wedstrijd voor spelers
+- 🔧 Beheerder kan begeleider toewijzen/verwijderen
+
 ### v1.9.13 (2025-12-28)
 **Klassementen:**
 - 🏆 Top 3 scheidsrechters (op basis van punten) in sidebar
@@ -581,7 +590,9 @@ def get_top_scheidsrechters(n: int = 3) -> list:
 def get_top_begeleiders(n: int = 3) -> list:
     """
     Haal top N begeleiders (MSE's) op basis van aantal begeleidingen.
-    Een begeleiding = MSE als 1e scheids met iemand van lager niveau als 2e scheids.
+    Een begeleiding telt als:
+    1. MSE als 1e scheids met iemand van lager niveau als 2e scheids
+    2. MSE aangemeld als begeleider (niet-fluitend)
     """
     scheidsrechters = laad_scheidsrechters()
     wedstrijden = laad_wedstrijden()
@@ -592,7 +603,15 @@ def get_top_begeleiders(n: int = 3) -> list:
     for wed_id, wed in wedstrijden.items():
         scheids_1_nbb = wed.get("scheids_1")
         scheids_2_nbb = wed.get("scheids_2")
+        begeleider_nbb = wed.get("begeleider")
         
+        # Tel niet-fluitende begeleider
+        if begeleider_nbb and begeleider_nbb in scheidsrechters:
+            if begeleider_nbb not in begeleiding_count:
+                begeleiding_count[begeleider_nbb] = 0
+            begeleiding_count[begeleider_nbb] += 1
+        
+        # Tel fluitende begeleiding (MSE als 1e met lager niveau 2e)
         if not scheids_1_nbb or not scheids_2_nbb:
             continue
         
@@ -1712,6 +1731,7 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown("🙋 Jij bent ingeschreven")
         st.markdown("👤 Iemand anders")
         st.markdown("📋 Beschikbaar")
+        st.markdown("🎓 Begeleider (MSE)")
         
         st.divider()
         
@@ -1996,14 +2016,73 @@ def toon_speler_view(nbb_nummer: str):
     if is_mse:
         # MSE sectie in header
         mijn_wedstrijden_als_1e = []
+        wedstrijden_voor_begeleiding = []  # Wedstrijden waar MSE als begeleider kan helpen
         nu = datetime.now()
+        
         for wed_id, wed in wedstrijden.items():
-            if wed.get("scheids_1") != nbb_nummer or wed.get("geannuleerd", False):
+            if wed.get("geannuleerd", False):
                 continue
             wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-            if wed_datum > nu and not wed.get("scheids_2"):
+            if wed_datum <= nu:
+                continue
+            
+            # Wedstrijden waar ik 1e scheids ben zonder 2e scheids
+            if wed.get("scheids_1") == nbb_nummer and not wed.get("scheids_2"):
                 mijn_wedstrijden_als_1e.append((wed_id, wed, wed_datum))
+            
+            # Wedstrijden waar ik als begeleider kan helpen (niet zelf fluiten)
+            # - Niet mijn eigen team
+            # - Nog geen begeleider
+            # - Ik ben niet al scheidsrechter
+            eigen_teams_scheids = scheids.get("eigen_teams", [])
+            is_eigen_wed = (any(team_match(wed["thuisteam"], et) for et in eigen_teams_scheids) 
+                          or any(team_match(wed["uitteam"], et) for et in eigen_teams_scheids))
+            al_scheids = wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer
+            al_begeleider = wed.get("begeleider") == nbb_nummer
+            heeft_begeleider = wed.get("begeleider") is not None
+            
+            if not is_eigen_wed and not al_scheids and not al_begeleider and not heeft_begeleider:
+                # Check geen overlap met eigen wedstrijd
+                if not heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
+                    wedstrijden_voor_begeleiding.append((wed_id, wed, wed_datum))
         
+        # Mijn begeleidingen (waar ik al begeleider ben)
+        mijn_begeleidingen = [(wed_id, wed) for wed_id, wed in wedstrijden.items() 
+                              if wed.get("begeleider") == nbb_nummer 
+                              and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu
+                              and not wed.get("geannuleerd", False)]
+        
+        # Toon mijn begeleidingen
+        if mijn_begeleidingen:
+            with st.expander(f"🎓 **Mijn begeleidingen ({len(mijn_begeleidingen)})**", expanded=False):
+                for wed_id, wed in sorted(mijn_begeleidingen, key=lambda x: x[1]["datum"]):
+                    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+                    col_info, col_afmeld = st.columns([4, 1])
+                    with col_info:
+                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']}")
+                    with col_afmeld:
+                        if st.button("❌", key=f"afmeld_beg_{wed_id}", help="Afmelden als begeleider"):
+                            wedstrijden[wed_id]["begeleider"] = None
+                            sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+                            st.rerun()
+        
+        # Aanmelden als begeleider
+        if wedstrijden_voor_begeleiding:
+            with st.expander(f"🎓 **Beschikbaar voor begeleiding ({len(wedstrijden_voor_begeleiding)})**", expanded=False):
+                st.caption("Meld je aan om te helpen zonder zelf te fluiten")
+                for wed_id, wed, wed_datum in sorted(wedstrijden_voor_begeleiding, key=lambda x: x[2])[:10]:  # Max 10 tonen
+                    dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+                    col_info, col_aanmeld = st.columns([4, 1])
+                    with col_info:
+                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']} (N{wed.get('niveau', 1)})")
+                    with col_aanmeld:
+                        if st.button("🎓", key=f"aanmeld_beg_{wed_id}", help="Aanmelden als begeleider"):
+                            wedstrijden[wed_id]["begeleider"] = nbb_nummer
+                            sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+                            st.rerun()
+        
+        # Bestaande MSE uitnodigingen sectie
         if mijn_wedstrijden_als_1e:
             with st.expander(f"🎓 **MSE: {len(mijn_wedstrijden_als_1e)} wedstrijd(en) zonder 2e scheids**", expanded=False):
                 spelers_voor_begeleiding = [(s_nbb, s) for s_nbb, s in scheidsrechters.items() 
@@ -2757,6 +2836,12 @@ def toon_speler_view(nbb_nummer: str):
                                                 st.rerun()
                                 else:
                                     st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
+                                
+                                # Toon begeleider indien aanwezig
+                                begeleider_nbb = wed.get("begeleider")
+                                if begeleider_nbb:
+                                    begeleider_naam = scheidsrechters.get(begeleider_nbb, {}).get("naam", "Onbekend")
+                                    st.markdown(f"🎓 **Begeleider:** {begeleider_naam}")
 
 # ============================================================
 # BEHEERDER VIEW
@@ -3477,7 +3562,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     if st.session_state.get(f"bewerk_{wed['id']}", False):
                         toon_bewerk_formulier(wed, wedstrijden, scheidsrechters)
                 else:
-                    col1, col2, col3 = st.columns([2, 2, 1])
+                    col1, col2, col_beg, col3 = st.columns([2, 2, 2, 1])
                     
                     with col1:
                         st.write("**1e Scheidsrechter:**")
@@ -3530,6 +3615,35 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                         st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
+                    
+                    with col_beg:
+                        st.write("**Begeleider:**")
+                        begeleider_nbb = wedstrijden[wed["id"]].get("begeleider")
+                        if begeleider_nbb:
+                            begeleider_naam = scheidsrechters.get(begeleider_nbb, {}).get("naam", "Onbekend")
+                            st.write(f"🎓 {begeleider_naam}")
+                            if st.button("Verwijderen", key=f"del_beg_{wed['id']}"):
+                                wedstrijden[wed["id"]]["begeleider"] = None
+                                sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                st.rerun()
+                        else:
+                            # Toon alleen MSE's als opties
+                            mse_kandidaten = [
+                                (nbb, s) for nbb, s in scheidsrechters.items()
+                                if (s.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in s.get("eigen_teams", [])))
+                                and nbb != wed.get("scheids_1") and nbb != wed.get("scheids_2")
+                            ]
+                            if mse_kandidaten:
+                                keuzes = ["-- Selecteer --"] + [s["naam"] for nbb, s in mse_kandidaten]
+                                selectie = st.selectbox("Kies begeleider", keuzes, key=f"sel_beg_{wed['id']}")
+                                if selectie != "-- Selecteer --":
+                                    idx = keuzes.index(selectie) - 1
+                                    if st.button("Toewijzen", key=f"assign_beg_{wed['id']}"):
+                                        wedstrijden[wed["id"]]["begeleider"] = mse_kandidaten[idx][0]
+                                        sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                        st.rerun()
+                            else:
+                                st.caption("Geen MSE beschikbaar")
                     
                     with col3:
                         st.write("**Acties:**")

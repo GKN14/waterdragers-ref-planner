@@ -239,6 +239,7 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "vereist_bs2": data.get("vereist_bs2", False),
             "scheids_1": data.get("scheids_1"),
             "scheids_2": data.get("scheids_2"),
+            "begeleider": data.get("begeleider"),
             "type": data.get("type", "thuis"),
             "reistijd_minuten": data.get("reistijd_minuten", 45),
             "geannuleerd": data.get("geannuleerd", False),
