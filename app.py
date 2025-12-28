@@ -22,9 +22,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.36"
+APP_VERSIE = "1.9.37"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.37 (2025-12-28)
+**Apparaatbeheer uitgebreid:**
+- ⏰ Tijdstip wordt nu getoond (niet alleen datum)
+- ⚙️ Spelers kunnen max aantal apparaten instellen
+- ✅ Spelers kunnen goedkeuring vereisen voor nieuwe apparaten
+- ⏳ Goedkeuringsflow: nieuw apparaat wacht tot goedgekeurd via bestaand apparaat
+- 📊 Beheerder ziet pending approvals statistiek
+
 ### v1.9.36 (2025-12-28)
 **Apparaatbeheer:**
 - 📱 Spelers kunnen gekoppelde apparaten zien in sidebar
@@ -2073,19 +2081,52 @@ def toon_speler_view(nbb_nummer: str):
         st.divider()
         st.markdown("### 📱 Apparaten")
         device_count = db.get_device_count(nbb_nummer)
+        pending_devices = db.get_pending_devices(nbb_nummer)
+        
+        # Toon pending notificatie
+        if pending_devices:
+            st.warning(f"⏳ {len(pending_devices)} apparaat wacht op goedkeuring!")
+        
         st.caption(f"{device_count} apparaat{'en' if device_count != 1 else ''} gekoppeld")
         
-        with st.expander("Apparaten beheren"):
+        # Pending approvals
+        if pending_devices:
+            with st.expander(f"⏳ Wachtend op goedkeuring ({len(pending_devices)})", expanded=True):
+                for device in pending_devices:
+                    device_name = device.get("device_name", "Onbekend")
+                    created = db.format_datetime(device.get("created_at", ""))
+                    
+                    st.markdown(f"**{device_name}**")
+                    st.caption(f"Aangevraagd: {created}")
+                    
+                    col_approve, col_reject = st.columns(2)
+                    with col_approve:
+                        if st.button("✅ Goedkeuren", key=f"approve_{device['id']}", use_container_width=True):
+                            if db.approve_device(device["id"], nbb_nummer):
+                                st.success("Goedgekeurd!")
+                                st.rerun()
+                    with col_reject:
+                        if st.button("❌ Weigeren", key=f"reject_{device['id']}", use_container_width=True):
+                            if db.reject_device(device["id"], nbb_nummer):
+                                st.success("Geweigerd!")
+                                st.rerun()
+                    st.divider()
+        
+        # Bestaande apparaten
+        with st.expander("Gekoppelde apparaten"):
             devices = db.get_devices(nbb_nummer)
-            if devices:
-                for device in devices:
+            approved_devices = [d for d in devices if d.get("approved", True)]
+            
+            if approved_devices:
+                for device in approved_devices:
                     col_info, col_btn = st.columns([3, 1])
                     with col_info:
                         device_name = device.get("device_name", "Onbekend")
-                        created = device.get("created_at", "")[:10] if device.get("created_at") else "?"
-                        last_used = device.get("last_used", "")[:10] if device.get("last_used") else "?"
+                        created = db.format_datetime(device.get("created_at", ""))
+                        last_used = db.format_datetime(device.get("last_used", ""))
                         st.markdown(f"**{device_name}**")
-                        st.caption(f"Toegevoegd: {created} | Laatst: {last_used}")
+                        st.caption(f"Gekoppeld: {created}")
+                        st.caption(f"Laatst: {last_used}")
                     with col_btn:
                         if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder apparaat"):
                             if db.remove_device(device["id"], nbb_nummer):
@@ -2093,6 +2134,38 @@ def toon_speler_view(nbb_nummer: str):
                                 st.rerun()
             else:
                 st.caption("*Geen apparaten gekoppeld*")
+        
+        # Instellingen
+        with st.expander("⚙️ Apparaat instellingen"):
+            settings = db.get_speler_device_settings(nbb_nummer)
+            
+            # Max devices
+            current_max = settings.get("max_devices")
+            max_options = {"Geen limiet": None, "1 apparaat": 1, "2 apparaten": 2, "3 apparaten": 3, "5 apparaten": 5}
+            current_label = next((k for k, v in max_options.items() if v == current_max), "Geen limiet")
+            
+            new_max_label = st.selectbox(
+                "Maximum aantal apparaten",
+                options=list(max_options.keys()),
+                index=list(max_options.keys()).index(current_label),
+                key="device_max_select"
+            )
+            new_max = max_options[new_max_label]
+            
+            # Require approval
+            require_approval = st.checkbox(
+                "Nieuwe apparaten moeten goedgekeurd worden",
+                value=settings.get("require_approval", False),
+                help="Als dit aan staat, moet je elk nieuw apparaat goedkeuren via een bestaand apparaat (behalve het eerste)",
+                key="device_require_approval"
+            )
+            
+            if st.button("💾 Instellingen opslaan", key="save_device_settings", use_container_width=True):
+                if db.save_speler_device_settings(nbb_nummer, new_max, require_approval):
+                    st.success("Instellingen opgeslagen!")
+                    st.rerun()
+                else:
+                    st.error("Fout bij opslaan")
         
         # Versie info onderaan sidebar
         st.divider()
@@ -3438,7 +3511,7 @@ def toon_apparaten_beheer():
     
     # Statistieken
     stats = db.get_device_stats()
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Totaal apparaten", stats["total_devices"])
     with col2:
@@ -3446,6 +3519,8 @@ def toon_apparaten_beheer():
     with col3:
         st.metric("Spelers met verificatie", stats["spelers_met_geboortedatum"], 
                   help="Spelers met geboortedatum in systeem")
+    with col4:
+        st.metric("Wachtend op goedkeuring", stats["pending_approvals"])
     
     st.divider()
     
@@ -3468,8 +3543,13 @@ def toon_apparaten_beheer():
     # Zoekfunctie
     zoek = st.text_input("🔍 Zoek speler (naam of NBB-nummer)", key="zoek_apparaat")
     
+    # Filter opties
+    col_filter1, col_filter2 = st.columns(2)
+    with col_filter1:
+        toon_pending = st.checkbox("Alleen wachtend op goedkeuring", key="filter_pending")
+    
     # Filter op zoekterm
-    gefilterde_spelers = devices_per_speler.keys()
+    gefilterde_spelers = list(devices_per_speler.keys())
     if zoek:
         zoek_lower = zoek.lower()
         gefilterde_spelers = [
@@ -3478,22 +3558,41 @@ def toon_apparaten_beheer():
                zoek_lower in scheidsrechters.get(speler_id, {}).get("naam", "").lower()
         ]
     
+    # Filter op pending
+    if toon_pending:
+        gefilterde_spelers = [
+            speler_id for speler_id in gefilterde_spelers
+            if any(not d.get("approved", True) for d in devices_per_speler[speler_id])
+        ]
+    
     # Toon per speler
     for speler_id in sorted(gefilterde_spelers, key=lambda x: scheidsrechters.get(x, {}).get("naam", x)):
         devices = devices_per_speler[speler_id]
         speler_naam = scheidsrechters.get(speler_id, {}).get("naam", "Onbekend")
+        pending_count = sum(1 for d in devices if not d.get("approved", True))
         
-        with st.expander(f"**{speler_naam}** ({speler_id}) - {len(devices)} apparaat{'en' if len(devices) != 1 else ''}"):
+        label = f"**{speler_naam}** ({speler_id}) - {len(devices)} apparaat{'en' if len(devices) != 1 else ''}"
+        if pending_count > 0:
+            label += f" ⏳ {pending_count} wachtend"
+        
+        with st.expander(label):
             for device in devices:
-                col_info, col_delete = st.columns([4, 1])
+                col_info, col_status, col_delete = st.columns([3, 1, 1])
                 
                 with col_info:
                     device_name = device.get("device_name", "Onbekend apparaat")
-                    created = device.get("created_at", "")[:10] if device.get("created_at") else "?"
-                    last_used = device.get("last_used", "")[:10] if device.get("last_used") else "Nooit"
+                    created = db.format_datetime(device.get("created_at", ""))
+                    last_used = db.format_datetime(device.get("last_used", ""))
                     
                     st.markdown(f"📱 **{device_name}**")
-                    st.caption(f"Gekoppeld: {created} | Laatst gebruikt: {last_used}")
+                    st.caption(f"Gekoppeld: {created}")
+                    st.caption(f"Laatst: {last_used}")
+                
+                with col_status:
+                    if device.get("approved", True):
+                        st.success("✅ Actief")
+                    else:
+                        st.warning("⏳ Wachtend")
                 
                 with col_delete:
                     if st.button("🗑️", key=f"admin_del_{device['id']}", help="Verwijder apparaat"):
@@ -6511,8 +6610,27 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     # Check bestaande token uit cookie
     token = db.get_device_token_from_cookie(nbb_nummer)
     
-    if token and db.verify_device_token(nbb_nummer, token):
-        return True
+    if token:
+        # Check of token geldig en goedgekeurd is
+        if db.verify_device_token(nbb_nummer, token):
+            return True
+        
+        # Check of device wacht op goedkeuring
+        if db.is_device_pending(nbb_nummer, token):
+            st.title("⏳ Wachten op goedkeuring")
+            st.info("Dit apparaat wacht op goedkeuring. Keur het goed via een ander apparaat dat al gekoppeld is.")
+            st.caption("Ververs deze pagina nadat je het apparaat hebt goedgekeurd.")
+            if st.button("🔄 Ververs pagina"):
+                st.rerun()
+            return False
+    
+    # Check of we een nieuw device kunnen toevoegen
+    can_add, reason = db.can_add_device(nbb_nummer)
+    if not can_add:
+        st.title("🚫 Apparaat limiet bereikt")
+        st.error(reason)
+        st.info("Verwijder eerst een ander apparaat via een bestaand gekoppeld apparaat, of pas je instellingen aan.")
+        return False
     
     # Nieuw device - verificatie nodig
     st.title("🔐 Verificatie")
@@ -6531,12 +6649,19 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         
         if submitted:
             if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
-                # Verificatie geslaagd - registreer device
+                # Verificatie geslaagd - registreer device met mogelijke approval
                 new_token = db._generate_device_token()
-                if db.register_device(nbb_nummer, new_token):
+                success, needs_approval = db.register_device_with_approval(nbb_nummer, new_token)
+                
+                if success:
                     db.save_device_token_to_cookie(nbb_nummer, new_token)
-                    st.success("✅ Geverifieerd!")
-                    st.rerun()
+                    
+                    if needs_approval:
+                        st.warning("✅ Geverifieerd! Dit apparaat wacht nu op goedkeuring via een ander apparaat.")
+                        st.rerun()
+                    else:
+                        st.success("✅ Geverifieerd!")
+                        st.rerun()
             else:
                 st.error("❌ Geboortedatum komt niet overeen")
     

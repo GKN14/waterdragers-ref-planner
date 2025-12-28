@@ -250,24 +250,176 @@ def get_device_stats() -> dict:
         spelers_met_geb = supabase.table("scheidsrechters").select("nbb_nummer").neq("geboortedatum", None).execute()
         spelers_met_geboortedatum = len(spelers_met_geb.data) if spelers_met_geb.data else 0
         
+        # Pending approvals
+        pending = supabase.table("device_tokens").select("id", count="exact").eq("approved", False).execute()
+        pending_approvals = pending.count or 0
+        
         return {
             "total_devices": total_devices,
             "unique_spelers": unique_spelers,
-            "spelers_met_geboortedatum": spelers_met_geboortedatum
+            "spelers_met_geboortedatum": spelers_met_geboortedatum,
+            "pending_approvals": pending_approvals
         }
     except:
-        return {"total_devices": 0, "unique_spelers": 0, "spelers_met_geboortedatum": 0}
+        return {"total_devices": 0, "unique_spelers": 0, "spelers_met_geboortedatum": 0, "pending_approvals": 0}
 
-def verify_device_token(speler_id: str, token: str) -> bool:
-    """Check of device token geldig is voor speler"""
+# ============================================================
+# SPELER DEVICE INSTELLINGEN
+# ============================================================
+
+def get_speler_device_settings(speler_id: str) -> dict:
+    """Haal device instellingen op voor een speler"""
     try:
         supabase = get_supabase_client()
-        response = supabase.table("device_tokens").select("id").eq("speler_id", speler_id).eq("token", token).execute()
+        response = supabase.table("speler_settings").select("*").eq("speler_id", speler_id).execute()
+        if response.data:
+            return {
+                "max_devices": response.data[0].get("max_devices"),
+                "require_approval": response.data[0].get("require_approval", False)
+            }
+        return {"max_devices": None, "require_approval": False}
+    except:
+        return {"max_devices": None, "require_approval": False}
+
+def save_speler_device_settings(speler_id: str, max_devices: int | None, require_approval: bool) -> bool:
+    """Sla device instellingen op voor een speler"""
+    try:
+        supabase = get_supabase_client()
+        record = {
+            "speler_id": speler_id,
+            "max_devices": max_devices,
+            "require_approval": require_approval,
+            "updated_at": datetime.now().isoformat()
+        }
+        supabase.table("speler_settings").upsert(record).execute()
+        return True
+    except:
+        return False
+
+def get_pending_devices(speler_id: str) -> list:
+    """Haal apparaten op die wachten op goedkeuring"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("*").eq("speler_id", speler_id).eq("approved", False).order("created_at", desc=True).execute()
+        return response.data or []
+    except:
+        return []
+
+def approve_device(device_id: int, speler_id: str) -> bool:
+    """Keur een apparaat goed"""
+    try:
+        supabase = get_supabase_client()
+        supabase.table("device_tokens").update({"approved": True}).eq("id", device_id).eq("speler_id", speler_id).execute()
+        return True
+    except:
+        return False
+
+def reject_device(device_id: int, speler_id: str) -> bool:
+    """Weiger een apparaat (verwijder het)"""
+    return remove_device(device_id, speler_id)
+
+def can_add_device(speler_id: str) -> tuple[bool, str]:
+    """Check of speler een nieuw apparaat kan toevoegen. Returns (allowed, reason)"""
+    settings = get_speler_device_settings(speler_id)
+    current_count = get_device_count(speler_id)
+    
+    max_devices = settings.get("max_devices")
+    if max_devices and current_count >= max_devices:
+        return False, f"Maximum aantal apparaten ({max_devices}) bereikt"
+    
+    return True, ""
+
+def needs_approval(speler_id: str) -> bool:
+    """Check of nieuw apparaat goedkeuring nodig heeft"""
+    settings = get_speler_device_settings(speler_id)
+    if not settings.get("require_approval", False):
+        return False
+    
+    # Eerste apparaat heeft nooit goedkeuring nodig
+    current_count = get_device_count(speler_id)
+    return current_count > 0
+
+def register_device_with_approval(speler_id: str, token: str, device_name: str = None) -> tuple[bool, bool]:
+    """
+    Registreer device met mogelijke goedkeuring.
+    Returns: (success, needs_approval)
+    """
+    try:
+        supabase = get_supabase_client()
+        
+        # Check of we kunnen toevoegen
+        can_add, reason = can_add_device(speler_id)
+        if not can_add:
+            st.error(reason)
+            return False, False
+        
+        # Bepaal of goedkeuring nodig is
+        requires_approval = needs_approval(speler_id)
+        
+        if not device_name:
+            try:
+                user_agent = st.context.headers.get("User-Agent", "")
+                if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
+                    device_name = "Mobiel"
+                elif "Tablet" in user_agent or "iPad" in user_agent:
+                    device_name = "Tablet"
+                else:
+                    device_name = "Computer"
+            except:
+                device_name = "Apparaat"
+            
+            count = get_device_count(speler_id)
+            device_name = f"{device_name} {count + 1}"
+        
+        record = {
+            "speler_id": speler_id,
+            "token": token,
+            "device_name": device_name,
+            "approved": not requires_approval,
+            "last_used": datetime.now().isoformat()
+        }
+        supabase.table("device_tokens").insert(record).execute()
+        return True, requires_approval
+    except Exception as e:
+        st.error(f"Fout bij registreren device: {e}")
+        return False, False
+
+def format_datetime(dt_string: str) -> str:
+    """Format datetime string naar leesbaar formaat met tijd"""
+    if not dt_string:
+        return "?"
+    try:
+        # Parse ISO format
+        dt = datetime.fromisoformat(dt_string.replace("Z", "+00:00"))
+        return dt.strftime("%d-%m-%Y %H:%M")
+    except:
+        return dt_string[:16] if len(dt_string) >= 16 else dt_string
+
+def verify_device_token(speler_id: str, token: str) -> bool:
+    """Check of device token geldig en goedgekeurd is voor speler"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("id, approved").eq("speler_id", speler_id).eq("token", token).execute()
         
         if response.data:
+            device = response.data[0]
+            # Check of apparaat goedgekeurd is
+            if not device.get("approved", True):
+                return False
             # Update last_used
-            supabase.table("device_tokens").update({"last_used": datetime.now().isoformat()}).eq("id", response.data[0]["id"]).execute()
+            supabase.table("device_tokens").update({"last_used": datetime.now().isoformat()}).eq("id", device["id"]).execute()
             return True
+        return False
+    except:
+        return False
+
+def is_device_pending(speler_id: str, token: str) -> bool:
+    """Check of device wacht op goedkeuring"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("approved").eq("speler_id", speler_id).eq("token", token).execute()
+        if response.data:
+            return not response.data[0].get("approved", True)
         return False
     except:
         return False
