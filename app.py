@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.7"
+APP_VERSIE = "1.9.8"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.8 (2025-12-28)
+**UI:**
+- 🟠 Oranje lijn exact als blauwe lijn maar 180° gedraaid
+
 ### v1.9.7 (2025-12-28)
 **UI:**
 - 🟠 Oranje lijn nu recht met elegante gebogen uiteinden (spiegeling van blauwe lijn)
@@ -1754,10 +1758,10 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.metric("Strikes", strikes)
     
-    # Gebogen oranje lijn onder metrics (recht met elegante uiteinden die naar punt lopen)
+    # Gebogen oranje lijn onder metrics (blauwe lijn 180° gedraaid)
     st.markdown("""
-    <svg width="100%" height="12" viewBox="0 0 100 12" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0;">
-        <path d="M 0 0 Q 0 10, 5 10 L 95 10 Q 100 10, 100 0" stroke="#FF6600" stroke-width="3" fill="none"/>
+    <svg width="100%" height="8" viewBox="0 0 200 8" preserveAspectRatio="none" style="display: block; margin: 0.3rem 0;">
+        <path d="M 0 0 Q 4 0, 4 4 L 196 4 Q 196 0, 200 0" stroke="#FF6600" stroke-width="2" fill="none"/>
     </svg>
     """, unsafe_allow_html=True)
     
