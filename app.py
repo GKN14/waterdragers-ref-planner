@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.4"
-APP_VERSIE_DATUM = "2025-12-27"
+APP_VERSIE = "1.9.5"
+APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.5 (2025-12-28)
+**Ontwikkelstimulans:**
+- 📈 Wedstrijden op hoger niveau tellen nu ook mee voor minimum
+- 🏷️ Label gewijzigd naar "Niveau X+" om dit duidelijk te maken
+- 🎯 Stimuleert spelers om zich te ontwikkelen naar hogere niveaus
+
 ### v1.9.4 (2025-12-27)
 **UI:**
 - 🟠 Gebogen oranje lijn verbeterd (subtielere curve)
@@ -1226,11 +1232,11 @@ def tel_open_posities_op_niveau(nbb_nummer: str, niveau: int) -> dict:
 
 def tel_wedstrijden_op_eigen_niveau(nbb_nummer: str) -> dict:
     """
-    Tel wedstrijden op eigen niveau voor minimum check.
+    Tel wedstrijden op eigen niveau of hoger voor minimum check.
     
     Returns dict met:
     - totaal: totaal aantal wedstrijden
-    - op_niveau: aantal wedstrijden op eigen niveau (niveau van 1e scheids)
+    - op_niveau: aantal wedstrijden op eigen niveau OF HOGER (stimuleert ontwikkeling)
     - niveau: het eigen niveau van de scheidsrechter
     - min_wedstrijden: minimum aantal dat op eigen niveau moet
     - voldaan: of aan minimum is voldaan
@@ -1255,8 +1261,8 @@ def tel_wedstrijden_op_eigen_niveau(nbb_nummer: str) -> dict:
             
         if wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer:
             totaal += 1
-            # Tel als "op niveau" als wedstrijd niveau == eigen niveau
-            if wed.get("niveau", 1) == eigen_niveau:
+            # Tel als "op niveau" als wedstrijd niveau >= eigen niveau (hoger niveau telt ook!)
+            if wed.get("niveau", 1) >= eigen_niveau:
                 op_niveau += 1
     
     return {
@@ -1342,14 +1348,14 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         min_wed = scheids.get("min_wedstrijden", 0)
         op_niveau = niveau_stats["op_niveau"]
         
-        # Is deze wedstrijd op eigen niveau?
-        is_op_eigen_niveau = wed_niveau == eigen_niveau
+        # Is deze wedstrijd op eigen niveau of hoger?
+        is_op_eigen_niveau_of_hoger = wed_niveau >= eigen_niveau
         
-        # Tekort berekenen: alleen relevant als wedstrijd op eigen niveau is
-        if is_op_eigen_niveau:
+        # Tekort berekenen: relevant als wedstrijd op eigen niveau of hoger is
+        if is_op_eigen_niveau_of_hoger:
             tekort = max(0, min_wed - op_niveau)
         else:
-            tekort = 0  # Wedstrijd niet op eigen niveau telt niet mee voor minimum
+            tekort = 0  # Wedstrijd onder eigen niveau telt niet mee voor minimum
         
         kandidaten.append({
             "nbb_nummer": nbb,
@@ -1359,7 +1365,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "eigen_niveau": eigen_niveau,
             "min_wedstrijden": min_wed,
             "tekort": tekort,
-            "is_op_eigen_niveau": is_op_eigen_niveau
+            "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger
         })
     
     # Sorteer: eerst wie tekort heeft op eigen niveau, dan op minste wedstrijden
@@ -1727,7 +1733,7 @@ def toon_speler_view(nbb_nummer: str):
     with col1:
         st.metric("Totaal", huidig_aantal)
     with col2:
-        st.metric(f"Niveau {eigen_niveau}", op_niveau)
+        st.metric(f"Niveau {eigen_niveau}+", op_niveau)
     with col3:
         st.metric("Minimum", min_wed)
     with col4:
@@ -1760,7 +1766,7 @@ def toon_speler_view(nbb_nummer: str):
     col_status, col_deadline = st.columns(2)
     with col_status:
         if tekort > 0:
-            st.warning(f"⚠️ Nog **{tekort}** wedstrijd(en) kiezen op niveau {eigen_niveau}")
+            st.warning(f"⚠️ Nog **{tekort}** wedstrijd(en) kiezen op niveau {eigen_niveau}+")
         else:
             st.success(f"✅ Minimum voldaan ({op_niveau}/{min_wed})")
     with col_deadline:
