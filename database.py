@@ -754,3 +754,80 @@ def import_wedstrijden_bulk(wedstrijden: dict) -> tuple[int, int]:
             print(f"Fout bij importeren {wed_id}: {e}")
     
     return success, errors
+
+# ============================================================
+# BEGELEIDING FEEDBACK
+# ============================================================
+
+def laad_begeleiding_feedback() -> dict:
+    """Laad alle begeleiding feedback uit Supabase (met caching)"""
+    cache_key = "_db_cache_begeleiding_feedback"
+    
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+    
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("begeleiding_feedback").select("*").execute()
+        
+        feedback_dict = {}
+        for row in response.data:
+            feedback_id = row.get("feedback_id")
+            if feedback_id:
+                feedback_dict[feedback_id] = {
+                    "feedback_id": feedback_id,
+                    "wed_id": row.get("wed_id"),
+                    "speler_nbb": row.get("speler_nbb"),
+                    "begeleider_nbb": row.get("begeleider_nbb"),
+                    "status": row.get("status"),  # "aanwezig_geholpen", "aanwezig_niet_geholpen", "niet_aanwezig"
+                    "feedback_datum": row.get("feedback_datum"),
+                    "opmerking": row.get("opmerking", "")
+                }
+        
+        st.session_state[cache_key] = feedback_dict
+        return feedback_dict
+    except Exception as e:
+        st.error(f"Fout bij laden feedback: {e}")
+        return {}
+
+def sla_begeleiding_feedback_op(feedback_id: str, data: dict) -> bool:
+    """Sla een begeleiding feedback op"""
+    try:
+        supabase = get_supabase_client()
+        
+        record = {
+            "feedback_id": feedback_id,
+            "wed_id": data.get("wed_id"),
+            "speler_nbb": data.get("speler_nbb"),
+            "begeleider_nbb": data.get("begeleider_nbb"),
+            "status": data.get("status"),
+            "feedback_datum": data.get("feedback_datum", datetime.now().isoformat()),
+            "opmerking": data.get("opmerking", ""),
+            "updated_at": datetime.now().isoformat()
+        }
+        supabase.table("begeleiding_feedback").upsert(record).execute()
+        
+        # Update cache
+        if "_db_cache_begeleiding_feedback" in st.session_state:
+            st.session_state["_db_cache_begeleiding_feedback"][feedback_id] = data
+        
+        return True
+    except Exception as e:
+        st.error(f"Fout bij opslaan feedback: {e}")
+        return False
+
+def verwijder_begeleiding_feedback(feedback_id: str) -> bool:
+    """Verwijder een begeleiding feedback"""
+    try:
+        supabase = get_supabase_client()
+        supabase.table("begeleiding_feedback").delete().eq("feedback_id", feedback_id).execute()
+        
+        # Update cache
+        if "_db_cache_begeleiding_feedback" in st.session_state:
+            if feedback_id in st.session_state["_db_cache_begeleiding_feedback"]:
+                del st.session_state["_db_cache_begeleiding_feedback"][feedback_id]
+        
+        return True
+    except Exception as e:
+        st.error(f"Fout bij verwijderen feedback: {e}")
+        return False
