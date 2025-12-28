@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.21"
+APP_VERSIE = "1.9.22"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.22 (2025-12-28)
+**Bugfix feedback enquête:**
+- 🐛 Begeleider krijgt niet langer feedback vraag over zichzelf
+- ✅ Alleen scheidsrechters (niet de begeleider) krijgen de enquête
+
 ### v1.9.21 (2025-12-28)
 **Performance verbetering:**
 - 🚀 Caching toegevoegd aan alle database functies
@@ -2038,6 +2043,10 @@ def toon_speler_view(nbb_nummer: str):
             continue
         begeleider_nbb = wed.get("begeleider")
         if not begeleider_nbb:
+            continue
+        
+        # Ben ik zelf de begeleider? Dan geen feedback over mezelf
+        if begeleider_nbb == nbb_nummer:
             continue
         
         # Was ik scheidsrechter bij deze wedstrijd?
