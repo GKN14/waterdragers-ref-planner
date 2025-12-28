@@ -19,9 +19,14 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.12"
+APP_VERSIE = "1.9.13"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.13 (2025-12-28)
+**Klassementen:**
+- 🏆 Top 3 scheidsrechters (op basis van punten) in sidebar
+- 🎓 Top 3 begeleiders (MSE's met meeste begeleidingen) in sidebar
+
 ### v1.9.12 (2025-12-28)
 **Bugfix:**
 - 🐛 NameError opgelost in get_kandidaten_voor_wedstrijd (eigen_niveau → niveau_1e)
@@ -556,6 +561,71 @@ def get_speler_stats(nbb_nummer: str) -> dict:
         "strike_log": speler_data.get("strike_log", []),
         "punten_log": speler_data.get("punten_log", [])
     }
+
+def get_top_scheidsrechters(n: int = 3) -> list:
+    """Haal top N scheidsrechters op basis van punten."""
+    beloningen = laad_beloningen()
+    scheidsrechters = laad_scheidsrechters()
+    
+    punten_lijst = []
+    for nbb, data in beloningen.get("spelers", {}).items():
+        punten = data.get("punten", 0)
+        if punten > 0 and nbb in scheidsrechters:
+            naam = scheidsrechters[nbb].get("naam", "Onbekend")
+            punten_lijst.append({"nbb": nbb, "naam": naam, "punten": punten})
+    
+    # Sorteer op punten (hoogste eerst)
+    punten_lijst.sort(key=lambda x: x["punten"], reverse=True)
+    return punten_lijst[:n]
+
+def get_top_begeleiders(n: int = 3) -> list:
+    """
+    Haal top N begeleiders (MSE's) op basis van aantal begeleidingen.
+    Een begeleiding = MSE als 1e scheids met iemand van lager niveau als 2e scheids.
+    """
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    
+    # Tel begeleidingen per MSE
+    begeleiding_count = {}
+    
+    for wed_id, wed in wedstrijden.items():
+        scheids_1_nbb = wed.get("scheids_1")
+        scheids_2_nbb = wed.get("scheids_2")
+        
+        if not scheids_1_nbb or not scheids_2_nbb:
+            continue
+        
+        scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
+        scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
+        
+        # Check of 1e scheids een MSE is
+        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
+        is_mse = niveau_1e == 5 or any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
+        
+        if not is_mse:
+            continue
+        
+        # Check of 2e scheids een lager niveau heeft (dan is het begeleiding)
+        niveau_2e_scheids = scheids_2.get("niveau_1e_scheids", 1)
+        wed_niveau = wed.get("niveau", 1)
+        
+        # Als wedstrijdniveau hoger is dan wat 2e scheids normaal mag, is het begeleiding
+        max_niveau_2e = min(niveau_2e_scheids + 1, 5)
+        if wed_niveau > max_niveau_2e:
+            if scheids_1_nbb not in begeleiding_count:
+                begeleiding_count[scheids_1_nbb] = 0
+            begeleiding_count[scheids_1_nbb] += 1
+    
+    # Maak lijst en sorteer
+    begeleiders_lijst = []
+    for nbb, count in begeleiding_count.items():
+        if count > 0:
+            naam = scheidsrechters.get(nbb, {}).get("naam", "Onbekend")
+            begeleiders_lijst.append({"nbb": nbb, "naam": naam, "begeleidingen": count})
+    
+    begeleiders_lijst.sort(key=lambda x: x["begeleidingen"], reverse=True)
+    return begeleiders_lijst[:n]
 
 def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None, berekening: dict = None):
     """Voeg punten toe aan een speler met volledige berekening voor transparantie."""
@@ -1582,6 +1652,30 @@ def toon_speler_view(nbb_nummer: str):
     
     # Sidebar met legenda
     with st.sidebar:
+        # Top 3 Klassementen
+        st.markdown("### 🏆 Klassement")
+        
+        # Top 3 Scheidsrechters (punten)
+        top_scheids = get_top_scheidsrechters(3)
+        if top_scheids:
+            medailles = ["🥇", "🥈", "🥉"]
+            for i, scheids_info in enumerate(top_scheids):
+                st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt")
+        else:
+            st.caption("*Nog geen punten verdiend*")
+        
+        # Top 3 Begeleiders
+        st.markdown("### 🎓 Top Begeleiders")
+        top_begeleiders = get_top_begeleiders(3)
+        if top_begeleiders:
+            medailles = ["🥇", "🥈", "🥉"]
+            for i, begeleider in enumerate(top_begeleiders):
+                st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x")
+        else:
+            st.caption("*Nog geen begeleidingen*")
+        
+        st.divider()
+        
         st.markdown("### 📋 Legenda")
         
         # Niveau uitleg
