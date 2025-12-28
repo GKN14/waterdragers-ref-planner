@@ -19,9 +19,13 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.17"
+APP_VERSIE = "1.9.18"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.18 (2025-12-28)
+**UI verduidelijking:**
+- 📝 "eigen wedstrijd" → "speelt zelf" (duidelijker dat je overlap hebt met eigen wedstrijd)
+
 ### v1.9.17 (2025-12-28)
 **Bugfix:**
 - 🐛 Begeleider knop verborgen bij wedstrijden waar MSE zelf moet spelen
@@ -1166,7 +1170,7 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
     
     # Check eigen wedstrijd overlap
     if heeft_eigen_wedstrijd(nbb_nummer, wed_datum, wedstrijden, scheidsrechters):
-        return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "eigen wedstrijd"}
+        return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "speelt zelf"}
     
     # Check of niet al andere positie bij deze wedstrijd
     andere_positie = "scheids_2" if als_eerste else "scheids_1"
