@@ -188,6 +188,31 @@ def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
         st.session_state[f"device_token_{nbb_nummer}"] = token
         return True
 
+def clear_device_token_cookie(nbb_nummer: str) -> bool:
+    """Verwijder device token uit cookie"""
+    # Clear session state
+    session_key = f"device_token_{nbb_nummer}"
+    if session_key in st.session_state:
+        del st.session_state[session_key]
+    
+    if _cookie_manager is None:
+        return True
+    
+    try:
+        _cookie_manager.delete(f"device_token_{nbb_nummer}")
+        return True
+    except:
+        return True
+
+def token_exists_in_database(speler_id: str, token: str) -> bool:
+    """Check of een token bestaat in de database (ongeacht approved status)"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("id").eq("speler_id", speler_id).eq("token", token).execute()
+        return bool(response.data)
+    except:
+        return False
+
 def get_device_count(speler_id: str) -> int:
     """Tel aantal gekoppelde devices voor speler"""
     try:

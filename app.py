@@ -22,9 +22,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.9.37"
+APP_VERSIE = "1.9.38"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.38 (2025-12-28)
+**Bugfix apparaat verwijderen:**
+- 🔐 Cookie wordt gewist als apparaat verwijderd is uit database
+- 🔄 Gebruiker moet opnieuw verifiëren na verwijdering
+
 ### v1.9.37 (2025-12-28)
 **Apparaatbeheer uitgebreid:**
 - ⏰ Tijdstip wordt nu getoond (niet alleen datum)
@@ -6611,18 +6616,25 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     token = db.get_device_token_from_cookie(nbb_nummer)
     
     if token:
-        # Check of token geldig en goedgekeurd is
-        if db.verify_device_token(nbb_nummer, token):
-            return True
-        
-        # Check of device wacht op goedkeuring
-        if db.is_device_pending(nbb_nummer, token):
-            st.title("⏳ Wachten op goedkeuring")
-            st.info("Dit apparaat wacht op goedkeuring. Keur het goed via een ander apparaat dat al gekoppeld is.")
-            st.caption("Ververs deze pagina nadat je het apparaat hebt goedgekeurd.")
-            if st.button("🔄 Ververs pagina"):
-                st.rerun()
-            return False
+        # Check of token überhaupt nog in database staat
+        if not db.token_exists_in_database(nbb_nummer, token):
+            # Token is verwijderd uit database - wis de cookie
+            db.clear_device_token_cookie(nbb_nummer)
+            st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
+            token = None  # Ga door naar verificatie
+        else:
+            # Token bestaat - check of het geldig en goedgekeurd is
+            if db.verify_device_token(nbb_nummer, token):
+                return True
+            
+            # Check of device wacht op goedkeuring
+            if db.is_device_pending(nbb_nummer, token):
+                st.title("⏳ Wachten op goedkeuring")
+                st.info("Dit apparaat wacht op goedkeuring. Keur het goed via een ander apparaat dat al gekoppeld is.")
+                st.caption("Ververs deze pagina nadat je het apparaat hebt goedgekeurd.")
+                if st.button("🔄 Ververs pagina"):
+                    st.rerun()
+                return False
     
     # Check of we een nieuw device kunnen toevoegen
     can_add, reason = db.can_add_device(nbb_nummer)
