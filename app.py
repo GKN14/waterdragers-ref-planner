@@ -19,9 +19,15 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.18"
+APP_VERSIE = "1.9.19"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.19 (2025-12-28)
+**Filter verbetering:**
+- 🔍 Wedstrijden waar je niets mee kunt (niet fluiten én niet begeleiden) worden verborgen
+- 🎓 MSE's zien wedstrijden waar ze kunnen begeleiden ook als ze niet kunnen fluiten
+- 📋 "Hele overzicht" toggle toont nog steeds alles
+
 ### v1.9.18 (2025-12-28)
 **UI verduidelijking:**
 - 📝 "eigen wedstrijd" → "speelt zelf" (duidelijker dat je overlap hebt met eigen wedstrijd)
@@ -2442,20 +2448,36 @@ def toon_speler_view(nbb_nummer: str):
                     # Combineer alle checks
                     kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked
                     
+                    # MSE's kunnen ook begeleiden (zonder te fluiten)
+                    kan_begeleiden = False
+                    if is_mse and not heeft_eigen and not heeft_overlap and not al_ingeschreven:
+                        al_begeleider = wed.get("begeleider") == nbb_nummer
+                        heeft_begeleider = wed.get("begeleider") is not None
+                        if not al_begeleider and not heeft_begeleider:
+                            kan_begeleiden = True
+                    
+                    # Kan iets doen met deze wedstrijd?
+                    kan_iets = kan_inschrijven or kan_begeleiden or al_ingeschreven or wed.get("begeleider") == nbb_nummer
+                    
                     # Check filters
                     if is_eigen_niv and not filter_eigen_niveau:
                         continue
                     if is_boven_niv:
                         if not filter_boven_niveau:
                             continue
-                        # Bij "Boven niveau": alleen tonen als je kunt inschrijven
+                        # Bij "Boven niveau": alleen tonen als je iets kunt doen
                         # Tenzij "Hele overzicht" aan staat
-                        if not kan_inschrijven and not filter_hele_overzicht:
+                        if not kan_iets and not filter_hele_overzicht:
                             continue
                     
-                    # Ook voor eigen niveau: alleen tonen als je kunt inschrijven
+                    # Ook voor eigen niveau: alleen tonen als je iets kunt doen
                     # Tenzij "Hele overzicht" aan staat
-                    if is_eigen_niv and not kan_inschrijven and not filter_hele_overzicht:
+                    if is_eigen_niv and not kan_iets and not filter_hele_overzicht:
+                        continue
+                    
+                    # Onder eigen niveau: ook alleen tonen als je iets kunt doen
+                    is_onder_niv = wed_niveau < eigen_niveau
+                    if is_onder_niv and not kan_iets and not filter_hele_overzicht:
                         continue
                     
                     alle_items.append({
