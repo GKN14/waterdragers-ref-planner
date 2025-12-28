@@ -17,8 +17,9 @@ import hashlib
 import secrets
 import requests
 import re
+import streamlit.components.v1 as components
 
-# LocalStorage via streamlit_js_eval
+# Cookies via streamlit_js_eval
 try:
     from streamlit_js_eval import streamlit_js_eval, get_geolocation
     _js_eval_available = True
@@ -162,20 +163,34 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit localStorage of session state"""
+    """Haal device token op uit cookie of session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Eerst session state checken (meest betrouwbaar na registratie)
     if session_key in st.session_state:
         return st.session_state[session_key]
     
-    # Dan localStorage proberen
+    # Dan cookie proberen via JavaScript
     if not _js_eval_available:
         return None
     
     try:
         key = f"device_token_{nbb_nummer}"
-        token = streamlit_js_eval(js_expressions=f"localStorage.getItem('{key}')", key=f"get_{key}")
+        # Lees cookie waarde via JavaScript
+        js_expr = f"""
+        (function() {{
+            const name = "{key}=";
+            const cookies = document.cookie.split(';');
+            for (let c of cookies) {{
+                c = c.trim();
+                if (c.indexOf(name) === 0) {{
+                    return c.substring(name.length);
+                }}
+            }}
+            return null;
+        }})()
+        """
+        token = streamlit_js_eval(js_expressions=js_expr, key=f"get_cookie_{nbb_nummer}")
         if token:
             # Cache in session state voor snellere toegang
             st.session_state[session_key] = token
@@ -184,42 +199,42 @@ def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
         return None
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in localStorage en session state"""
+    """Sla device token op in browser cookie en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Altijd session state voor huidige sessie (dit is synchroon en betrouwbaar)
     st.session_state[session_key] = token
     
-    if not _js_eval_available:
-        return True
+    # Schrijf naar cookie via streamlit_js_eval (draait in parent window context)
+    if _js_eval_available:
+        try:
+            key = f"device_token_{nbb_nummer}"
+            max_age = 90 * 24 * 60 * 60  # 90 dagen
+            js_expr = f"document.cookie = '{key}={token}; path=/; max-age={max_age}; SameSite=Lax'"
+            streamlit_js_eval(js_expressions=js_expr, key=f"set_cookie_{secrets.token_hex(4)}")
+        except:
+            pass
     
-    try:
-        key = f"device_token_{nbb_nummer}"
-        # Gebruik unieke key om caching te voorkomen
-        unique_key = f"set_{key}_{secrets.token_hex(4)}"
-        streamlit_js_eval(js_expressions=f"localStorage.setItem('{key}', '{token}')", key=unique_key)
-        return True
-    except:
-        return True
+    return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token uit localStorage en session state"""
+    """Verwijder device token cookie en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Clear session state
     if session_key in st.session_state:
         del st.session_state[session_key]
     
-    if not _js_eval_available:
-        return True
+    # Verwijder cookie via streamlit_js_eval
+    if _js_eval_available:
+        try:
+            key = f"device_token_{nbb_nummer}"
+            js_expr = f"document.cookie = '{key}=; path=/; max-age=0'"
+            streamlit_js_eval(js_expressions=js_expr, key=f"del_cookie_{secrets.token_hex(4)}")
+        except:
+            pass
     
-    try:
-        key = f"device_token_{nbb_nummer}"
-        unique_key = f"del_{key}_{secrets.token_hex(4)}"
-        streamlit_js_eval(js_expressions=f"localStorage.removeItem('{key}')", key=unique_key)
-        return True
-    except:
-        return True
+    return True
 
 def token_exists_in_database(speler_id: str, token: str) -> bool:
     """Check of een token bestaat in de database (ongeacht approved status)"""
