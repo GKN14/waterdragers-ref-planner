@@ -19,9 +19,16 @@ from io import BytesIO
 import database as db
 
 # Versie informatie
-APP_VERSIE = "1.9.23"
+APP_VERSIE = "1.9.24"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
+### v1.9.24 (2025-12-28)
+**Bugfixes feedback systeem:**
+- 🐛 TC Monitoring: "Wacht op feedback" telt nu correct (1 echte feedback = klaar)
+- 🐛 OK-knop werkt nu correct (cache fix)
+- 👁️ "bevestigd" status wordt nu getoond als "gezien"
+- 📊 Response rate berekening aangepast
+
 ### v1.9.23 (2025-12-28)
 **Feedback systeem verbeteringen:**
 - 🏆 Top Begeleiders telt alleen begeleidingen met positieve feedback
@@ -1848,17 +1855,19 @@ def toon_speler_view(nbb_nummer: str):
                     status_icons = {
                         "aanwezig_geholpen": "✅",
                         "aanwezig_niet_geholpen": "⚠️",
-                        "niet_aanwezig": "❌"
+                        "niet_aanwezig": "❌",
+                        "bevestigd": "👁️"
                     }
                     status_icon = status_icons.get(fb.get("status"), "?")
                     
                     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
                     st.caption(f"{status_icon} {wed_datum.strftime('%d-%m')} - {begeleider_naam}")
                     
-                    # Wijzig knop
-                    if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
-                        verwijder_begeleiding_feedback(fb.get("feedback_id"))
-                        st.rerun()
+                    # Wijzig knop (alleen voor echte feedback, niet voor bevestigingen)
+                    if fb.get("status") != "bevestigd":
+                        if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
+                            verwijder_begeleiding_feedback(fb.get("feedback_id"))
+                            st.rerun()
         
         st.divider()
         
@@ -5138,9 +5147,19 @@ def toon_beloningen_beheer():
         # Statistieken
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         totaal = len(wedstrijden_met_begeleiding)
+        
+        # Wacht op feedback = geen enkele echte feedback ontvangen
+        # (als 1 scheidsrechter echte feedback gaf, is het klaar)
+        def heeft_echte_feedback(fb):
+            """Check of feedback echt is (niet alleen bevestigd)"""
+            if not fb:
+                return False
+            status = fb.get("status", "")
+            return status in ["aanwezig_geholpen", "aanwezig_niet_geholpen", "niet_aanwezig"]
+        
         wacht_op_feedback = sum(1 for w in wedstrijden_met_begeleiding 
-                                if (w["scheids_1"] and not w["fb_scheids_1"]) or 
-                                   (w["scheids_2"] and not w["fb_scheids_2"]))
+                                if not heeft_echte_feedback(w["fb_scheids_1"]) and 
+                                   not heeft_echte_feedback(w["fb_scheids_2"]))
         
         with col_stat1:
             st.metric("Totaal met begeleiding", totaal)
@@ -5164,25 +5183,25 @@ def toon_beloningen_beheer():
             wed = item["wed"]
             begeleider_naam = scheidsrechters.get(item["begeleider_nbb"], {}).get("naam", "Onbekend")
             
-            # Bepaal status
+            # Bepaal status - heeft minimaal 1 scheidsrechter echte feedback gegeven?
             fb_1 = item["fb_scheids_1"]
             fb_2 = item["fb_scheids_2"]
             scheids_1_naam = scheidsrechters.get(item["scheids_1"], {}).get("naam", "-") if item["scheids_1"] else "-"
             scheids_2_naam = scheidsrechters.get(item["scheids_2"], {}).get("naam", "-") if item["scheids_2"] else "-"
             
-            wacht_1 = item["scheids_1"] and not fb_1
-            wacht_2 = item["scheids_2"] and not fb_2
+            heeft_feedback = heeft_echte_feedback(fb_1) or heeft_echte_feedback(fb_2)
             
             # Filter toepassen
-            if filter_status == "Wacht op feedback" and not (wacht_1 or wacht_2):
+            if filter_status == "Wacht op feedback" and heeft_feedback:
                 continue
-            if filter_status == "Feedback ontvangen" and (wacht_1 or wacht_2):
+            if filter_status == "Feedback ontvangen" and not heeft_feedback:
                 continue
             
             status_icons = {
                 "aanwezig_geholpen": "✅",
                 "aanwezig_niet_geholpen": "⚠️",
-                "niet_aanwezig": "❌"
+                "niet_aanwezig": "❌",
+                "bevestigd": "👁️"
             }
             
             with st.expander(f"{item['wed_datum'].strftime('%d-%m %H:%M')} - {wed['thuisteam']} vs {wed['uitteam']} | Begeleider: **{begeleider_naam}**"):
@@ -5191,7 +5210,10 @@ def toon_beloningen_beheer():
                 with col1:
                     st.write(f"**1e scheids:** {scheids_1_naam}")
                     if fb_1:
-                        st.write(f"{status_icons.get(fb_1.get('status'), '?')} {fb_1.get('status', '?').replace('_', ' ')}")
+                        status = fb_1.get('status', '?')
+                        icon = status_icons.get(status, '?')
+                        label = "gezien" if status == "bevestigd" else status.replace('_', ' ')
+                        st.write(f"{icon} {label}")
                         if st.button("🗑️ Reset", key=f"reset_fb1_{item['wed_id']}"):
                             verwijder_begeleiding_feedback(f"fb_{item['wed_id']}_{item['scheids_1']}")
                             st.rerun()
@@ -5201,7 +5223,10 @@ def toon_beloningen_beheer():
                 with col2:
                     st.write(f"**2e scheids:** {scheids_2_naam}")
                     if fb_2:
-                        st.write(f"{status_icons.get(fb_2.get('status'), '?')} {fb_2.get('status', '?').replace('_', ' ')}")
+                        status = fb_2.get('status', '?')
+                        icon = status_icons.get(status, '?')
+                        label = "gezien" if status == "bevestigd" else status.replace('_', ' ')
+                        st.write(f"{icon} {label}")
                         if st.button("🗑️ Reset", key=f"reset_fb2_{item['wed_id']}"):
                             verwijder_begeleiding_feedback(f"fb_{item['wed_id']}_{item['scheids_2']}")
                             st.rerun()

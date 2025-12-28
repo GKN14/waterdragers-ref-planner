@@ -859,9 +859,12 @@ def sla_begeleiding_feedback_op(feedback_id: str, data: dict) -> bool:
         }
         supabase.table("begeleiding_feedback").upsert(record).execute()
         
-        # Update cache
+        # Update cache met volledige record (inclusief feedback_id)
         if "_db_cache_begeleiding_feedback" in st.session_state:
-            st.session_state["_db_cache_begeleiding_feedback"][feedback_id] = data
+            st.session_state["_db_cache_begeleiding_feedback"][feedback_id] = {
+                "feedback_id": feedback_id,
+                **data
+            }
         
         return True
     except Exception as e:
