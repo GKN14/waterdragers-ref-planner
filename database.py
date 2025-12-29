@@ -103,6 +103,19 @@ def _get_country_from_ip(ip: str) -> str:
     except:
         return "NL"  # Bij fout: toegang geven
 
+def get_ip_info() -> dict:
+    """Haal IP en land info op voor debug"""
+    try:
+        ip = st.context.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    except:
+        ip = ""
+    
+    if not ip:
+        return {"ip": "Lokaal", "country": "N/A", "allowed": True}
+    
+    country = _get_country_from_ip(ip)
+    return {"ip": ip, "country": country, "allowed": country == "NL"}
+
 def check_geo_access() -> bool:
     """
     Check of gebruiker uit Nederland komt.

@@ -22,9 +22,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.11.0"
+APP_VERSIE = "1.11.1"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.11.1 (2025-12-29)
+**Debug:**
+- 🌍 IP en land info zichtbaar in sidebar (expander "Netwerk info")
+
 ### v1.11.0 (2025-12-29)
 **Device verificatie & beheer:**
 - 🔐 Apparaat verificatie via geboortedatum
@@ -2189,6 +2193,16 @@ def toon_speler_view(nbb_nummer: str):
         # Versie info onderaan sidebar
         st.divider()
         st.caption(f"Ref Planner v{APP_VERSIE}")
+        
+        # IP debug info (tijdelijk)
+        ip_info = db.get_ip_info()
+        with st.expander("🌍 Netwerk info"):
+            st.write(f"**IP:** {ip_info['ip']}")
+            st.write(f"**Land:** {ip_info['country']}")
+            if ip_info['allowed']:
+                st.success("✅ Toegang OK")
+            else:
+                st.error("❌ Geblokkeerd")
     
     # ============================================================
     # COMPACTE HEADER
@@ -3408,6 +3422,18 @@ def toon_speler_view(nbb_nummer: str):
 
 def toon_beheerder_view():
     """Toon het beheerderspaneel."""
+    # IP info in sidebar
+    with st.sidebar:
+        st.markdown("### 🔧 Beheerder")
+        ip_info = db.get_ip_info()
+        with st.expander("🌍 Netwerk info"):
+            st.write(f"**IP:** {ip_info['ip']}")
+            st.write(f"**Land:** {ip_info['country']}")
+            if ip_info['allowed']:
+                st.success("✅ Toegang OK")
+            else:
+                st.error("❌ Geblokkeerd")
+    
     # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"
     if logo_path.exists():
