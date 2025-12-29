@@ -24,21 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.0"
+APP_VERSIE = "1.16.1"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.16.1 (2025-12-29)
+**Fixes:**
+- 📱 Fix: Metrics nu echt naast elkaar op mobiel (flex-wrap: nowrap)
+- 📅 Fix: Deadline maand logica hersteld (dag <= 15 = huidige maand)
+
 ### v1.16.0 (2025-12-29)
 **Mobiele verbeteringen & Bug fixes:**
 - 📱 Header: Logo's naast elkaar, welkom eronder op mobiel
 - 📱 Metrics: Kortere labels (Niv3+, Min, 🏆, ⚠️)
-- 📱 Compactere weergave met kleinere fonts
 - 📅 Deadline tekst: "Deadline X dagen voor inschrijving [maand]"
 - 🐛 Fix: Afmelden knop niet meer zichtbaar bij gespeelde wedstrijden
-
-### v1.15.3 (2025-12-29)
-**Mobiele info expander:**
-- 📱 "Klassement & Info" expander in main content
-- 📱 Bevat: klassement, begeleiders, jouw gegevens, regels, punten, legenda
 
 ### v1.15.0 (2025-12-29)
 **Seizoen beheer:**
@@ -2500,19 +2499,37 @@ def toon_speler_view(nbb_nummer: str):
     beloningsinst = laad_beloningsinstellingen()
     strikes = speler_stats["strikes"]
     
-    # Custom CSS voor compactere metrics
+    # Custom CSS voor compactere metrics die NAAST elkaar blijven op mobiel
     st.markdown("""
     <style>
-        /* Compactere metrics voor mobiel */
+        /* Forceer metrics naast elkaar op mobiel */
         @media (max-width: 768px) {
+            /* Metrics container */
+            [data-testid="stHorizontalBlock"] {
+                flex-wrap: nowrap !important;
+                gap: 0.2rem !important;
+            }
+            
+            /* Elke metric kolom */
+            [data-testid="stHorizontalBlock"] > div {
+                flex: 1 1 0 !important;
+                min-width: 0 !important;
+                width: auto !important;
+            }
+            
+            /* Metric waarde kleiner */
             [data-testid="stMetricValue"] {
-                font-size: 1.3rem !important;
+                font-size: 1.1rem !important;
             }
+            
+            /* Metric label kleiner */
             [data-testid="stMetricLabel"] {
-                font-size: 0.65rem !important;
-            }
-            [data-testid="stMetricDelta"] {
                 font-size: 0.6rem !important;
+            }
+            
+            /* Metric delta kleiner */
+            [data-testid="stMetricDelta"] {
+                font-size: 0.55rem !important;
             }
         }
     </style>
@@ -2622,11 +2639,11 @@ def toon_speler_view(nbb_nummer: str):
     dagen_over = (deadline - datetime.now()).days
     maand_namen_vol = ["", "januari", "februari", "maart", "april", "mei", "juni", 
                        "juli", "augustus", "september", "oktober", "november", "december"]
-    # Bepaal voor welke maand de inschrijving is (maand na deadline)
-    if deadline.month == 12:
-        inschrijf_maand = maand_namen_vol[1]  # januari
+    # Bepaal voor welke maand de inschrijving is (originele logica)
+    if deadline.day <= 15:
+        inschrijf_maand = maand_namen_vol[deadline.month]
     else:
-        inschrijf_maand = maand_namen_vol[deadline.month + 1]
+        inschrijf_maand = maand_namen_vol[1 if deadline.month == 12 else deadline.month + 1]
     
     col_status, col_deadline = st.columns(2)
     with col_status:
