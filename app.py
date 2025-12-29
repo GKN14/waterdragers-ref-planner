@@ -24,9 +24,21 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.13.0"
+APP_VERSIE = "1.13.1"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.13.1 (2025-12-29)
+**Compacte sidebar (Azure-stijl):**
+- 🏆 Klassement en Begeleiders: altijd zichtbaar
+- 📦 Overige secties: samengevouwen in expanders
+- 👤 Jouw gegevens (met niveau regels)
+- 🏆 Punten & Strikes (uitleg)
+- 📊 Jouw historie (alleen als er data is)
+- 📋 Legenda (niveaus, kleuren, symbolen)
+- 📝 Mijn feedback (alleen als er data is)
+- 📱 Apparaten (met pending indicator)
+- 🌍 Netwerk
+
 ### v1.13.0 (2025-12-29)
 **Verbeterd klassement:**
 - 🏆 Top 3 + eigen positie in punten klassement
@@ -2017,7 +2029,9 @@ def toon_speler_view(nbb_nummer: str):
     
     # Sidebar met legenda
     with st.sidebar:
-        # Klassement Punten
+        # ============================================================
+        # KLASSEMENT (NIET SAMENGEVOUWEN)
+        # ============================================================
         st.markdown("### 🏆 Klassement")
         punten_klassement = get_punten_klassement_met_positie(nbb_nummer)
         
@@ -2041,7 +2055,9 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.caption("*Nog geen punten verdiend*")
         
-        # Klassement Begeleiders
+        # ============================================================
+        # TOP BEGELEIDERS (NIET SAMENGEVOUWEN)
+        # ============================================================
         st.markdown("### 🎓 Top Begeleiders")
         beg_klassement = get_begeleiders_klassement_met_positie(nbb_nummer)
         
@@ -2067,76 +2083,155 @@ def toon_speler_view(nbb_nummer: str):
         
         st.divider()
         
-        st.markdown("### 📋 Legenda")
-        
-        # Niveau uitleg
-        st.markdown("**Niveaus**")
-        niveaus = instellingen.get("niveaus", {})
-        for niveau in sorted(niveaus.keys(), key=int):
-            omschrijving = niveaus[niveau]
-            st.markdown(f"**{niveau}** - {omschrijving}")
-        
-        st.divider()
-        
-        # Kleuren uitleg
-        st.markdown("**Kleuren**")
-        st.markdown("""
-        <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
-            ⭐ <strong>Jouw niveau</strong>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
-            🏀 Onder jouw niveau
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("""
-        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
-            🏠🚗 Eigen wedstrijd
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # Iconen uitleg
-        st.markdown("**Symbolen**")
-        st.markdown("🙋 Jij bent ingeschreven")
-        st.markdown("👤 Iemand anders")
-        st.markdown("📋 Beschikbaar")
-        st.markdown("🎓 Begeleider (MSE)")
-        if is_mse:
-            st.markdown("👤🎓 Wil begeleiding ontvangen")
-        
-        st.divider()
-        
-        # Jouw gegevens
-        st.markdown("**Jouw gegevens**")
+        # ============================================================
+        # JOUW GEGEVENS (SAMENGEVOUWEN)
+        # ============================================================
         eigen_niveau = scheids.get("niveau_1e_scheids", 1)
-        st.markdown(f"1e scheids niveau: **{eigen_niveau}**")
         max_niveau_2e = min(eigen_niveau + 1, 5)
-        st.markdown(f"2e scheids niveau: **{max_niveau_2e}**")
-        if scheids.get("bs2_diploma", False):
-            st.markdown("✅ BS2 diploma")
-        eigen_teams = scheids.get("eigen_teams", [])
-        if eigen_teams:
-            st.markdown(f"Teams: {', '.join(eigen_teams)}")
         
-        # Begeleidingsstatus
-        if scheids.get("open_voor_begeleiding", False):
-            st.markdown("🎓 Open voor begeleiding")
+        with st.expander("👤 Jouw gegevens"):
+            st.markdown(f"**1e scheids niveau:** {eigen_niveau}")
+            st.markdown(f"**2e scheids niveau:** {max_niveau_2e}")
+            if scheids.get("bs2_diploma", False):
+                st.markdown("✅ BS2 diploma")
+            eigen_teams = scheids.get("eigen_teams", [])
+            if eigen_teams:
+                st.markdown(f"**Teams:** {', '.join(eigen_teams)}")
+            if scheids.get("open_voor_begeleiding", False):
+                st.markdown("🎓 Open voor begeleiding")
+            
+            st.divider()
+            st.caption("**Niveau regels:**")
+            st.markdown(f"""
+            - 1e scheids: max niveau **{eigen_niveau}**
+            - 2e scheids: max niveau **{max_niveau_2e}**
+            - *Met MSE als 1e: **geen limiet** 🎓*
+            - BS2 wedstrijden: alleen met diploma
+            """)
         
-        # Mijn gegeven feedback (voor wijzigen)
-        # Alleen feedback die ik als scheidsrechter heb gegeven, niet "begeleider_gezien" records
+        # ============================================================
+        # PUNTEN & STRIKES (SAMENGEVOUWEN)
+        # ============================================================
+        beloningsinst = laad_beloningsinstellingen()
+        
+        with st.expander("🏆 Punten & Strikes"):
+            st.markdown("**Punten verdienen:**")
+            st.markdown(f"""
+            | Actie | Punten |
+            |-------|--------|
+            | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
+            | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
+            | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
+            | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
+            
+            *Lastig = apart terugkomen om te fluiten  
+            **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
+            """)
+            
+            st.divider()
+            
+            st.markdown("**Strikes:**")
+            strikes_vervallen_tekst = "*Vervallen einde seizoen*" if beloningsinst['strikes_vervallen_einde_seizoen'] else ""
+            st.markdown(f"""
+            | Situatie | Strikes |
+            |----------|---------|
+            | Afmelding <48u | {beloningsinst['strikes_afmelding_48u']} |
+            | Afmelding <24u | {beloningsinst['strikes_afmelding_24u']} |
+            | No-show | {beloningsinst['strikes_no_show']} |
+            
+            **Met vervanging** = geen strike!
+            
+            ⚠️ {beloningsinst['strikes_waarschuwing_bij']} strikes = Let op!  
+            ❌ {beloningsinst['strikes_gesprek_bij']} strikes = Gesprek TC
+            
+            **Wegwerken:** Klusje (-1), Extra wedstrijd (-{beloningsinst['strike_reductie_extra_wedstrijd']}), Invallen <48u (-{beloningsinst['strike_reductie_invallen']})
+            
+            {strikes_vervallen_tekst}
+            """)
+        
+        # ============================================================
+        # JOUW HISTORIE (SAMENGEVOUWEN - alleen als er data is)
+        # ============================================================
+        if speler_stats["punten"] > 0 or speler_stats["strikes"] > 0:
+            with st.expander(f"📊 Jouw historie ({speler_stats['punten']} pt, {speler_stats['strikes']} strikes)"):
+                # Combineer wedstrijd punten en handmatige aanpassingen
+                heeft_punten_historie = speler_stats["gefloten_wedstrijden"] or speler_stats.get("punten_log", [])
+                
+                if heeft_punten_historie:
+                    st.markdown("**🏆 Punten:**")
+                    # Wedstrijd punten
+                    for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
+                        berekening = wed_reg.get("berekening", {})
+                        if berekening:
+                            st.caption(f"+{wed_reg['punten']} op {berekening.get('inschrijf_moment_leesbaar', '?')}")
+                        else:
+                            st.caption(f"+{wed_reg['punten']} - {wed_reg.get('reden', '')}")
+                    
+                    # Handmatige aanpassingen
+                    for entry in reversed(speler_stats.get("punten_log", [])[-3:]):
+                        teken = "+" if entry["punten"] > 0 else ""
+                        st.caption(f"{teken}{entry['punten']} - {entry['reden']}")
+                
+                if speler_stats["strike_log"]:
+                    st.divider()
+                    st.markdown("**⚠️ Strikes:**")
+                    for strike in reversed(speler_stats["strike_log"][-5:]):
+                        teken = "+" if strike["strikes"] > 0 else ""
+                        st.caption(f"{teken}{strike['strikes']} - {strike['reden']}")
+        
+        # ============================================================
+        # LEGENDA (SAMENGEVOUWEN)
+        # ============================================================
+        with st.expander("📋 Legenda"):
+            # Niveau uitleg
+            st.markdown("**Niveaus:**")
+            niveaus = instellingen.get("niveaus", {})
+            for niveau in sorted(niveaus.keys(), key=int):
+                omschrijving = niveaus[niveau]
+                st.caption(f"**{niveau}** - {omschrijving}")
+            
+            st.divider()
+            
+            # Kleuren uitleg
+            st.markdown("**Kleuren:**")
+            st.markdown("""
+            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
+                ⭐ Jouw niveau
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+            <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
+                🏀 Onder jouw niveau
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("""
+            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
+                🏠🚗 Eigen wedstrijd
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # Symbolen uitleg
+            st.markdown("**Symbolen:**")
+            st.caption("🙋 Jij bent ingeschreven")
+            st.caption("👤 Iemand anders")
+            st.caption("📋 Beschikbaar")
+            st.caption("🎓 Begeleider (MSE)")
+            if is_mse:
+                st.caption("👤🎓 Wil begeleiding ontvangen")
+        
+        # ============================================================
+        # MIJN FEEDBACK (SAMENGEVOUWEN - alleen als er data is)
+        # ============================================================
         feedback_data = laad_begeleiding_feedback()
         mijn_feedback = [fb for fb_id, fb in feedback_data.items() 
                          if fb.get("speler_nbb") == nbb_nummer 
                          and fb.get("status") != "begeleider_gezien"
-                         and fb.get("begeleider_nbb") != nbb_nummer]  # Niet waar ik zelf begeleider was
+                         and fb.get("begeleider_nbb") != nbb_nummer]
         
         if mijn_feedback:
-            st.divider()
-            st.markdown("**📋 Mijn feedback**")
-            with st.expander(f"Gegeven feedback ({len(mijn_feedback)})", expanded=False):
+            with st.expander(f"📝 Mijn feedback ({len(mijn_feedback)})"):
                 for fb in sorted(mijn_feedback, key=lambda x: x.get("feedback_datum", ""), reverse=True)[:5]:
                     wed = wedstrijden.get(fb.get("wed_id"), {})
                     if not wed:
@@ -2155,11 +2250,9 @@ def toon_speler_view(nbb_nummer: str):
                     
                     # Wijzig knop (alleen voor echte feedback, niet voor bevestigingen)
                     if fb.get("status") != "bevestigd":
-                        # Check of de andere scheidsrechter al bevestigd heeft
                         wed_id = fb.get("wed_id")
-                        mijn_nbb = fb.get("speler_nbb")  # Gebruik speler_nbb uit feedback, niet nbb_nummer
+                        mijn_nbb = fb.get("speler_nbb")
                         
-                        # Bepaal wie de andere scheidsrechter is
                         scheids_1_nbb = wed.get("scheids_1")
                         scheids_2_nbb = wed.get("scheids_2")
                         
@@ -2178,116 +2271,26 @@ def toon_speler_view(nbb_nummer: str):
                                 andere_bevestigd = True
                         
                         if andere_bevestigd:
-                            st.caption("*Collega heeft bevestigd - wijzigen via TC*")
+                            st.caption("*Collega heeft bevestigd*")
                         else:
                             if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
                                 verwijder_begeleiding_feedback(fb.get("feedback_id"))
                                 st.rerun()
         
-        st.divider()
-        
-        # Niveau regels
-        st.markdown("**📐 Niveau regels**")
-        st.markdown(f"""
-        - 1e scheids: max niveau **{eigen_niveau}**
-        - 2e scheids: max niveau **{max_niveau_2e}**
-        - *Met MSE als 1e: **geen limiet** 🎓*
-        - BS2 wedstrijden: alleen met diploma
-        """)
-        
-        st.divider()
-        
-        # Puntensysteem uitleg - dynamisch uit instellingen
-        beloningsinst = laad_beloningsinstellingen()
-        
-        st.markdown("### 🏆 Punten verdienen")
-        st.markdown(f"""
-        Wedstrijden **boven je minimum** leveren punten op:
-        
-        | Actie | Punten |
-        |-------|--------|
-        | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
-        | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
-        | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
-        | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
-        
-        *Lastig = apart terugkomen om te fluiten
-        
-        **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
-        """)
-        
-        st.divider()
-        
-        # Strikes uitleg - dynamisch
-        st.markdown("### ⚠️ Strikes")
-        strikes_vervallen_tekst = "*Strikes vervallen aan einde seizoen.*" if beloningsinst['strikes_vervallen_einde_seizoen'] else ""
-        st.markdown(f"""
-        | Situatie | Strikes |
-        |----------|---------|
-        | Afmelding <48u | {beloningsinst['strikes_afmelding_48u']} |
-        | Afmelding <24u | {beloningsinst['strikes_afmelding_24u']} |
-        | No-show | {beloningsinst['strikes_no_show']} |
-        
-        **Met vervanging** = geen strike!
-        
-        ⚠️ {beloningsinst['strikes_waarschuwing_bij']} strikes = Let op!  
-        ❌ {beloningsinst['strikes_gesprek_bij']} strikes = Gesprek TC
-        
-        Strikes wegwerken:
-        - Klusje doen (-1)
-        - Extra wedstrijd (-{beloningsinst['strike_reductie_extra_wedstrijd']})
-        - Invallen <48u (-{beloningsinst['strike_reductie_invallen']})
-        
-        {strikes_vervallen_tekst}
-        """)
-        
-        # Toon eigen puntenhistorie als er punten zijn
-        if speler_stats["punten"] > 0 or speler_stats["strikes"] > 0:
-            st.divider()
-            st.markdown("### 📊 Jouw historie")
-            
-            # Combineer wedstrijd punten en handmatige aanpassingen
-            heeft_punten_historie = speler_stats["gefloten_wedstrijden"] or speler_stats.get("punten_log", [])
-            
-            if heeft_punten_historie:
-                with st.expander(f"🏆 Punten ({speler_stats['punten']} totaal)"):
-                    # Wedstrijd punten
-                    for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
-                        berekening = wed_reg.get("berekening", {})
-                        if berekening:
-                            st.markdown(f"""
-                            **+{wed_reg['punten']}** op {berekening.get('inschrijf_moment_leesbaar', '?')}  
-                            *{berekening.get('uren_tot_wedstrijd', '?')}u tot wedstrijd*
-                            """)
-                        else:
-                            st.markdown(f"**+{wed_reg['punten']}** - {wed_reg.get('reden', '')}")
-                    
-                    # Handmatige aanpassingen
-                    for entry in reversed(speler_stats.get("punten_log", [])[-3:]):
-                        teken = "+" if entry["punten"] > 0 else ""
-                        st.markdown(f"**{teken}{entry['punten']}** - {entry['reden']}")
-            
-            if speler_stats["strike_log"]:
-                with st.expander(f"⚠️ Strikes ({speler_stats['strikes']} actief)"):
-                    for strike in reversed(speler_stats["strike_log"][-5:]):
-                        teken = "+" if strike["strikes"] > 0 else ""
-                        st.markdown(f"**{teken}{strike['strikes']}** - {strike['reden']}")
-        
-        # Device beheer sectie
-        st.divider()
-        st.markdown("### 📱 Apparaten")
+        # ============================================================
+        # APPARATEN (SAMENGEVOUWEN)
+        # ============================================================
         device_count = db.get_device_count(nbb_nummer)
         pending_devices = db.get_pending_devices(nbb_nummer)
         
-        # Toon pending notificatie
+        apparaat_label = f"📱 Apparaten ({device_count})"
         if pending_devices:
-            st.warning(f"⏳ {len(pending_devices)} apparaat wacht op goedkeuring!")
+            apparaat_label += f" ⏳{len(pending_devices)}"
         
-        st.caption(f"{device_count} apparaat{'en' if device_count != 1 else ''} gekoppeld")
-        
-        # Pending approvals
-        if pending_devices:
-            with st.expander(f"⏳ Wachtend op goedkeuring ({len(pending_devices)})", expanded=True):
+        with st.expander(apparaat_label):
+            # Pending approvals
+            if pending_devices:
+                st.warning(f"⏳ {len(pending_devices)} wacht op goedkeuring!")
                 for device in pending_devices:
                     device_name = device.get("device_name", "Onbekend")
                     created = db.format_datetime(device.get("created_at", ""))
@@ -2297,90 +2300,79 @@ def toon_speler_view(nbb_nummer: str):
                     
                     col_approve, col_reject = st.columns(2)
                     with col_approve:
-                        if st.button("✅ Goedkeuren", key=f"approve_{device['id']}", use_container_width=True):
+                        if st.button("✅", key=f"approve_{device['id']}", use_container_width=True, help="Goedkeuren"):
                             if db.approve_device(device["id"], nbb_nummer):
                                 st.success("Goedgekeurd!")
                                 st.rerun()
                     with col_reject:
-                        if st.button("❌ Weigeren", key=f"reject_{device['id']}", use_container_width=True):
+                        if st.button("❌", key=f"reject_{device['id']}", use_container_width=True, help="Weigeren"):
                             if db.reject_device(device["id"], nbb_nummer):
                                 st.success("Geweigerd!")
                                 st.rerun()
                     st.divider()
-        
-        # Bestaande apparaten
-        with st.expander("Gekoppelde apparaten"):
+            
+            # Gekoppelde apparaten
             devices = db.get_devices(nbb_nummer)
             approved_devices = [d for d in devices if d.get("approved", True)]
             
             if approved_devices:
+                st.caption("**Gekoppeld:**")
                 for device in approved_devices:
-                    col_info, col_btn = st.columns([3, 1])
+                    col_info, col_btn = st.columns([4, 1])
                     with col_info:
                         device_name = device.get("device_name", "Onbekend")
-                        fingerprint = device.get("fingerprint", "")[:8] if device.get("fingerprint") else ""
-                        created = db.format_datetime(device.get("created_at", ""))
-                        last_used = db.format_datetime(device.get("last_used", ""))
-                        st.markdown(f"**{device_name}**")
-                        if fingerprint:
-                            st.caption(f"ID: {fingerprint} · Gekoppeld: {created}")
-                        else:
-                            st.caption(f"Gekoppeld: {created}")
-                        st.caption(f"Laatst gebruikt: {last_used}")
+                        fingerprint = device.get("fingerprint", "")[:6] if device.get("fingerprint") else ""
+                        st.caption(f"{device_name} ({fingerprint})")
                     with col_btn:
-                        if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder apparaat"):
+                        if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder"):
                             if db.remove_device(device["id"], nbb_nummer):
-                                st.success("Verwijderd!")
                                 st.rerun()
-            else:
-                st.caption("*Geen apparaten gekoppeld*")
-        
-        # Instellingen
-        with st.expander("⚙️ Apparaat instellingen"):
+            
+            st.divider()
+            
+            # Instellingen (compact)
+            st.caption("**Instellingen:**")
             settings = db.get_speler_device_settings(nbb_nummer)
             
-            # Max devices
             current_max = settings.get("max_devices")
-            max_options = {"Geen limiet": None, "1 apparaat": 1, "2 apparaten": 2, "3 apparaten": 3, "5 apparaten": 5}
+            max_options = {"Geen limiet": None, "1": 1, "2": 2, "3": 3, "5": 5}
             current_label = next((k for k, v in max_options.items() if v == current_max), "Geen limiet")
             
             new_max_label = st.selectbox(
-                "Maximum aantal apparaten",
+                "Max apparaten",
                 options=list(max_options.keys()),
                 index=list(max_options.keys()).index(current_label),
-                key="device_max_select"
+                key="device_max_select",
+                label_visibility="collapsed"
             )
             new_max = max_options[new_max_label]
             
-            # Require approval
             require_approval = st.checkbox(
-                "Nieuwe apparaten moeten goedgekeurd worden",
+                "Goedkeuring vereist",
                 value=settings.get("require_approval", False),
-                help="Als dit aan staat, moet je elk nieuw apparaat goedkeuren via een bestaand apparaat (behalve het eerste)",
                 key="device_require_approval"
             )
             
-            if st.button("💾 Instellingen opslaan", key="save_device_settings", use_container_width=True):
+            if st.button("💾 Opslaan", key="save_device_settings", use_container_width=True):
                 if db.save_speler_device_settings(nbb_nummer, new_max, require_approval):
-                    st.success("Instellingen opgeslagen!")
+                    st.success("Opgeslagen!")
                     st.rerun()
-                else:
-                    st.error("Fout bij opslaan")
         
-        # Versie info onderaan sidebar
+        # ============================================================
+        # FOOTER
+        # ============================================================
         st.divider()
         st.caption(f"Ref Planner v{APP_VERSIE}")
         
-        # IP debug info
+        # Netwerk info (samengevouwen)
         ip_info = db.get_ip_info()
-        with st.expander("🌍 Netwerk info"):
-            st.write(f"**Publiek IP:** {ip_info['ip']}")
-            st.write(f"**Land:** {ip_info['country']}")
-            st.write(f"**Header:** {ip_info.get('used_header', '?')}")
+        with st.expander("🌍 Netwerk"):
+            st.caption(f"IP: {ip_info['ip']}")
+            st.caption(f"Land: {ip_info['country']}")
             if ip_info['allowed']:
-                st.success("✅ Toegang OK")
+                st.caption("✅ Toegang OK")
             else:
-                st.error("❌ Geblokkeerd")
+                st.caption("❌ Geblokkeerd")
     
     # ============================================================
     # COMPACTE HEADER
