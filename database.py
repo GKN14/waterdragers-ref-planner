@@ -91,7 +91,17 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ============================================================
-# GEOFILTERING
+# GEOFILTERING (VOORBEREID - WERKT MOMENTEEL NIET OP STREAMLIT CLOUD)
+# ============================================================
+# 
+# Streamlit Cloud stuurt het publieke IP-adres van de client NIET door.
+# De X-Forwarded-For header bevat alleen private IP's van load balancers.
+# Hierdoor kan geofiltering op basis van IP momenteel niet werken.
+#
+# Deze code is voorbereid voor als Streamlit in de toekomst wel het
+# echte client IP gaat doorsturen, of voor deployment op eigen server.
+#
+# Status: INACTIEF (fail-open: bij geen publiek IP wordt toegang verleend)
 # ============================================================
 
 @st.cache_data(ttl=3600)
@@ -104,7 +114,13 @@ def _get_country_from_ip(ip: str) -> str:
         return "NL"  # Bij fout: toegang geven
 
 def get_ip_info() -> dict:
-    """Haal IP en land info op voor debug"""
+    """
+    Haal IP en land info op voor debug.
+    
+    Let op: Op Streamlit Cloud wordt het publieke IP niet doorgestuurd,
+    waardoor deze functie alleen private IP's zal vinden en "Niet gevonden" 
+    retourneert voor het publieke IP.
+    """
     try:
         headers = st.context.headers
         
@@ -138,6 +154,7 @@ def get_ip_info() -> dict:
         return {"ip": f"Error: {e}", "country": "?", "allowed": True, "all_headers": {}}
     
     if not ip:
+        # Geen publiek IP gevonden - op Streamlit Cloud is dit normaal
         return {"ip": "Niet gevonden", "country": "N/A", "allowed": True, "all_headers": all_headers, "used_header": "geen"}
     
     country = _get_country_from_ip(ip)
@@ -153,6 +170,14 @@ def check_geo_access() -> bool:
     """
     Check of gebruiker uit Nederland komt.
     Stopt de app als toegang geweigerd wordt.
+    
+    BELANGRIJK: Deze functie werkt momenteel NIET op Streamlit Cloud!
+    Streamlit Cloud stuurt het publieke IP niet door in de headers.
+    De functie zal altijd True retourneren (fail-open) omdat er geen
+    publiek IP gevonden wordt.
+    
+    Voor echte geofiltering is deployment op eigen server nodig,
+    of moet Streamlit hun platform aanpassen.
     """
     ip_info = get_ip_info()
     ip = ip_info.get("ip", "")

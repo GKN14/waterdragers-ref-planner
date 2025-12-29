@@ -19,23 +19,16 @@ from io import BytesIO
 import database as db
 
 # Geofiltering - alleen toegang vanuit Nederland
+# Let op: Werkt momenteel NIET op Streamlit Cloud (geen publiek IP beschikbaar)
+# Zie database.py voor details. Code is voorbereid voor toekomstig gebruik.
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.11.3"
+APP_VERSIE = "1.11.5"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
-### v1.11.3 (2025-12-29)
-**Debug alle headers:**
-- 📋 Toont ALLE HTTP headers van Streamlit Cloud
-- 🔍 Helpt bepalen welke header het IP bevat
-
-### v1.11.1 (2025-12-29)
-**Debug:**
-- 🌍 IP en land info zichtbaar in sidebar (expander "Netwerk info")
-
-### v1.11.0 (2025-12-29)
-**Device verificatie & beheer:**
+### v1.11.5 (2025-12-29)
+**Device verificatie & beheer - Definitieve versie:**
 - 🔐 Apparaat verificatie via geboortedatum
 - 🔍 Apparaten worden herkend op basis van browser fingerprint
 - 📱 Browser type wordt getoond (Chrome, Firefox, Safari, etc.)
@@ -43,31 +36,12 @@ APP_CHANGELOG = """
 - ⚙️ Spelers kunnen max aantal apparaten instellen
 - ✅ Optionele goedkeuring voor nieuwe apparaten
 - 🔐 Beheerder tab voor apparaatoverzicht
-
-### v1.9.38 (2025-12-28)
-**Bugfix apparaat verwijderen:**
-- 🔐 Cookie wordt gewist als apparaat verwijderd is uit database
-- 🔄 Gebruiker moet opnieuw verifiëren na verwijdering
-
-### v1.9.37 (2025-12-28)
-**Apparaatbeheer uitgebreid:**
-- ⏰ Tijdstip wordt nu getoond (niet alleen datum)
-- ⚙️ Spelers kunnen max aantal apparaten instellen
-- ✅ Spelers kunnen goedkeuring vereisen voor nieuwe apparaten
-- ⏳ Goedkeuringsflow: nieuw apparaat wacht tot goedgekeurd via bestaand apparaat
-- 📊 Beheerder ziet pending approvals statistiek
-
-### v1.9.36 (2025-12-28)
-**Apparaatbeheer:**
-- 📱 Spelers kunnen gekoppelde apparaten zien in sidebar
-- 🗑️ Spelers kunnen eigen apparaten verwijderen
-- 🔐 Beheerder tab voor apparaatoverzicht
-- 👥 Beheerder kan apparaten per speler bekijken/verwijderen
+- 🌍 Netwerk info in sidebar (IP/land detectie voorbereid)
 
 ### v1.9.35 (2025-12-28)
 **Beveiliging update:**
 - 🔐 Device verificatie met cookies (90 dagen)
-- 🌍 Geofiltering (alleen Nederland)
+- 🌍 Geofiltering (alleen Nederland - voorbereid)
 - 🔑 Admin wachtwoord in database (niet meer in code)
 - 📥 Ledengegevens import (geboortedatum + teams)
 
@@ -2199,7 +2173,7 @@ def toon_speler_view(nbb_nummer: str):
         st.divider()
         st.caption(f"Ref Planner v{APP_VERSIE}")
         
-        # IP debug info (tijdelijk)
+        # IP debug info
         ip_info = db.get_ip_info()
         with st.expander("🌍 Netwerk info"):
             st.write(f"**Publiek IP:** {ip_info['ip']}")
@@ -2209,14 +2183,6 @@ def toon_speler_view(nbb_nummer: str):
                 st.success("✅ Toegang OK")
             else:
                 st.error("❌ Geblokkeerd")
-            
-            # Debug: toon ALLE headers
-            if ip_info.get('all_headers'):
-                st.caption("**Alle headers:**")
-                for h, v in sorted(ip_info['all_headers'].items()):
-                    # Verkort lange waarden
-                    v_short = v[:50] + "..." if len(str(v)) > 50 else v
-                    st.caption(f"`{h}`: {v_short}")
     
     # ============================================================
     # COMPACTE HEADER
@@ -3448,13 +3414,6 @@ def toon_beheerder_view():
                 st.success("✅ Toegang OK")
             else:
                 st.error("❌ Geblokkeerd")
-            
-            # Debug: toon ALLE headers
-            if ip_info.get('all_headers'):
-                st.caption("**Alle headers:**")
-                for h, v in sorted(ip_info['all_headers'].items()):
-                    v_short = v[:50] + "..." if len(str(v)) > 50 else v
-                    st.caption(f"`{h}`: {v_short}")
     
     # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"
