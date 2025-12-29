@@ -22,13 +22,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.10.4-debug"
+APP_VERSIE = "1.10.5-debug"
 APP_VERSIE_DATUM = "2025-12-28"
 APP_CHANGELOG = """
-### v1.10.4-debug (2025-12-28)
-**Query parameter opslag:**
-- 🔧 Token opgeslagen in URL query parameter (gegarandeerd werkend)
-- 🔧 Geen JavaScript timing issues meer
+### v1.10.5-debug (2025-12-28)
+**Cookie controller:**
+- 🍪 streamlit-cookies-controller voor echte browser cookies
+- 🔧 Query param als fallback
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6620,8 +6620,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     if DEBUG:
         st.sidebar.markdown("### 🐛 Debug Info")
         st.sidebar.write(f"NBB: {nbb_nummer}")
+        st.sidebar.write(f"Cookies available: {db._cookies_available}")
         st.sidebar.write(f"Session token: {session_key in st.session_state}")
-        st.sidebar.write(f"Query param: {st.query_params.get(f'dt_{nbb_nummer}', 'GEEN')[:20] if st.query_params.get(f'dt_{nbb_nummer}') else 'GEEN'}...")
         st.sidebar.write(f"Verified flag: {st.session_state.get(verified_key, False)}")
     
     # Check of we net geverifieerd zijn (flag gezet in vorige run)
@@ -6643,7 +6643,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     if not geboortedatum:
         return True
     
-    # Check bestaande token (session state of query param)
+    # Check bestaande token (session state, cookie of query param)
     token = db.get_device_token_from_cookie(nbb_nummer)
     
     if DEBUG:

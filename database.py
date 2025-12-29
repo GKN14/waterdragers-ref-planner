@@ -18,8 +18,14 @@ import secrets
 import requests
 import re
 
-# Flag voor backward compatibility (niet meer nodig maar kan in andere code staan)
-_js_eval_available = True
+# Cookie controller voor device tokens
+try:
+    from streamlit_cookies_controller import CookieController
+    _cookie_controller = CookieController()
+    _cookies_available = True
+except ImportError:
+    _cookie_controller = None
+    _cookies_available = False
 
 # Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
@@ -158,14 +164,25 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit query parameter of session state"""
+    """Haal device token op uit cookie of session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Eerst session state checken (meest betrouwbaar na registratie)
     if session_key in st.session_state:
         return st.session_state[session_key]
     
-    # Dan query parameter checken
+    # Dan cookie proberen
+    if _cookies_available and _cookie_controller:
+        try:
+            cookie_key = f"dt_{nbb_nummer}"
+            token = _cookie_controller.get(cookie_key)
+            if token:
+                st.session_state[session_key] = token
+                return token
+        except:
+            pass
+    
+    # Fallback: query param
     try:
         query_key = f"dt_{nbb_nummer}"
         token = st.query_params.get(query_key)
@@ -178,13 +195,21 @@ def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
     return None
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in query parameter en session state"""
+    """Sla device token op in cookie en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Session state voor huidige sessie
     st.session_state[session_key] = token
     
-    # Query parameter voor persistentie
+    # Cookie voor persistentie (90 dagen)
+    if _cookies_available and _cookie_controller:
+        try:
+            cookie_key = f"dt_{nbb_nummer}"
+            _cookie_controller.set(cookie_key, token, max_age=90*24*60*60)
+        except:
+            pass
+    
+    # Backup: query parameter
     try:
         query_key = f"dt_{nbb_nummer}"
         st.query_params[query_key] = token
@@ -194,14 +219,22 @@ def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
     return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token uit query parameter en session state"""
+    """Verwijder device token uit cookie en session state"""
     session_key = f"device_token_{nbb_nummer}"
     
     # Clear session state
     if session_key in st.session_state:
         del st.session_state[session_key]
     
-    # Clear query parameter
+    # Clear cookie
+    if _cookies_available and _cookie_controller:
+        try:
+            cookie_key = f"dt_{nbb_nummer}"
+            _cookie_controller.remove(cookie_key)
+        except:
+            pass
+    
+    # Clear query param
     try:
         query_key = f"dt_{nbb_nummer}"
         if query_key in st.query_params:
