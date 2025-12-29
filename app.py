@@ -24,9 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.14.0"
+APP_VERSIE = "1.15.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.15.0 (2025-12-29)
+**Seizoen beheer:**
+- 📅 Nieuwe tab: Seizoen in Instellingen
+- 🔒 Seizoen afsluiten met archivering
+- 📚 Bekijk gearchiveerde seizoenen
+- 📊 Statistieken per speler per seizoen (incl. minimums)
+- 📥 Export archief naar CSV
+
 ### v1.14.0 (2025-12-29)
 **Analyse Dashboard & Export uitbreiding:**
 - 📊 Nieuw: Analyse tab voor fluitgedrag analyse
@@ -35,12 +43,6 @@ APP_CHANGELOG = """
 - 💡 Suggesties voor minimum aanpassingen
 - 🔧 Bulk minimum aanpassen (verhogen/verlagen)
 - 📤 Export: Scheidsrechters + statistieken
-- 📤 Export: Beloningen detail
-
-### v1.13.1 (2025-12-29)
-**Compacte sidebar (Azure-stijl):**
-- 🏆 Klassement en Begeleiders: altijd zichtbaar
-- 📦 Overige secties: samengevouwen in expanders
 - ... scheiding als je niet in top 3 staat
 
 ### v1.12.3 (2025-12-29)
@@ -6164,7 +6166,7 @@ def toon_instellingen_beheer():
     beloningsinst = laad_beloningsinstellingen()
     
     # Tabs voor verschillende instellingen categorieën
-    tab_alg, tab_bel, tab_reset, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "🗑️ Data Reset", "ℹ️ Over"])
+    tab_alg, tab_bel, tab_seizoen, tab_reset, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "📅 Seizoen", "🗑️ Data Reset", "ℹ️ Over"])
     
     with tab_alg:
         st.subheader("Algemene Instellingen")
@@ -6372,6 +6374,176 @@ def toon_instellingen_beheer():
                 sla_beloningsinstellingen_op(DEFAULT_BELONINGSINSTELLINGEN.copy())
                 st.success("Instellingen gereset naar defaults!")
                 st.rerun()
+    
+    with tab_seizoen:
+        st.subheader("📅 Seizoen Beheer")
+        
+        # Huidig seizoen
+        huidig_seizoen = db.get_huidig_seizoen()
+        st.info(f"**Huidig seizoen:** {huidig_seizoen}")
+        
+        st.divider()
+        
+        # Seizoen afsluiten
+        st.markdown("### 🔒 Seizoen afsluiten")
+        st.caption("Archiveer statistieken en start een nieuw seizoen")
+        
+        with st.expander("⚠️ Seizoen afsluiten", expanded=False):
+            st.warning("""
+            **Dit doet het volgende:**
+            1. Archiveert alle statistieken van dit seizoen (punten, strikes, gefloten wedstrijden, minimums)
+            2. Reset alle beloningen (punten, strikes, logs) naar 0
+            3. Wedstrijden en scheidsrechter gegevens blijven behouden
+            
+            **Let op:** Dit kan niet ongedaan worden gemaakt!
+            """)
+            
+            # Voorvertoning statistieken
+            scheidsrechters = laad_scheidsrechters()
+            beloningen = laad_beloningen()
+            wedstrijden = laad_wedstrijden()
+            
+            preview_stats = db.verzamel_seizoen_statistieken(scheidsrechters, beloningen, wedstrijden)
+            totalen = preview_stats.get("totalen", {})
+            
+            col_prev1, col_prev2, col_prev3, col_prev4 = st.columns(4)
+            with col_prev1:
+                st.metric("Scheidsrechters", totalen.get("aantal_scheidsrechters", 0))
+            with col_prev2:
+                st.metric("Gespeelde wedstrijden", totalen.get("totaal_wedstrijden", 0))
+            with col_prev3:
+                st.metric("Totaal punten", totalen.get("totaal_punten_uitgedeeld", 0))
+            with col_prev4:
+                st.metric("Totaal strikes", totalen.get("totaal_strikes_uitgedeeld", 0))
+            
+            st.divider()
+            
+            # Bevestiging
+            bevestig_seizoen = st.text_input(
+                f"Type '{huidig_seizoen}' om te bevestigen",
+                key="bevestig_seizoen_afsluiten"
+            )
+            
+            if st.button("🔒 Sluit seizoen af en archiveer", type="primary", key="btn_sluit_seizoen"):
+                if bevestig_seizoen == huidig_seizoen:
+                    # Archiveer
+                    if db.archiveer_seizoen(huidig_seizoen, preview_stats):
+                        # Reset beloningen
+                        success, aantal = db.reset_alle_beloningen()
+                        if success:
+                            st.success(f"✅ Seizoen {huidig_seizoen} gearchiveerd!")
+                            st.success(f"✅ Beloningen gereset voor {aantal} spelers")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("Fout bij resetten beloningen")
+                    else:
+                        st.error("Fout bij archiveren seizoen")
+                else:
+                    st.warning(f"Type '{huidig_seizoen}' om te bevestigen")
+        
+        st.divider()
+        
+        # Archief bekijken
+        st.markdown("### 📚 Seizoen Archief")
+        
+        archieven = db.laad_seizoen_archieven()
+        
+        if archieven:
+            # Selecteer seizoen
+            seizoen_opties = [a["seizoen"] for a in archieven]
+            geselecteerd_seizoen = st.selectbox(
+                "Selecteer seizoen",
+                options=seizoen_opties,
+                key="select_archief_seizoen"
+            )
+            
+            if geselecteerd_seizoen:
+                archief = db.laad_seizoen_archief(geselecteerd_seizoen)
+                
+                if archief:
+                    afgesloten = archief.get("afgesloten_op", "")
+                    if afgesloten:
+                        try:
+                            afgesloten_dt = datetime.fromisoformat(afgesloten.replace("Z", "+00:00"))
+                            st.caption(f"Afgesloten op: {afgesloten_dt.strftime('%d-%m-%Y %H:%M')}")
+                        except:
+                            st.caption(f"Afgesloten op: {afgesloten}")
+                    
+                    stats = archief.get("statistieken", {})
+                    totalen = stats.get("totalen", {})
+                    spelers = stats.get("spelers", {})
+                    
+                    # Totalen
+                    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+                    with col_t1:
+                        st.metric("Scheidsrechters", totalen.get("aantal_scheidsrechters", 0))
+                    with col_t2:
+                        st.metric("Wedstrijden", totalen.get("totaal_wedstrijden", 0))
+                    with col_t3:
+                        st.metric("Punten uitgedeeld", totalen.get("totaal_punten_uitgedeeld", 0))
+                    with col_t4:
+                        st.metric("Strikes uitgedeeld", totalen.get("totaal_strikes_uitgedeeld", 0))
+                    
+                    st.divider()
+                    
+                    # Detail per speler
+                    st.markdown("**Statistieken per speler:**")
+                    
+                    # Sorteer opties
+                    sorteer_archief = st.selectbox(
+                        "Sorteer op",
+                        ["Naam", "Gefloten (hoog-laag)", "Punten (hoog-laag)", "Minimum"],
+                        key="sorteer_archief"
+                    )
+                    
+                    speler_lijst = [{"nbb": nbb, **data} for nbb, data in spelers.items()]
+                    
+                    if sorteer_archief == "Naam":
+                        speler_lijst.sort(key=lambda x: x.get("naam", ""))
+                    elif sorteer_archief == "Gefloten (hoog-laag)":
+                        speler_lijst.sort(key=lambda x: x.get("gefloten_totaal", 0), reverse=True)
+                    elif sorteer_archief == "Punten (hoog-laag)":
+                        speler_lijst.sort(key=lambda x: x.get("punten", 0), reverse=True)
+                    else:
+                        speler_lijst.sort(key=lambda x: (x.get("min_wedstrijden", 0), x.get("naam", "")))
+                    
+                    # Tabel header
+                    st.markdown("| Naam | Niv | Min | Gefloten | 1e | 2e | Punten | Strikes |")
+                    st.markdown("|------|-----|-----|----------|-----|-----|--------|---------|")
+                    
+                    for speler in speler_lijst:
+                        st.markdown(
+                            f"| {speler.get('naam', '?')} | "
+                            f"{speler.get('niveau', '?')} | "
+                            f"{speler.get('min_wedstrijden', 0)} | "
+                            f"{speler.get('gefloten_totaal', 0)} | "
+                            f"{speler.get('gefloten_als_1e', 0)} | "
+                            f"{speler.get('gefloten_als_2e', 0)} | "
+                            f"{speler.get('punten', 0)} | "
+                            f"{speler.get('strikes', 0)} |"
+                        )
+                    
+                    # Export archief
+                    st.divider()
+                    if st.button(f"📥 Export {geselecteerd_seizoen} naar CSV", key="export_archief"):
+                        output = "nbb_nummer,naam,niveau,min_wedstrijden,gefloten_totaal,gefloten_als_1e,gefloten_als_2e,punten,strikes\n"
+                        for speler in speler_lijst:
+                            output += f"{speler.get('nbb', '')},\"{speler.get('naam', '')}\","
+                            output += f"{speler.get('niveau', 1)},{speler.get('min_wedstrijden', 0)},"
+                            output += f"{speler.get('gefloten_totaal', 0)},{speler.get('gefloten_als_1e', 0)},"
+                            output += f"{speler.get('gefloten_als_2e', 0)},{speler.get('punten', 0)},"
+                            output += f"{speler.get('strikes', 0)}\n"
+                        
+                        st.download_button(
+                            "📥 Download CSV",
+                            output,
+                            file_name=f"seizoen_{geselecteerd_seizoen}_archief.csv",
+                            mime="text/csv",
+                            key="dl_archief"
+                        )
+        else:
+            st.info("Nog geen gearchiveerde seizoenen")
     
     with tab_reset:
         st.subheader("🗑️ Data Reset")

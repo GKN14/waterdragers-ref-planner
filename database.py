@@ -1751,3 +1751,115 @@ def reset_speler_settings() -> tuple[bool, int]:
     except Exception as e:
         st.error(f"Fout bij resetten speler settings: {e}")
         return False, 0
+
+# ============================================================
+# SEIZOEN ARCHIEF FUNCTIES
+# ============================================================
+
+def get_huidig_seizoen() -> str:
+    """Bepaal het huidige seizoen op basis van datum (aug-jul)."""
+    nu = datetime.now()
+    jaar = nu.year
+    maand = nu.month
+    
+    # Seizoen loopt van augustus t/m juli
+    # Aug 2025 - Jul 2026 = seizoen 2025-2026
+    if maand >= 8:  # Aug t/m Dec
+        return f"{jaar}-{jaar + 1}"
+    else:  # Jan t/m Jul
+        return f"{jaar - 1}-{jaar}"
+
+def laad_seizoen_archieven() -> list:
+    """Laad alle gearchiveerde seizoenen."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("seizoen_archief").select("*").order("seizoen", desc=True).execute()
+        return response.data or []
+    except Exception as e:
+        st.error(f"Fout bij laden seizoen archieven: {e}")
+        return []
+
+def laad_seizoen_archief(seizoen: str) -> dict:
+    """Laad archief voor een specifiek seizoen."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("seizoen_archief").select("*").eq("seizoen", seizoen).execute()
+        if response.data:
+            return response.data[0]
+        return {}
+    except Exception as e:
+        st.error(f"Fout bij laden seizoen archief: {e}")
+        return {}
+
+def archiveer_seizoen(seizoen: str, statistieken: dict) -> bool:
+    """Archiveer statistieken voor een seizoen."""
+    try:
+        supabase = get_supabase_client()
+        
+        record = {
+            "seizoen": seizoen,
+            "statistieken": statistieken,
+            "afgesloten_op": datetime.now().isoformat(),
+            "created_at": datetime.now().isoformat()
+        }
+        
+        # Upsert zodat we kunnen overschrijven indien nodig
+        supabase.table("seizoen_archief").upsert(record, on_conflict="seizoen").execute()
+        return True
+    except Exception as e:
+        st.error(f"Fout bij archiveren seizoen: {e}")
+        return False
+
+def verzamel_seizoen_statistieken(scheidsrechters: dict, beloningen: dict, wedstrijden: dict) -> dict:
+    """Verzamel alle statistieken voor archivering."""
+    nu = datetime.now()
+    
+    # Tel gefloten wedstrijden per scheidsrechter
+    gefloten_count = {}
+    gefloten_als_1e = {}
+    gefloten_als_2e = {}
+    
+    for wed_id, wed in wedstrijden.items():
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum > nu:
+            continue  # Alleen gespeelde wedstrijden
+        
+        scheids_1 = wed.get("scheids_1")
+        scheids_2 = wed.get("scheids_2")
+        
+        if scheids_1:
+            gefloten_count[scheids_1] = gefloten_count.get(scheids_1, 0) + 1
+            gefloten_als_1e[scheids_1] = gefloten_als_1e.get(scheids_1, 0) + 1
+        
+        if scheids_2:
+            gefloten_count[scheids_2] = gefloten_count.get(scheids_2, 0) + 1
+            gefloten_als_2e[scheids_2] = gefloten_als_2e.get(scheids_2, 0) + 1
+    
+    # Bouw statistieken per speler
+    speler_stats = {}
+    for nbb, scheids in scheidsrechters.items():
+        bel_data = beloningen.get("spelers", {}).get(nbb, {})
+        
+        speler_stats[nbb] = {
+            "naam": scheids.get("naam", ""),
+            "niveau": scheids.get("niveau_1e_scheids", 1),
+            "min_wedstrijden": scheids.get("min_wedstrijden", 0),
+            "punten": bel_data.get("punten", 0),
+            "strikes": bel_data.get("strikes", 0),
+            "gefloten_totaal": gefloten_count.get(nbb, 0),
+            "gefloten_als_1e": gefloten_als_1e.get(nbb, 0),
+            "gefloten_als_2e": gefloten_als_2e.get(nbb, 0)
+        }
+    
+    # Totalen
+    totalen = {
+        "aantal_scheidsrechters": len(scheidsrechters),
+        "totaal_wedstrijden": len([w for w in wedstrijden.values() if datetime.strptime(w["datum"], "%Y-%m-%d %H:%M") <= nu]),
+        "totaal_punten_uitgedeeld": sum(s.get("punten", 0) for s in speler_stats.values()),
+        "totaal_strikes_uitgedeeld": sum(s.get("strikes", 0) for s in speler_stats.values())
+    }
+    
+    return {
+        "spelers": speler_stats,
+        "totalen": totalen
+    }
