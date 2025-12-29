@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.11.5"
+APP_VERSIE = "1.12.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.12.0 (2025-12-29)
+**Data Reset functionaliteit:**
+- 🗑️ Nieuwe "Data Reset" tab in beheerder instellingen
+- 💰 Reset punten/strikes per speler of voor alle spelers
+- 👥 Reset MSE begeleidingsuitnodigingen en feedback
+- 📱 Reset apparaten en apparaat instellingen
+
 ### v1.11.5 (2025-12-29)
 **Device verificatie & beheer - Definitieve versie:**
 - 🔐 Apparaat verificatie via geboortedatum
@@ -5739,7 +5746,7 @@ def toon_instellingen_beheer():
     beloningsinst = laad_beloningsinstellingen()
     
     # Tabs voor verschillende instellingen categorieën
-    tab_alg, tab_bel, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "ℹ️ Over"])
+    tab_alg, tab_bel, tab_reset, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "🗑️ Data Reset", "ℹ️ Over"])
     
     with tab_alg:
         st.subheader("Algemene Instellingen")
@@ -5947,6 +5954,121 @@ def toon_instellingen_beheer():
                 sla_beloningsinstellingen_op(DEFAULT_BELONINGSINSTELLINGEN.copy())
                 st.success("Instellingen gereset naar defaults!")
                 st.rerun()
+    
+    with tab_reset:
+        st.subheader("🗑️ Data Reset")
+        st.warning("**Let op:** Deze acties zijn onomkeerbaar! Gebruik dit alleen om testdata te wissen.")
+        
+        st.divider()
+        
+        # Beloningen resetten
+        st.markdown("### 💰 Beloningen (Punten & Strikes)")
+        st.caption("Reset punten, strikes en logs voor spelers")
+        
+        col_bel1, col_bel2 = st.columns(2)
+        
+        with col_bel1:
+            st.markdown("**Per speler:**")
+            scheidsrechters = laad_scheidsrechters()
+            beloningen = laad_beloningen()
+            
+            # Filter spelers met punten of strikes
+            spelers_met_data = []
+            for nbb, data in beloningen.get("spelers", {}).items():
+                if data.get("punten", 0) > 0 or data.get("strikes", 0) > 0:
+                    naam = scheidsrechters.get(nbb, {}).get("naam", nbb)
+                    spelers_met_data.append({
+                        "nbb": nbb, 
+                        "naam": naam, 
+                        "punten": data.get("punten", 0),
+                        "strikes": data.get("strikes", 0)
+                    })
+            
+            if spelers_met_data:
+                speler_opties = {f"{s['naam']} ({s['punten']}p, {s['strikes']}s)": s['nbb'] for s in spelers_met_data}
+                geselecteerde_speler = st.selectbox(
+                    "Selecteer speler",
+                    options=list(speler_opties.keys()),
+                    key="reset_speler_select"
+                )
+                
+                if st.button("🗑️ Reset deze speler", key="reset_speler_btn"):
+                    nbb = speler_opties[geselecteerde_speler]
+                    if db.reset_speler_beloningen(nbb):
+                        st.success(f"Beloningen gereset voor {geselecteerde_speler.split(' (')[0]}")
+                        st.rerun()
+            else:
+                st.info("Geen spelers met punten of strikes")
+        
+        with col_bel2:
+            st.markdown("**Alle spelers:**")
+            st.caption("Reset punten en strikes voor ALLE spelers")
+            
+            with st.expander("⚠️ Reset alle beloningen"):
+                st.error("Dit wist ALLE punten, strikes en logs voor alle spelers!")
+                bevestig_bel = st.text_input("Type 'RESET' ter bevestiging", key="bevestig_alle_bel")
+                if st.button("🗑️ Reset ALLE beloningen", type="primary", key="reset_alle_bel_btn"):
+                    if bevestig_bel == "RESET":
+                        success, aantal = db.reset_alle_beloningen()
+                        if success:
+                            st.success(f"Beloningen gereset voor {aantal} spelers")
+                            st.rerun()
+                    else:
+                        st.warning("Type 'RESET' om te bevestigen")
+        
+        st.divider()
+        
+        # MSE Begeleiding resetten
+        st.markdown("### 👥 MSE Begeleiding")
+        
+        col_mse1, col_mse2 = st.columns(2)
+        
+        with col_mse1:
+            st.markdown("**Uitnodigingen:**")
+            with st.expander("⚠️ Reset alle uitnodigingen"):
+                st.caption("Verwijder alle begeleidingsuitnodigingen")
+                if st.button("🗑️ Reset uitnodigingen", key="reset_uitnodigingen_btn"):
+                    success, aantal = db.reset_alle_begeleidingsuitnodigingen()
+                    if success:
+                        st.success(f"{aantal} uitnodigingen verwijderd")
+                        st.rerun()
+        
+        with col_mse2:
+            st.markdown("**Feedback:**")
+            with st.expander("⚠️ Reset alle feedback"):
+                st.caption("Verwijder alle begeleiding feedback")
+                if st.button("🗑️ Reset feedback", key="reset_feedback_btn"):
+                    success, aantal = db.reset_alle_begeleiding_feedback()
+                    if success:
+                        st.success(f"{aantal} feedback items verwijderd")
+                        st.rerun()
+        
+        st.divider()
+        
+        # Apparaten resetten
+        st.markdown("### 📱 Apparaten")
+        
+        col_app1, col_app2 = st.columns(2)
+        
+        with col_app1:
+            st.markdown("**Device tokens:**")
+            with st.expander("⚠️ Reset alle apparaten"):
+                st.caption("Verwijder alle gekoppelde apparaten (iedereen moet opnieuw verifiëren)")
+                if st.button("🗑️ Reset apparaten", key="reset_devices_btn"):
+                    success, aantal = db.reset_alle_device_tokens()
+                    if success:
+                        st.success(f"{aantal} apparaten verwijderd")
+                        st.rerun()
+        
+        with col_app2:
+            st.markdown("**Speler instellingen:**")
+            with st.expander("⚠️ Reset apparaat instellingen"):
+                st.caption("Reset max apparaten en goedkeurings-instellingen")
+                if st.button("🗑️ Reset instellingen", key="reset_speler_settings_btn"):
+                    success, aantal = db.reset_speler_settings()
+                    if success:
+                        st.success(f"{aantal} instellingen gereset")
+                        st.rerun()
     
     with tab_versie:
         st.subheader("ℹ️ Over Ref Planner")

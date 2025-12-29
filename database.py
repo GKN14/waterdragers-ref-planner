@@ -1561,3 +1561,134 @@ def verwijder_begeleiding_feedback(feedback_id: str) -> bool:
     except Exception as e:
         st.error(f"Fout bij verwijderen feedback: {e}")
         return False
+
+# ============================================================
+# RESET FUNCTIES (BEHEERDER)
+# ============================================================
+
+def reset_speler_beloningen(nbb_nummer: str) -> bool:
+    """Reset punten, strikes en logs voor één speler"""
+    try:
+        supabase = get_supabase_client()
+        update_data = {
+            "punten": 0,
+            "strikes": 0,
+            "gefloten_wedstrijden": [],
+            "punten_log": [],
+            "strike_log": [],
+            "updated_at": datetime.now().isoformat()
+        }
+        supabase.table("scheidsrechters").update(update_data).eq("nbb_nummer", nbb_nummer).execute()
+        
+        # Invalideer cache
+        if "_db_cache_scheidsrechters" in st.session_state:
+            del st.session_state["_db_cache_scheidsrechters"]
+        
+        return True
+    except Exception as e:
+        st.error(f"Fout bij resetten beloningen: {e}")
+        return False
+
+def reset_alle_beloningen() -> tuple[bool, int]:
+    """Reset punten, strikes en logs voor ALLE spelers. Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Haal alle spelers op
+        response = supabase.table("scheidsrechters").select("nbb_nummer").execute()
+        if not response.data:
+            return True, 0
+        
+        update_data = {
+            "punten": 0,
+            "strikes": 0,
+            "gefloten_wedstrijden": [],
+            "punten_log": [],
+            "strike_log": [],
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        # Update alle spelers
+        for speler in response.data:
+            supabase.table("scheidsrechters").update(update_data).eq("nbb_nummer", speler["nbb_nummer"]).execute()
+        
+        # Invalideer cache
+        if "_db_cache_scheidsrechters" in st.session_state:
+            del st.session_state["_db_cache_scheidsrechters"]
+        
+        return True, len(response.data)
+    except Exception as e:
+        st.error(f"Fout bij resetten alle beloningen: {e}")
+        return False, 0
+
+def reset_alle_begeleidingsuitnodigingen() -> tuple[bool, int]:
+    """Verwijder ALLE begeleidingsuitnodigingen. Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Tel eerst
+        count_response = supabase.table("begeleidingsuitnodigingen").select("id", count="exact").execute()
+        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        
+        # Verwijder alles
+        supabase.table("begeleidingsuitnodigingen").delete().neq("id", -1).execute()
+        
+        # Invalideer cache
+        if "_db_cache_begeleidingsuitnodigingen" in st.session_state:
+            del st.session_state["_db_cache_begeleidingsuitnodigingen"]
+        
+        return True, aantal
+    except Exception as e:
+        st.error(f"Fout bij resetten begeleidingsuitnodigingen: {e}")
+        return False, 0
+
+def reset_alle_begeleiding_feedback() -> tuple[bool, int]:
+    """Verwijder ALLE begeleiding feedback. Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Tel eerst
+        count_response = supabase.table("begeleiding_feedback").select("id", count="exact").execute()
+        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        
+        # Verwijder alles
+        supabase.table("begeleiding_feedback").delete().neq("id", -1).execute()
+        
+        return True, aantal
+    except Exception as e:
+        st.error(f"Fout bij resetten begeleiding feedback: {e}")
+        return False, 0
+
+def reset_alle_device_tokens() -> tuple[bool, int]:
+    """Verwijder ALLE device tokens. Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Tel eerst
+        count_response = supabase.table("device_tokens").select("id", count="exact").execute()
+        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        
+        # Verwijder alles
+        supabase.table("device_tokens").delete().neq("id", -1).execute()
+        
+        return True, aantal
+    except Exception as e:
+        st.error(f"Fout bij resetten device tokens: {e}")
+        return False, 0
+
+def reset_speler_settings() -> tuple[bool, int]:
+    """Verwijder ALLE speler settings (max devices, approval). Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Tel eerst
+        count_response = supabase.table("speler_settings").select("speler_id", count="exact").execute()
+        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        
+        # Verwijder alles
+        supabase.table("speler_settings").delete().neq("speler_id", "").execute()
+        
+        return True, aantal
+    except Exception as e:
+        st.error(f"Fout bij resetten speler settings: {e}")
+        return False, 0
