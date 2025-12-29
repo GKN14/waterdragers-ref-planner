@@ -24,20 +24,19 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.2"
+APP_VERSIE = "1.16.3"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.16.3 (2025-12-29)
+**Fix:**
+- 🐛 Fix: Ingeschreven telling toont nu alle wedstrijden (inclusief verleden)
+
 ### v1.16.2 (2025-12-29)
 **Layout fixes:**
 - 🖥️ Desktop: Header weer logo - titel - logo
 - 📱 Mobiel: Logo's naast elkaar, welkom eronder
-- 📱 Mobiel: Filters nu onder elkaar (via CSS :has selector)
+- 📱 Mobiel: Filters nu onder elkaar
 - 📱 Mobiel: Metrics blijven naast elkaar
-
-### v1.16.1 (2025-12-29)
-**Fixes:**
-- 📱 Fix: Metrics nu echt naast elkaar op mobiel
-- 📅 Fix: Deadline maand logica hersteld
 
 ### v1.15.0 (2025-12-29)
 **Seizoen beheer:**
@@ -3070,11 +3069,10 @@ def toon_speler_view(nbb_nummer: str):
     maand_namen_lang = ["", "januari", "februari", "maart", "april", "mei", "juni", 
                         "juli", "augustus", "september", "oktober", "november", "december"]
     
-    # Tel ingeschreven wedstrijden (toekomstige)
+    # Tel ingeschreven wedstrijden (alle, inclusief verleden)
     nu = datetime.now()
     aantal_ingeschreven = sum(1 for wed in wedstrijden.values() 
-                              if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
-                              and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu)
+                              if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer))
     
     # Tel eigen wedstrijden (thuis + uit) in doelmaand
     eigen_teams = scheids.get("eigen_teams", [])
