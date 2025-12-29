@@ -24,23 +24,21 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.15.3"
+APP_VERSIE = "1.16.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.16.0 (2025-12-29)
+**Mobiele verbeteringen & Bug fixes:**
+- 📱 Header: Logo's naast elkaar, welkom eronder op mobiel
+- 📱 Metrics: Kortere labels (Niv3+, Min, 🏆, ⚠️)
+- 📱 Compactere weergave met kleinere fonts
+- 📅 Deadline tekst: "Deadline X dagen voor inschrijving [maand]"
+- 🐛 Fix: Afmelden knop niet meer zichtbaar bij gespeelde wedstrijden
+
 ### v1.15.3 (2025-12-29)
 **Mobiele info expander:**
 - 📱 "Klassement & Info" expander in main content
 - 📱 Bevat: klassement, begeleiders, jouw gegevens, regels, punten, legenda
-- 📱 Volledig bruikbaar zonder sidebar op mobiel
-
-### v1.15.2 (2025-12-29)
-**Mobiele fix:**
-- 📱 Header met hamburger menu nu zichtbaar op mobiel
-
-### v1.15.1 (2025-12-29)
-**Mobiele verbeteringen:**
-- 📱 Klassement expander toegevoegd onder metrics
-- 📱 Compactere metrics op kleine schermen
 
 ### v1.15.0 (2025-12-29)
 **Seizoen beheer:**
@@ -2412,21 +2410,88 @@ def toon_speler_view(nbb_nummer: str):
     # COMPACTE HEADER
     # ============================================================
     
-    # Logo's en titel
+    # Logo's en titel - responsive via CSS
     logo_path = Path(__file__).parent / "logo.png"
     bob_logo_path = Path(__file__).parent / "bob-logo.svg"
     
-    col_logo_left, col_title, col_logo_right = st.columns([1, 3, 1])
-    with col_logo_left:
-        if logo_path.exists():
-            st.image(str(logo_path), width=90)
-    with col_title:
-        st.markdown(f"### 🏀 Welkom, {scheids['naam']}")
-    with col_logo_right:
-        if bob_logo_path.exists():
-            st.image(str(bob_logo_path), width=90)
+    # Lees logo's als base64 voor HTML embedding
+    import base64
+    logo_b64 = ""
+    bob_logo_b64 = ""
     
-    # Status metrics in compacte rij
+    if logo_path.exists():
+        with open(logo_path, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+    
+    if bob_logo_path.exists():
+        with open(bob_logo_path, "rb") as f:
+            bob_logo_b64 = base64.b64encode(f.read()).decode()
+    
+    # Responsive header met CSS
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="header-logo">' if logo_b64 else ""
+    bob_html = f'<img src="data:image/svg+xml;base64,{bob_logo_b64}" class="header-logo">' if bob_logo_b64 else ""
+    
+    st.markdown(f"""
+    <style>
+        .responsive-header {{
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }}
+        .header-logo {{
+            width: 80px;
+            height: auto;
+        }}
+        .header-title {{
+            flex: 1;
+            text-align: center;
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin: 0;
+        }}
+        
+        /* Mobiel: logo's links, welkom eronder */
+        @media (max-width: 768px) {{
+            .responsive-header {{
+                flex-wrap: wrap;
+            }}
+            .header-logos {{
+                display: flex;
+                gap: 1rem;
+                width: 100%;
+                justify-content: center;
+            }}
+            .header-logo {{
+                width: 60px;
+            }}
+            .header-title {{
+                width: 100%;
+                font-size: 1.1rem;
+                margin-top: 0.3rem;
+            }}
+        }}
+        
+        /* Desktop: logo - titel - logo */
+        @media (min-width: 769px) {{
+            .header-logos {{
+                display: contents;
+            }}
+        }}
+    </style>
+    
+    <div class="responsive-header">
+        <div class="header-logos">
+            {logo_html}
+            {bob_html}
+        </div>
+        <p class="header-title">🏀 Welkom, {scheids['naam']}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Status metrics in compacte rij - korte labels voor mobiel
     niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb_nummer)
     huidig_aantal = niveau_stats["totaal"]
     op_niveau = niveau_stats["op_niveau"]
@@ -2435,22 +2500,40 @@ def toon_speler_view(nbb_nummer: str):
     beloningsinst = laad_beloningsinstellingen()
     strikes = speler_stats["strikes"]
     
+    # Custom CSS voor compactere metrics
+    st.markdown("""
+    <style>
+        /* Compactere metrics voor mobiel */
+        @media (max-width: 768px) {
+            [data-testid="stMetricValue"] {
+                font-size: 1.3rem !important;
+            }
+            [data-testid="stMetricLabel"] {
+                font-size: 0.65rem !important;
+            }
+            [data-testid="stMetricDelta"] {
+                font-size: 0.6rem !important;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Totaal", huidig_aantal)
     with col2:
-        st.metric(f"Niveau {eigen_niveau}+", op_niveau)
+        st.metric(f"Niv{eigen_niveau}+", op_niveau)
     with col3:
-        st.metric("Minimum", min_wed)
+        st.metric("Min", min_wed)
     with col4:
-        st.metric("🏆 Punten", speler_stats["punten"])
+        st.metric("🏆", speler_stats["punten"])
     with col5:
         if strikes >= beloningsinst["strikes_gesprek_bij"]:
-            st.metric("⚠️ Strikes", strikes, delta="Gesprek", delta_color="inverse")
+            st.metric("⚠️", strikes, delta="!", delta_color="inverse")
         elif strikes >= beloningsinst["strikes_waarschuwing_bij"]:
-            st.metric("⚠️ Strikes", strikes, delta="Let op", delta_color="inverse")
+            st.metric("⚠️", strikes, delta="!", delta_color="inverse")
         else:
-            st.metric("Strikes", strikes)
+            st.metric("⚠️", strikes)
     
     # Gebogen oranje lijn onder metrics (zelfde styling als blauwe border-top, 180° geroteerd)
     st.markdown("""
@@ -2537,11 +2620,13 @@ def toon_speler_view(nbb_nummer: str):
     tekort = max(0, min_wed - op_niveau)
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     dagen_over = (deadline - datetime.now()).days
-    maand_namen = ["", "jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
-    if deadline.day <= 15:
-        info_maand = maand_namen[deadline.month]
+    maand_namen_vol = ["", "januari", "februari", "maart", "april", "mei", "juni", 
+                       "juli", "augustus", "september", "oktober", "november", "december"]
+    # Bepaal voor welke maand de inschrijving is (maand na deadline)
+    if deadline.month == 12:
+        inschrijf_maand = maand_namen_vol[1]  # januari
     else:
-        info_maand = maand_namen[1 if deadline.month == 12 else deadline.month + 1]
+        inschrijf_maand = maand_namen_vol[deadline.month + 1]
     
     col_status, col_deadline = st.columns(2)
     with col_status:
@@ -2554,7 +2639,7 @@ def toon_speler_view(nbb_nummer: str):
             st.info(f"📅 Inschrijfperiode gesloten")
             kan_inschrijven = False
         else:
-            st.info(f"📅 Nog **{dagen_over}** dagen voor {info_maand} (tot {deadline.strftime('%d-%m')})")
+            st.info(f"📅 Deadline **{dagen_over}** dagen voor inschrijving {inschrijf_maand}")
             kan_inschrijven = True
     
     # Begeleiding status (compact)
@@ -3089,8 +3174,8 @@ def toon_speler_view(nbb_nummer: str):
                 
                     if heeft_openstaand_verzoek:
                         st.warning("⏳ Wacht op bevestiging van vervanger...")
-                    elif kan_inschrijven:
-                        # Afmelden met expander voor opties
+                    elif kan_inschrijven and wed_datum > datetime.now():
+                        # Afmelden met expander voor opties (alleen voor toekomstige wedstrijden)
                         with st.expander("❌ Afmelden"):
                             st.write("**Hoe wil je afmelden?**")
                         
@@ -3412,7 +3497,8 @@ def toon_speler_view(nbb_nummer: str):
                             with col_1e:
                                 if status_1e["ingeschreven_zelf"]:
                                     st.markdown(f"🙋 **1e scheids:** Jij")
-                                    if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                    # Alleen afmelden tonen voor toekomstige wedstrijden
+                                    if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_1"] = None
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
@@ -3519,7 +3605,8 @@ def toon_speler_view(nbb_nummer: str):
                             with col_2e:
                                 if status_2e["ingeschreven_zelf"]:
                                     st.markdown(f"🙋 **2e scheids:** Jij")
-                                    if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                    # Alleen afmelden tonen voor toekomstige wedstrijden
+                                    if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_2"] = None
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
@@ -3639,7 +3726,8 @@ def toon_speler_view(nbb_nummer: str):
                                         with col_beg_info:
                                             st.markdown(f"🎓 **Begeleider:** Jij")
                                         with col_beg_afmeld:
-                                            if st.button("❌", key=f"afmeld_beg_{wed['id']}", help="Afmelden als begeleider"):
+                                            # Alleen afmelden tonen voor toekomstige wedstrijden
+                                            if item_datum > datetime.now() and st.button("❌", key=f"afmeld_beg_{wed['id']}", help="Afmelden als begeleider"):
                                                 wedstrijden[wed["id"]]["begeleider"] = None
                                                 sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                                 st.rerun()
