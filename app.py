@@ -22,14 +22,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.11.2"
+APP_VERSIE = "1.11.3"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
-### v1.11.2 (2025-12-29)
-**Debug IP detectie:**
-- 🌍 Toont welke header gebruikt wordt voor IP
-- 🔍 Filtert private IP's (192.168.x, 10.x, etc.)
-- 📋 Toont alle gevonden IP headers
+### v1.11.3 (2025-12-29)
+**Debug alle headers:**
+- 📋 Toont ALLE HTTP headers van Streamlit Cloud
+- 🔍 Helpt bepalen welke header het IP bevat
 
 ### v1.11.1 (2025-12-29)
 **Debug:**
@@ -2211,11 +2210,13 @@ def toon_speler_view(nbb_nummer: str):
             else:
                 st.error("❌ Geblokkeerd")
             
-            # Debug: toon alle gevonden headers
-            if ip_info.get('debug'):
-                st.caption("**Gevonden headers:**")
-                for h, v in ip_info['debug'].items():
-                    st.caption(f"{h}: {v}")
+            # Debug: toon ALLE headers
+            if ip_info.get('all_headers'):
+                st.caption("**Alle headers:**")
+                for h, v in sorted(ip_info['all_headers'].items()):
+                    # Verkort lange waarden
+                    v_short = v[:50] + "..." if len(str(v)) > 50 else v
+                    st.caption(f"`{h}`: {v_short}")
     
     # ============================================================
     # COMPACTE HEADER
@@ -3448,11 +3449,12 @@ def toon_beheerder_view():
             else:
                 st.error("❌ Geblokkeerd")
             
-            # Debug: toon alle gevonden headers
-            if ip_info.get('debug'):
-                st.caption("**Gevonden headers:**")
-                for h, v in ip_info['debug'].items():
-                    st.caption(f"{h}: {v}")
+            # Debug: toon ALLE headers
+            if ip_info.get('all_headers'):
+                st.caption("**Alle headers:**")
+                for h, v in sorted(ip_info['all_headers'].items()):
+                    v_short = v[:50] + "..." if len(str(v)) > 50 else v
+                    st.caption(f"`{h}`: {v_short}")
     
     # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"

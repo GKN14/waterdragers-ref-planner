@@ -108,6 +108,9 @@ def get_ip_info() -> dict:
     try:
         headers = st.context.headers
         
+        # Alle headers ophalen voor debug
+        all_headers = dict(headers)
+        
         # Probeer verschillende headers (volgorde van meest naar minst betrouwbaar)
         ip_headers = {
             "X-Forwarded-For": headers.get("X-Forwarded-For", ""),
@@ -115,6 +118,7 @@ def get_ip_info() -> dict:
             "CF-Connecting-IP": headers.get("CF-Connecting-IP", ""),  # Cloudflare
             "True-Client-IP": headers.get("True-Client-IP", ""),  # Akamai
             "X-Client-IP": headers.get("X-Client-IP", ""),
+            "Forwarded": headers.get("Forwarded", ""),
         }
         
         # Neem eerste niet-lege, niet-private IP
@@ -130,21 +134,18 @@ def get_ip_info() -> dict:
                     used_header = header_name
                     break
         
-        # Debug: toon alle headers
-        debug_info = {k: v for k, v in ip_headers.items() if v}
-        
     except Exception as e:
-        return {"ip": f"Error: {e}", "country": "?", "allowed": True, "debug": {}}
+        return {"ip": f"Error: {e}", "country": "?", "allowed": True, "all_headers": {}}
     
     if not ip:
-        return {"ip": "Niet gevonden", "country": "N/A", "allowed": True, "debug": debug_info, "used_header": "geen"}
+        return {"ip": "Niet gevonden", "country": "N/A", "allowed": True, "all_headers": all_headers, "used_header": "geen"}
     
     country = _get_country_from_ip(ip)
     return {
         "ip": ip, 
         "country": country, 
         "allowed": country == "NL",
-        "debug": debug_info,
+        "all_headers": all_headers,
         "used_header": used_header
     }
 
