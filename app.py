@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.12.0"
+APP_VERSIE = "1.12.1"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.12.1 (2025-12-29)
+**Bugfix:**
+- 🐛 Reset beloningen gebruikt nu correcte beloningen tabel
+
 ### v1.12.0 (2025-12-29)
 **Data Reset functionaliteit:**
 - 🗑️ Nieuwe "Data Reset" tab in beheerder instellingen

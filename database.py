@@ -1569,22 +1569,20 @@ def verwijder_begeleiding_feedback(feedback_id: str) -> bool:
 def reset_speler_beloningen(nbb_nummer: str) -> bool:
     """Reset punten, strikes en logs voor één speler"""
     try:
-        supabase = get_supabase_client()
-        update_data = {
-            "punten": 0,
-            "strikes": 0,
-            "gefloten_wedstrijden": [],
-            "punten_log": [],
-            "strike_log": [],
-            "updated_at": datetime.now().isoformat()
-        }
-        supabase.table("scheidsrechters").update(update_data).eq("nbb_nummer", nbb_nummer).execute()
+        # Beloningen zitten in de beloningen tabel, niet in scheidsrechters
+        beloningen = laad_beloningen()
         
-        # Invalideer cache
-        if "_db_cache_scheidsrechters" in st.session_state:
-            del st.session_state["_db_cache_scheidsrechters"]
+        if nbb_nummer in beloningen.get("spelers", {}):
+            beloningen["spelers"][nbb_nummer] = {
+                "punten": 0,
+                "strikes": 0,
+                "gefloten_wedstrijden": [],
+                "punten_log": [],
+                "strike_log": []
+            }
+            return sla_beloningen_op(beloningen)
         
-        return True
+        return True  # Speler had geen beloningen
     except Exception as e:
         st.error(f"Fout bij resetten beloningen: {e}")
         return False
@@ -1592,31 +1590,19 @@ def reset_speler_beloningen(nbb_nummer: str) -> bool:
 def reset_alle_beloningen() -> tuple[bool, int]:
     """Reset punten, strikes en logs voor ALLE spelers. Returns (success, aantal)"""
     try:
-        supabase = get_supabase_client()
+        beloningen = laad_beloningen()
+        aantal = len(beloningen.get("spelers", {}))
         
-        # Haal alle spelers op
-        response = supabase.table("scheidsrechters").select("nbb_nummer").execute()
-        if not response.data:
-            return True, 0
+        # Reset alle spelers
+        beloningen["spelers"] = {}
         
-        update_data = {
-            "punten": 0,
-            "strikes": 0,
-            "gefloten_wedstrijden": [],
-            "punten_log": [],
-            "strike_log": [],
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        # Update alle spelers
-        for speler in response.data:
-            supabase.table("scheidsrechters").update(update_data).eq("nbb_nummer", speler["nbb_nummer"]).execute()
+        success = sla_beloningen_op(beloningen)
         
         # Invalideer cache
-        if "_db_cache_scheidsrechters" in st.session_state:
-            del st.session_state["_db_cache_scheidsrechters"]
+        if "_db_cache_beloningen" in st.session_state:
+            del st.session_state["_db_cache_beloningen"]
         
-        return True, len(response.data)
+        return success, aantal
     except Exception as e:
         st.error(f"Fout bij resetten alle beloningen: {e}")
         return False, 0
