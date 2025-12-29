@@ -1613,11 +1613,12 @@ def reset_alle_begeleidingsuitnodigingen() -> tuple[bool, int]:
         supabase = get_supabase_client()
         
         # Tel eerst
-        count_response = supabase.table("begeleidingsuitnodigingen").select("id", count="exact").execute()
-        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        count_response = supabase.table("begeleidingsuitnodigingen").select("wed_id").execute()
+        aantal = len(count_response.data or [])
         
         # Verwijder alles
-        supabase.table("begeleidingsuitnodigingen").delete().neq("id", -1).execute()
+        if aantal > 0:
+            supabase.table("begeleidingsuitnodigingen").delete().neq("wed_id", "").execute()
         
         # Invalideer cache
         if "_db_cache_begeleidingsuitnodigingen" in st.session_state:
@@ -1634,11 +1635,12 @@ def reset_alle_begeleiding_feedback() -> tuple[bool, int]:
         supabase = get_supabase_client()
         
         # Tel eerst
-        count_response = supabase.table("begeleiding_feedback").select("id", count="exact").execute()
-        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        count_response = supabase.table("begeleiding_feedback").select("feedback_id").execute()
+        aantal = len(count_response.data or [])
         
         # Verwijder alles
-        supabase.table("begeleiding_feedback").delete().neq("id", -1).execute()
+        if aantal > 0:
+            supabase.table("begeleiding_feedback").delete().neq("feedback_id", "").execute()
         
         return True, aantal
     except Exception as e:
@@ -1651,11 +1653,12 @@ def reset_alle_device_tokens() -> tuple[bool, int]:
         supabase = get_supabase_client()
         
         # Tel eerst
-        count_response = supabase.table("device_tokens").select("id", count="exact").execute()
-        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        count_response = supabase.table("device_tokens").select("token").execute()
+        aantal = len(count_response.data or [])
         
         # Verwijder alles
-        supabase.table("device_tokens").delete().neq("id", -1).execute()
+        if aantal > 0:
+            supabase.table("device_tokens").delete().neq("token", "").execute()
         
         return True, aantal
     except Exception as e:
@@ -1668,11 +1671,12 @@ def reset_speler_settings() -> tuple[bool, int]:
         supabase = get_supabase_client()
         
         # Tel eerst
-        count_response = supabase.table("speler_settings").select("speler_id", count="exact").execute()
-        aantal = count_response.count if hasattr(count_response, 'count') else len(count_response.data or [])
+        count_response = supabase.table("speler_settings").select("speler_id").execute()
+        aantal = len(count_response.data or [])
         
         # Verwijder alles
-        supabase.table("speler_settings").delete().neq("speler_id", "").execute()
+        if aantal > 0:
+            supabase.table("speler_settings").delete().neq("speler_id", "").execute()
         
         return True, aantal
     except Exception as e:

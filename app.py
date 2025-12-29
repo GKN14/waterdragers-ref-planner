@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.12.1"
+APP_VERSIE = "1.12.2"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.12.2 (2025-12-29)
+**Bugfix:**
+- 🐛 Reset functies gebruiken nu correcte kolom namen per tabel
+
 ### v1.12.1 (2025-12-29)
 **Bugfix:**
 - 🐛 Reset beloningen gebruikt nu correcte beloningen tabel
