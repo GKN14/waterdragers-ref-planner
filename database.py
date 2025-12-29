@@ -18,14 +18,50 @@ import secrets
 import requests
 import re
 
-# Cookie controller voor device tokens
-try:
-    from streamlit_cookies_controller import CookieController
-    _cookie_controller = CookieController()
-    _cookies_available = True
-except ImportError:
-    _cookie_controller = None
-    _cookies_available = False
+def _get_device_fingerprint() -> str:
+    """Genereer een fingerprint gebaseerd op browser/device info"""
+    try:
+        user_agent = st.context.headers.get("User-Agent", "unknown")
+        # Combineer user agent met wat extra entropy
+        # Dit is niet perfect maar beter dan niets
+        fingerprint = hashlib.sha256(user_agent.encode()).hexdigest()[:16]
+        return fingerprint
+    except:
+        return "unknown"
+
+def _get_device_name_from_ua() -> str:
+    """Bepaal device naam uit User-Agent"""
+    try:
+        ua = st.context.headers.get("User-Agent", "")
+        if "iPhone" in ua:
+            return "iPhone"
+        elif "iPad" in ua:
+            return "iPad"
+        elif "Android" in ua and "Mobile" in ua:
+            return "Android Telefoon"
+        elif "Android" in ua:
+            return "Android Tablet"
+        elif "Windows" in ua:
+            if "Edge" in ua:
+                return "Windows Edge"
+            elif "Chrome" in ua:
+                return "Windows Chrome"
+            elif "Firefox" in ua:
+                return "Windows Firefox"
+            return "Windows"
+        elif "Macintosh" in ua:
+            if "Chrome" in ua:
+                return "Mac Chrome"
+            elif "Firefox" in ua:
+                return "Mac Firefox"
+            elif "Safari" in ua:
+                return "Mac Safari"
+            return "Mac"
+        elif "Linux" in ua:
+            return "Linux"
+        return "Onbekend"
+    except:
+        return "Onbekend"
 
 # Supabase configuratie - ALLEEN via secrets (geen hardcoded values meer)
 def get_supabase_config():
@@ -164,29 +200,20 @@ def _generate_device_token() -> str:
     return secrets.token_urlsafe(32)
 
 def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
-    """Haal device token op uit cookie of session state"""
+    """Haal device token op gebaseerd op fingerprint of session state"""
     session_key = f"device_token_{nbb_nummer}"
     
-    # Eerst session state checken (meest betrouwbaar na registratie)
+    # Eerst session state checken
     if session_key in st.session_state:
         return st.session_state[session_key]
     
-    # Dan cookie proberen
-    if _cookies_available and _cookie_controller:
-        try:
-            cookie_key = f"dt_{nbb_nummer}"
-            token = _cookie_controller.get(cookie_key)
-            if token:
-                st.session_state[session_key] = token
-                return token
-        except:
-            pass
-    
-    # Fallback: query param
+    # Check of er een device is met deze fingerprint
+    fingerprint = _get_device_fingerprint()
     try:
-        query_key = f"dt_{nbb_nummer}"
-        token = st.query_params.get(query_key)
-        if token:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("token").eq("speler_id", nbb_nummer).eq("fingerprint", fingerprint).eq("approved", True).execute()
+        if response.data:
+            token = response.data[0]["token"]
             st.session_state[session_key] = token
             return token
     except:
@@ -195,53 +222,16 @@ def get_device_token_from_cookie(nbb_nummer: str) -> str | None:
     return None
 
 def save_device_token_to_cookie(nbb_nummer: str, token: str) -> bool:
-    """Sla device token op in cookie en session state"""
+    """Sla device token op in session state (fingerprint is al in DB)"""
     session_key = f"device_token_{nbb_nummer}"
-    
-    # Session state voor huidige sessie
     st.session_state[session_key] = token
-    
-    # Cookie voor persistentie (90 dagen)
-    if _cookies_available and _cookie_controller:
-        try:
-            cookie_key = f"dt_{nbb_nummer}"
-            _cookie_controller.set(cookie_key, token, max_age=90*24*60*60)
-        except:
-            pass
-    
-    # Backup: query parameter
-    try:
-        query_key = f"dt_{nbb_nummer}"
-        st.query_params[query_key] = token
-    except:
-        pass
-    
     return True
 
 def clear_device_token_cookie(nbb_nummer: str) -> bool:
-    """Verwijder device token uit cookie en session state"""
+    """Verwijder device token uit session state"""
     session_key = f"device_token_{nbb_nummer}"
-    
-    # Clear session state
     if session_key in st.session_state:
         del st.session_state[session_key]
-    
-    # Clear cookie
-    if _cookies_available and _cookie_controller:
-        try:
-            cookie_key = f"dt_{nbb_nummer}"
-            _cookie_controller.remove(cookie_key)
-        except:
-            pass
-    
-    # Clear query param
-    try:
-        query_key = f"dt_{nbb_nummer}"
-        if query_key in st.query_params:
-            del st.query_params[query_key]
-    except:
-        pass
-    
     return True
 
 def token_exists_in_database(speler_id: str, token: str) -> bool:
@@ -404,6 +394,18 @@ def needs_approval(speler_id: str) -> bool:
     current_count = get_device_count(speler_id)
     return current_count > 0
 
+def device_exists_for_fingerprint(speler_id: str) -> tuple[bool, str | None]:
+    """Check of er al een device bestaat voor deze fingerprint. Returns (exists, token)"""
+    fingerprint = _get_device_fingerprint()
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("device_tokens").select("token, approved").eq("speler_id", speler_id).eq("fingerprint", fingerprint).execute()
+        if response.data:
+            return True, response.data[0]["token"]
+        return False, None
+    except:
+        return False, None
+
 def register_device_with_approval(speler_id: str, token: str, device_name: str = None) -> tuple[bool, bool]:
     """
     Registreer device met mogelijke goedkeuring.
@@ -411,6 +413,13 @@ def register_device_with_approval(speler_id: str, token: str, device_name: str =
     """
     try:
         supabase = get_supabase_client()
+        fingerprint = _get_device_fingerprint()
+        
+        # Check of er al een device is met deze fingerprint
+        exists, existing_token = device_exists_for_fingerprint(speler_id)
+        if exists:
+            # Device bestaat al - gebruik bestaande token
+            return True, False
         
         # Check of we kunnen toevoegen
         can_add, reason = can_add_device(speler_id)
@@ -422,24 +431,13 @@ def register_device_with_approval(speler_id: str, token: str, device_name: str =
         requires_approval = needs_approval(speler_id)
         
         if not device_name:
-            try:
-                user_agent = st.context.headers.get("User-Agent", "")
-                if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
-                    device_name = "Mobiel"
-                elif "Tablet" in user_agent or "iPad" in user_agent:
-                    device_name = "Tablet"
-                else:
-                    device_name = "Computer"
-            except:
-                device_name = "Apparaat"
-            
-            count = get_device_count(speler_id)
-            device_name = f"{device_name} {count + 1}"
+            device_name = _get_device_name_from_ua()
         
         record = {
             "speler_id": speler_id,
             "token": token,
             "device_name": device_name,
+            "fingerprint": fingerprint,
             "approved": not requires_approval,
             "last_used": datetime.now().isoformat()
         }
@@ -490,29 +488,19 @@ def is_device_pending(speler_id: str, token: str) -> bool:
         return False
 
 def register_device(speler_id: str, token: str, device_name: str = None) -> bool:
-    """Registreer een nieuw device"""
+    """Registreer een nieuw device met fingerprint"""
     try:
         supabase = get_supabase_client()
+        fingerprint = _get_device_fingerprint()
         
         if not device_name:
-            try:
-                user_agent = st.context.headers.get("User-Agent", "")
-                if "Mobile" in user_agent or "Android" in user_agent or "iPhone" in user_agent:
-                    device_name = "Mobiel"
-                elif "Tablet" in user_agent or "iPad" in user_agent:
-                    device_name = "Tablet"
-                else:
-                    device_name = "Computer"
-            except:
-                device_name = "Apparaat"
-            
-            count = get_device_count(speler_id)
-            device_name = f"{device_name} {count + 1}"
+            device_name = _get_device_name_from_ua()
         
         record = {
             "speler_id": speler_id,
             "token": token,
             "device_name": device_name,
+            "fingerprint": fingerprint,
             "approved": True,
             "last_used": datetime.now().isoformat()
         }

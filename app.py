@@ -22,13 +22,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.10.5-debug"
-APP_VERSIE_DATUM = "2025-12-28"
+APP_VERSIE = "1.10.6-debug"
+APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
-### v1.10.5-debug (2025-12-28)
-**Cookie controller:**
-- 🍪 streamlit-cookies-controller voor echte browser cookies
-- 🔧 Query param als fallback
+### v1.10.6-debug (2025-12-29)
+**Device fingerprinting:**
+- 🔍 Apparaten worden herkend op basis van browser fingerprint
+- 📱 Betere device naam detectie (Chrome, Firefox, Safari, etc.)
+- 🔧 Geen afhankelijkheid meer van cookies/localStorage
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -6617,10 +6618,14 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     session_key = f"device_token_{nbb_nummer}"
     verified_key = f"device_verified_{nbb_nummer}"
     
+    fingerprint = db._get_device_fingerprint()
+    device_name = db._get_device_name_from_ua()
+    
     if DEBUG:
         st.sidebar.markdown("### 🐛 Debug Info")
         st.sidebar.write(f"NBB: {nbb_nummer}")
-        st.sidebar.write(f"Cookies available: {db._cookies_available}")
+        st.sidebar.write(f"Fingerprint: {fingerprint}")
+        st.sidebar.write(f"Device: {device_name}")
         st.sidebar.write(f"Session token: {session_key in st.session_state}")
         st.sidebar.write(f"Verified flag: {st.session_state.get(verified_key, False)}")
     
@@ -6643,21 +6648,41 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     if not geboortedatum:
         return True
     
-    # Check bestaande token (session state, cookie of query param)
+    # Check of er al een device is met deze fingerprint
+    device_exists, existing_token = db.device_exists_for_fingerprint(nbb_nummer)
+    
+    if DEBUG:
+        st.sidebar.write(f"Device exists: {device_exists}")
+    
+    if device_exists and existing_token:
+        # Device al geregistreerd - check of token geldig is
+        if db.verify_device_token(nbb_nummer, existing_token):
+            st.session_state[session_key] = existing_token
+            if DEBUG:
+                st.sidebar.success("✅ Bestaand device herkend")
+            return True
+        
+        # Token bestaat maar is pending
+        if db.is_device_pending(nbb_nummer, existing_token):
+            st.title("⏳ Wachten op goedkeuring")
+            st.info("Dit apparaat wacht op goedkeuring.")
+            if st.button("🔄 Ververs"):
+                st.rerun()
+            return False
+    
+    # Check bestaande token uit session (fallback)
     token = db.get_device_token_from_cookie(nbb_nummer)
     
     if DEBUG:
         st.sidebar.write(f"Token: {token[:20] if token else 'GEEN'}...")
     
     if token:
-        # Check of token in database staat
         token_exists = db.token_exists_in_database(nbb_nummer, token)
         
         if DEBUG:
             st.sidebar.write(f"Token in DB: {token_exists}")
         
         if not token_exists:
-            # Token is verwijderd - wis alles
             db.clear_device_token_cookie(nbb_nummer)
             st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
             st.rerun()
@@ -6666,13 +6691,6 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                 if DEBUG:
                     st.sidebar.success("✅ Toegang verleend")
                 return True
-            
-            if db.is_device_pending(nbb_nummer, token):
-                st.title("⏳ Wachten op goedkeuring")
-                st.info("Dit apparaat wacht op goedkeuring.")
-                if st.button("🔄 Ververs"):
-                    st.rerun()
-                return False
     
     # Check of we een nieuw device kunnen toevoegen
     can_add, reason = db.can_add_device(nbb_nummer)
@@ -6690,6 +6708,7 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     
     # Nieuw device - verificatie nodig
     st.title("🔐 Verificatie")
+    st.write(f"Nieuw apparaat: **{device_name}**")
     st.write("Bevestig je identiteit met je geboortedatum.")
     
     with st.form("verificatie_form"):
@@ -6714,7 +6733,6 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
                 if success:
                     st.session_state[session_key] = new_token
                     st.session_state[verified_key] = True
-                    db.save_device_token_to_cookie(nbb_nummer, new_token)
                     
                     if needs_approval:
                         st.warning("✅ Geverifieerd! Wacht op goedkeuring.")
