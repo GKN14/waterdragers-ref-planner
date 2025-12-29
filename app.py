@@ -24,26 +24,23 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.13.1"
+APP_VERSIE = "1.14.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.14.0 (2025-12-29)
+**Analyse Dashboard & Export uitbreiding:**
+- 📊 Nieuw: Analyse tab voor fluitgedrag analyse
+- 🌟 Overzicht: Wie fluit veel (+3 boven minimum)
+- ⚠️ Overzicht: Wie fluit weinig (onder minimum)
+- 💡 Suggesties voor minimum aanpassingen
+- 🔧 Bulk minimum aanpassen (verhogen/verlagen)
+- 📤 Export: Scheidsrechters + statistieken
+- 📤 Export: Beloningen detail
+
 ### v1.13.1 (2025-12-29)
 **Compacte sidebar (Azure-stijl):**
 - 🏆 Klassement en Begeleiders: altijd zichtbaar
 - 📦 Overige secties: samengevouwen in expanders
-- 👤 Jouw gegevens (met niveau regels)
-- 🏆 Punten & Strikes (uitleg)
-- 📊 Jouw historie (alleen als er data is)
-- 📋 Legenda (niveaus, kleuren, symbolen)
-- 📝 Mijn feedback (alleen als er data is)
-- 📱 Apparaten (met pending indicator)
-- 🌍 Netwerk
-
-### v1.13.0 (2025-12-29)
-**Verbeterd klassement:**
-- 🏆 Top 3 + eigen positie in punten klassement
-- 🎓 Top 3 + eigen positie in begeleiders klassement
-- 👈 Eigen positie is gemarkeerd
 - ... scheiding als je niet in top 3 staat
 
 ### v1.12.3 (2025-12-29)
@@ -3686,11 +3683,12 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
         "📈 Capaciteit",
         "🏆 Beloningen",
+        "📊 Analyse",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
         "📊 Import/Export",
@@ -3710,16 +3708,253 @@ def toon_beheerder_view():
         toon_beloningen_beheer()
     
     with tab5:
-        toon_weekend_overzicht()
+        toon_analyse_dashboard()
     
     with tab6:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab7:
-        toon_import_export()
+        toon_instellingen_beheer()
     
     with tab8:
+        toon_import_export()
+    
+    with tab9:
         toon_apparaten_beheer()
+
+def toon_analyse_dashboard():
+    """Dashboard voor analyse van fluitgedrag en minimum bepaling."""
+    st.subheader("📊 Analyse Dashboard")
+    st.caption("Inzicht in fluitgedrag voor het bepalen van minimums")
+    
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    beloningen = laad_beloningen()
+    nu = datetime.now()
+    
+    # Tel gefloten wedstrijden per scheidsrechter
+    gefloten_data = {}
+    for nbb in scheidsrechters.keys():
+        gefloten_data[nbb] = {
+            "totaal": 0,
+            "als_1e": 0,
+            "als_2e": 0,
+            "op_niveau": 0,
+            "onder_niveau": 0,
+            "boven_niveau": 0
+        }
+    
+    for wed_id, wed in wedstrijden.items():
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum > nu:
+            continue  # Alleen gespeelde wedstrijden
+        
+        wed_niveau = wed.get("niveau", 1)
+        
+        scheids_1 = wed.get("scheids_1")
+        scheids_2 = wed.get("scheids_2")
+        
+        if scheids_1 and scheids_1 in gefloten_data:
+            gefloten_data[scheids_1]["totaal"] += 1
+            gefloten_data[scheids_1]["als_1e"] += 1
+            eigen_niveau = scheidsrechters.get(scheids_1, {}).get("niveau_1e_scheids", 1)
+            if wed_niveau == eigen_niveau:
+                gefloten_data[scheids_1]["op_niveau"] += 1
+            elif wed_niveau < eigen_niveau:
+                gefloten_data[scheids_1]["onder_niveau"] += 1
+            else:
+                gefloten_data[scheids_1]["boven_niveau"] += 1
+        
+        if scheids_2 and scheids_2 in gefloten_data:
+            gefloten_data[scheids_2]["totaal"] += 1
+            gefloten_data[scheids_2]["als_2e"] += 1
+            eigen_niveau = scheidsrechters.get(scheids_2, {}).get("niveau_1e_scheids", 1)
+            max_2e_niveau = min(eigen_niveau + 1, 5)
+            if wed_niveau <= eigen_niveau:
+                gefloten_data[scheids_2]["op_niveau"] += 1
+            elif wed_niveau <= max_2e_niveau:
+                gefloten_data[scheids_2]["onder_niveau"] += 1
+            else:
+                gefloten_data[scheids_2]["boven_niveau"] += 1
+    
+    # Maak analyse lijst
+    analyse_lijst = []
+    for nbb, scheids in scheidsrechters.items():
+        min_wed = scheids.get("min_wedstrijden", 0)
+        gefloten = gefloten_data.get(nbb, {}).get("totaal", 0)
+        verschil = gefloten - min_wed
+        
+        bel_data = beloningen.get("spelers", {}).get(nbb, {})
+        
+        analyse_lijst.append({
+            "nbb": nbb,
+            "naam": scheids.get("naam", ""),
+            "niveau": scheids.get("niveau_1e_scheids", 1),
+            "min_wedstrijden": min_wed,
+            "gefloten": gefloten,
+            "verschil": verschil,
+            "als_1e": gefloten_data.get(nbb, {}).get("als_1e", 0),
+            "als_2e": gefloten_data.get(nbb, {}).get("als_2e", 0),
+            "op_niveau": gefloten_data.get(nbb, {}).get("op_niveau", 0),
+            "punten": bel_data.get("punten", 0),
+            "strikes": bel_data.get("strikes", 0)
+        })
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    veel_fluiten = [s for s in analyse_lijst if s["verschil"] >= 3]
+    weinig_fluiten = [s for s in analyse_lijst if s["verschil"] < 0]
+    precies_goed = [s for s in analyse_lijst if 0 <= s["verschil"] < 3]
+    niet_gefloten = [s for s in analyse_lijst if s["gefloten"] == 0 and s["min_wedstrijden"] > 0]
+    
+    with col1:
+        st.metric("🌟 Veel fluiten (+3)", len(veel_fluiten), help="Kandidaten voor lager minimum")
+    with col2:
+        st.metric("✅ Op schema", len(precies_goed))
+    with col3:
+        st.metric("⚠️ Achter op schema", len(weinig_fluiten), help="Nog niet aan minimum")
+    with col4:
+        st.metric("❌ Niet gefloten", len(niet_gefloten), help="Spelers die nog niet gefloten hebben")
+    
+    st.divider()
+    
+    # Tabs voor verschillende views
+    tab_veel, tab_weinig, tab_allemaal = st.tabs(["🌟 Veel fluiten", "⚠️ Weinig fluiten", "📋 Alle scheidsrechters"])
+    
+    with tab_veel:
+        st.markdown("### Kandidaten voor lager minimum")
+        st.caption("Spelers die minstens 3 wedstrijden boven hun minimum fluiten")
+        
+        if veel_fluiten:
+            veel_sorted = sorted(veel_fluiten, key=lambda x: x["verschil"], reverse=True)
+            
+            for speler in veel_sorted[:20]:
+                with st.expander(f"🌟 **{speler['naam']}** — Gefloten: {speler['gefloten']} | Min: {speler['min_wedstrijden']} | +{speler['verschil']}"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write(f"**Niveau:** {speler['niveau']}")
+                        st.write(f"**Als 1e scheids:** {speler['als_1e']}")
+                        st.write(f"**Als 2e scheids:** {speler['als_2e']}")
+                    with col_b:
+                        st.write(f"**Punten:** {speler['punten']}")
+                        st.write(f"**Strikes:** {speler['strikes']}")
+                        st.write(f"**Op eigen niveau:** {speler['op_niveau']}")
+                    
+                    # Suggestie voor nieuw minimum
+                    nieuw_min = max(0, speler["min_wedstrijden"] - 1)
+                    if speler["verschil"] >= 5:
+                        nieuw_min = max(0, speler["min_wedstrijden"] - 2)
+                    
+                    if nieuw_min < speler["min_wedstrijden"]:
+                        st.info(f"💡 Suggestie: Verlaag minimum naar **{nieuw_min}**")
+                        
+                        if st.button(f"📝 Pas minimum aan naar {nieuw_min}", key=f"adj_min_{speler['nbb']}"):
+                            scheids = scheidsrechters[speler["nbb"]]
+                            scheids["min_wedstrijden"] = nieuw_min
+                            sla_scheidsrechter_op(speler["nbb"], scheids)
+                            st.success(f"Minimum aangepast naar {nieuw_min}")
+                            st.rerun()
+        else:
+            st.info("Geen spelers met +3 boven minimum")
+    
+    with tab_weinig:
+        st.markdown("### Spelers die weinig fluiten")
+        st.caption("Spelers die hun minimum nog niet gehaald hebben")
+        
+        if weinig_fluiten:
+            weinig_sorted = sorted(weinig_fluiten, key=lambda x: x["verschil"])
+            
+            for speler in weinig_sorted[:20]:
+                status_icon = "❌" if speler["gefloten"] == 0 else "⚠️"
+                with st.expander(f"{status_icon} **{speler['naam']}** — Gefloten: {speler['gefloten']} | Min: {speler['min_wedstrijden']} | {speler['verschil']}"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write(f"**Niveau:** {speler['niveau']}")
+                        st.write(f"**Nog nodig:** {abs(speler['verschil'])}")
+                    with col_b:
+                        st.write(f"**Punten:** {speler['punten']}")
+                        st.write(f"**Strikes:** {speler['strikes']}")
+                    
+                    if speler["gefloten"] == 0:
+                        st.warning("⚠️ Heeft dit seizoen nog niet gefloten!")
+        else:
+            st.success("Iedereen heeft het minimum gehaald! 🎉")
+    
+    with tab_allemaal:
+        st.markdown("### Alle scheidsrechters")
+        
+        # Sorteer opties
+        sorteer = st.selectbox(
+            "Sorteer op",
+            ["Naam", "Gefloten (hoog-laag)", "Gefloten (laag-hoog)", "Verschil (hoog-laag)", "Verschil (laag-hoog)", "Niveau"],
+            key="sorteer_analyse"
+        )
+        
+        if sorteer == "Naam":
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["naam"])
+        elif sorteer == "Gefloten (hoog-laag)":
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["gefloten"], reverse=True)
+        elif sorteer == "Gefloten (laag-hoog)":
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["gefloten"])
+        elif sorteer == "Verschil (hoog-laag)":
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["verschil"], reverse=True)
+        elif sorteer == "Verschil (laag-hoog)":
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["verschil"])
+        else:  # Niveau
+            analyse_sorted = sorted(analyse_lijst, key=lambda x: (x["niveau"], x["naam"]))
+        
+        # Tabel weergave
+        st.markdown("| Naam | Niv | Min | Gefloten | Verschil | 1e | 2e | Punten |")
+        st.markdown("|------|-----|-----|----------|----------|-----|-----|--------|")
+        
+        for speler in analyse_sorted:
+            verschil_str = f"+{speler['verschil']}" if speler['verschil'] >= 0 else str(speler['verschil'])
+            if speler['verschil'] >= 3:
+                verschil_str = f"🌟 {verschil_str}"
+            elif speler['verschil'] < 0:
+                verschil_str = f"⚠️ {verschil_str}"
+            
+            st.markdown(f"| {speler['naam']} | {speler['niveau']} | {speler['min_wedstrijden']} | {speler['gefloten']} | {verschil_str} | {speler['als_1e']} | {speler['als_2e']} | {speler['punten']} |")
+    
+    st.divider()
+    
+    # Bulk minimum aanpassen
+    st.markdown("### 🔧 Bulk minimum aanpassen")
+    st.caption("Pas minimums aan voor meerdere spelers tegelijk")
+    
+    with st.expander("Bulk aanpassingen"):
+        col_bulk1, col_bulk2 = st.columns(2)
+        
+        with col_bulk1:
+            st.markdown("**Verlaag minimum voor veel fluiters:**")
+            st.caption(f"{len(veel_fluiten)} spelers met +3 boven minimum")
+            
+            if veel_fluiten and st.button("📉 Verlaag minimum (-1) voor alle veel fluiters", key="bulk_verlaag"):
+                count = 0
+                for speler in veel_fluiten:
+                    if speler["min_wedstrijden"] > 0:
+                        scheids = scheidsrechters[speler["nbb"]]
+                        scheids["min_wedstrijden"] = max(0, scheids.get("min_wedstrijden", 0) - 1)
+                        sla_scheidsrechter_op(speler["nbb"], scheids)
+                        count += 1
+                st.success(f"Minimum verlaagd voor {count} spelers")
+                st.rerun()
+        
+        with col_bulk2:
+            st.markdown("**Verhoog minimum voor weinig fluiters:**")
+            actieve_weinig = [s for s in weinig_fluiten if s["gefloten"] > 0]
+            st.caption(f"{len(actieve_weinig)} spelers die wel gefloten hebben maar onder minimum")
+            
+            if actieve_weinig and st.button("📈 Verhoog minimum (+1) voor weinig fluiters", key="bulk_verhoog"):
+                count = 0
+                for speler in actieve_weinig:
+                    scheids = scheidsrechters[speler["nbb"]]
+                    scheids["min_wedstrijden"] = scheids.get("min_wedstrijden", 0) + 1
+                    sla_scheidsrechter_op(speler["nbb"], scheids)
+                    count += 1
+                st.success(f"Minimum verhoogd voor {count} spelers")
+                st.rerun()
 
 def toon_apparaten_beheer():
     """Beheer van gekoppelde apparaten per speler."""
@@ -6851,36 +7086,39 @@ def toon_import_export():
                 st.rerun()
     
     with tab6:
-        st.write("**Export planning (CSV)**")
+        st.write("**📤 Exporteer data**")
         
-        col1, col2 = st.columns(2)
+        col_exp1, col_exp2 = st.columns(2)
         
-        with col1:
-            if st.button("📥 Download thuiswedstrijden + planning"):
+        with col_exp1:
+            st.markdown("**Wedstrijden:**")
+            
+            if st.button("📥 Thuiswedstrijden + planning", use_container_width=True):
                 wedstrijden = laad_wedstrijden()
                 scheidsrechters = laad_scheidsrechters()
                 
-                output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2\n"
+                output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2,begeleider\n"
                 for wed_id, wed in sorted(wedstrijden.items(), key=lambda x: x[1]["datum"]):
                     if wed.get("type", "thuis") != "thuis":
                         continue
                     datum_obj = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
                     scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
                     scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
+                    begeleider_naam = scheidsrechters.get(wed.get("begeleider", ""), {}).get("naam", "")
                     
                     output += f"{datum_obj.strftime('%Y-%m-%d')},{datum_obj.strftime('%H:%M')},"
                     output += f"{wed['thuisteam']},{wed['uitteam']},{wed['niveau']},"
-                    output += f"{scheids_1_naam},{scheids_2_naam}\n"
+                    output += f"{scheids_1_naam},{scheids_2_naam},{begeleider_naam}\n"
                 
                 st.download_button(
                     "📥 Download CSV",
                     output,
                     file_name="scheidsrechter_planning.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    key="dl_thuiswed"
                 )
-        
-        with col2:
-            if st.button("📥 Download alle wedstrijden"):
+            
+            if st.button("📥 Alle wedstrijden", use_container_width=True):
                 wedstrijden = laad_wedstrijden()
                 
                 output = "datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten\n"
@@ -6897,7 +7135,70 @@ def toon_import_export():
                     "📥 Download CSV",
                     output,
                     file_name="alle_wedstrijden.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    key="dl_allewed"
+                )
+        
+        with col_exp2:
+            st.markdown("**Scheidsrechters:**")
+            
+            if st.button("📥 Scheidsrechters + statistieken", use_container_width=True):
+                scheidsrechters = laad_scheidsrechters()
+                beloningen = laad_beloningen()
+                wedstrijden = laad_wedstrijden()
+                
+                # Tel gefloten wedstrijden per scheidsrechter (uit wedstrijden data)
+                gefloten_count = {}
+                for wed_id, wed in wedstrijden.items():
+                    for scheids_key in ["scheids_1", "scheids_2"]:
+                        nbb = wed.get(scheids_key)
+                        if nbb:
+                            gefloten_count[nbb] = gefloten_count.get(nbb, 0) + 1
+                
+                output = "nbb_nummer,naam,niveau_1e_scheids,min_wedstrijden,eigen_teams,bs2_diploma,open_voor_begeleiding,punten,strikes,gefloten_wedstrijden\n"
+                for nbb, scheids in sorted(scheidsrechters.items(), key=lambda x: x[1].get("naam", "")):
+                    eigen_teams = ";".join(scheids.get("eigen_teams", []))
+                    bel_data = beloningen.get("spelers", {}).get(nbb, {})
+                    
+                    output += f"{nbb},"
+                    output += f"\"{scheids.get('naam', '')}\","
+                    output += f"{scheids.get('niveau_1e_scheids', 1)},"
+                    output += f"{scheids.get('min_wedstrijden', 0)},"
+                    output += f"\"{eigen_teams}\","
+                    output += f"{'ja' if scheids.get('bs2_diploma') else 'nee'},"
+                    output += f"{'ja' if scheids.get('open_voor_begeleiding') else 'nee'},"
+                    output += f"{bel_data.get('punten', 0)},"
+                    output += f"{bel_data.get('strikes', 0)},"
+                    output += f"{gefloten_count.get(nbb, 0)}\n"
+                
+                st.download_button(
+                    "📥 Download CSV",
+                    output,
+                    file_name="scheidsrechters_export.csv",
+                    mime="text/csv",
+                    key="dl_scheids"
+                )
+            
+            if st.button("📥 Beloningen detail", use_container_width=True):
+                scheidsrechters = laad_scheidsrechters()
+                beloningen = laad_beloningen()
+                
+                output = "nbb_nummer,naam,punten,strikes,aantal_registraties\n"
+                for nbb, data in beloningen.get("spelers", {}).items():
+                    naam = scheidsrechters.get(nbb, {}).get("naam", nbb)
+                    aantal_reg = len(data.get("gefloten_wedstrijden", []))
+                    
+                    output += f"{nbb},\"{naam}\","
+                    output += f"{data.get('punten', 0)},"
+                    output += f"{data.get('strikes', 0)},"
+                    output += f"{aantal_reg}\n"
+                
+                st.download_button(
+                    "📥 Download CSV",
+                    output,
+                    file_name="beloningen_export.csv",
+                    mime="text/csv",
+                    key="dl_beloningen"
                 )
 
 # ============================================================
