@@ -1629,6 +1629,75 @@ def reset_alle_begeleidingsuitnodigingen() -> tuple[bool, int]:
         st.error(f"Fout bij resetten begeleidingsuitnodigingen: {e}")
         return False, 0
 
+def reset_begeleiders_uit_wedstrijden() -> tuple[bool, int]:
+    """Verwijder begeleider uit alle wedstrijden. Returns (success, aantal)"""
+    try:
+        supabase = get_supabase_client()
+        
+        # Tel wedstrijden met begeleider
+        count_response = supabase.table("wedstrijden").select("wed_id").neq("begeleider", None).execute()
+        aantal = len(count_response.data or [])
+        
+        # Update alle wedstrijden - zet begeleider op null
+        if aantal > 0:
+            supabase.table("wedstrijden").update({"begeleider": None}).neq("begeleider", None).execute()
+        
+        # Invalideer cache
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        
+        return True, aantal
+    except Exception as e:
+        st.error(f"Fout bij resetten begeleiders: {e}")
+        return False, 0
+
+def get_reset_statistics() -> dict:
+    """Haal statistieken op voor de reset pagina"""
+    try:
+        supabase = get_supabase_client()
+        stats = {}
+        
+        # Beloningen
+        beloningen = laad_beloningen()
+        spelers_met_data = 0
+        totaal_punten = 0
+        totaal_strikes = 0
+        for nbb, data in beloningen.get("spelers", {}).items():
+            if data.get("punten", 0) > 0 or data.get("strikes", 0) > 0:
+                spelers_met_data += 1
+                totaal_punten += data.get("punten", 0)
+                totaal_strikes += data.get("strikes", 0)
+        stats["beloningen"] = {
+            "spelers": spelers_met_data,
+            "punten": totaal_punten,
+            "strikes": totaal_strikes
+        }
+        
+        # Begeleidingsuitnodigingen
+        uitn_response = supabase.table("begeleidingsuitnodigingen").select("wed_id").execute()
+        stats["uitnodigingen"] = len(uitn_response.data or [])
+        
+        # Begeleiding feedback
+        fb_response = supabase.table("begeleiding_feedback").select("feedback_id").execute()
+        stats["feedback"] = len(fb_response.data or [])
+        
+        # Wedstrijden met begeleider
+        beg_response = supabase.table("wedstrijden").select("wed_id").neq("begeleider", None).execute()
+        stats["wedstrijden_met_begeleider"] = len(beg_response.data or [])
+        
+        # Device tokens
+        dev_response = supabase.table("device_tokens").select("token").execute()
+        stats["devices"] = len(dev_response.data or [])
+        
+        # Speler settings
+        set_response = supabase.table("speler_settings").select("speler_id").execute()
+        stats["speler_settings"] = len(set_response.data or [])
+        
+        return stats
+    except Exception as e:
+        st.error(f"Fout bij ophalen statistieken: {e}")
+        return {}
+
 def reset_alle_begeleiding_feedback() -> tuple[bool, int]:
     """Verwijder ALLE begeleiding feedback. Returns (success, aantal)"""
     try:
