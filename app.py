@@ -22,14 +22,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.10.6-debug"
+APP_VERSIE = "1.11.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
-### v1.10.6-debug (2025-12-29)
-**Device fingerprinting:**
+### v1.11.0 (2025-12-29)
+**Device verificatie & beheer:**
+- 🔐 Apparaat verificatie via geboortedatum
 - 🔍 Apparaten worden herkend op basis van browser fingerprint
-- 📱 Betere device naam detectie (Chrome, Firefox, Safari, etc.)
-- 🔧 Geen afhankelijkheid meer van cookies/localStorage
+- 📱 Browser type wordt getoond (Chrome, Firefox, Safari, etc.)
+- 📱 Spelers kunnen gekoppelde apparaten zien en verwijderen
+- ⚙️ Spelers kunnen max aantal apparaten instellen
+- ✅ Optionele goedkeuring voor nieuwe apparaten
+- 🔐 Beheerder tab voor apparaatoverzicht
 
 ### v1.9.38 (2025-12-28)
 **Bugfix apparaat verwijderen:**
@@ -2133,11 +2137,15 @@ def toon_speler_view(nbb_nummer: str):
                     col_info, col_btn = st.columns([3, 1])
                     with col_info:
                         device_name = device.get("device_name", "Onbekend")
+                        fingerprint = device.get("fingerprint", "")[:8] if device.get("fingerprint") else ""
                         created = db.format_datetime(device.get("created_at", ""))
                         last_used = db.format_datetime(device.get("last_used", ""))
                         st.markdown(f"**{device_name}**")
-                        st.caption(f"Gekoppeld: {created}")
-                        st.caption(f"Laatst: {last_used}")
+                        if fingerprint:
+                            st.caption(f"ID: {fingerprint} · Gekoppeld: {created}")
+                        else:
+                            st.caption(f"Gekoppeld: {created}")
+                        st.caption(f"Laatst gebruikt: {last_used}")
                     with col_btn:
                         if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder apparaat"):
                             if db.remove_device(device["id"], nbb_nummer):
@@ -3592,12 +3600,16 @@ def toon_apparaten_beheer():
                 
                 with col_info:
                     device_name = device.get("device_name", "Onbekend apparaat")
+                    fingerprint = device.get("fingerprint", "")[:8] if device.get("fingerprint") else ""
                     created = db.format_datetime(device.get("created_at", ""))
                     last_used = db.format_datetime(device.get("last_used", ""))
                     
                     st.markdown(f"📱 **{device_name}**")
-                    st.caption(f"Gekoppeld: {created}")
-                    st.caption(f"Laatst: {last_used}")
+                    if fingerprint:
+                        st.caption(f"ID: {fingerprint} · Gekoppeld: {created}")
+                    else:
+                        st.caption(f"Gekoppeld: {created}")
+                    st.caption(f"Laatst gebruikt: {last_used}")
                 
                 with col_status:
                     if device.get("approved", True):
@@ -6612,22 +6624,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     Check of device geverifieerd is. Toont verificatie scherm indien nodig.
     Returns True als geverifieerd, False als verificatie scherm getoond wordt.
     """
-    # DEBUG MODE
-    DEBUG = True
-    
     session_key = f"device_token_{nbb_nummer}"
     verified_key = f"device_verified_{nbb_nummer}"
-    
-    fingerprint = db._get_device_fingerprint()
-    device_name = db._get_device_name_from_ua()
-    
-    if DEBUG:
-        st.sidebar.markdown("### 🐛 Debug Info")
-        st.sidebar.write(f"NBB: {nbb_nummer}")
-        st.sidebar.write(f"Fingerprint: {fingerprint}")
-        st.sidebar.write(f"Device: {device_name}")
-        st.sidebar.write(f"Session token: {session_key in st.session_state}")
-        st.sidebar.write(f"Verified flag: {st.session_state.get(verified_key, False)}")
     
     # Check of we net geverifieerd zijn (flag gezet in vorige run)
     if st.session_state.get(verified_key, False):
@@ -6635,15 +6633,10 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         if token and db.token_exists_in_database(nbb_nummer, token):
             if db.verify_device_token(nbb_nummer, token):
                 del st.session_state[verified_key]
-                if DEBUG:
-                    st.sidebar.success("✅ Net geverifieerd")
                 return True
     
     # Check of speler geboortedatum heeft
     geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
-    
-    if DEBUG:
-        st.sidebar.write(f"Geboortedatum: {geboortedatum}")
     
     if not geboortedatum:
         return True
@@ -6651,15 +6644,10 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     # Check of er al een device is met deze fingerprint
     device_exists, existing_token = db.device_exists_for_fingerprint(nbb_nummer)
     
-    if DEBUG:
-        st.sidebar.write(f"Device exists: {device_exists}")
-    
     if device_exists and existing_token:
         # Device al geregistreerd - check of token geldig is
         if db.verify_device_token(nbb_nummer, existing_token):
             st.session_state[session_key] = existing_token
-            if DEBUG:
-                st.sidebar.success("✅ Bestaand device herkend")
             return True
         
         # Token bestaat maar is pending
@@ -6673,14 +6661,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
     # Check bestaande token uit session (fallback)
     token = db.get_device_token_from_cookie(nbb_nummer)
     
-    if DEBUG:
-        st.sidebar.write(f"Token: {token[:20] if token else 'GEEN'}...")
-    
     if token:
         token_exists = db.token_exists_in_database(nbb_nummer, token)
-        
-        if DEBUG:
-            st.sidebar.write(f"Token in DB: {token_exists}")
         
         if not token_exists:
             db.clear_device_token_cookie(nbb_nummer)
@@ -6688,17 +6670,10 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             st.rerun()
         else:
             if db.verify_device_token(nbb_nummer, token):
-                if DEBUG:
-                    st.sidebar.success("✅ Toegang verleend")
                 return True
     
     # Check of we een nieuw device kunnen toevoegen
     can_add, reason = db.can_add_device(nbb_nummer)
-    device_count = db.get_device_count(nbb_nummer)
-    
-    if DEBUG:
-        st.sidebar.write(f"Device count: {device_count}")
-        st.sidebar.write(f"Can add: {can_add}")
     
     if not can_add:
         st.title("🚫 Apparaat limiet bereikt")
@@ -6707,6 +6682,8 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
         return False
     
     # Nieuw device - verificatie nodig
+    device_name = db._get_device_name_from_ua()
+    
     st.title("🔐 Verificatie")
     st.write(f"Nieuw apparaat: **{device_name}**")
     st.write("Bevestig je identiteit met je geboortedatum.")
@@ -6726,9 +6703,6 @@ def _check_device_verificatie(nbb_nummer: str) -> bool:
             if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
                 new_token = db._generate_device_token()
                 success, needs_approval = db.register_device_with_approval(nbb_nummer, new_token)
-                
-                if DEBUG:
-                    st.sidebar.write(f"Registratie: {success}")
                 
                 if success:
                     st.session_state[session_key] = new_token
