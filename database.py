@@ -106,32 +106,60 @@ def _get_country_from_ip(ip: str) -> str:
 def get_ip_info() -> dict:
     """Haal IP en land info op voor debug"""
     try:
-        ip = st.context.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    except:
+        headers = st.context.headers
+        
+        # Probeer verschillende headers (volgorde van meest naar minst betrouwbaar)
+        ip_headers = {
+            "X-Forwarded-For": headers.get("X-Forwarded-For", ""),
+            "X-Real-IP": headers.get("X-Real-IP", ""),
+            "CF-Connecting-IP": headers.get("CF-Connecting-IP", ""),  # Cloudflare
+            "True-Client-IP": headers.get("True-Client-IP", ""),  # Akamai
+            "X-Client-IP": headers.get("X-Client-IP", ""),
+        }
+        
+        # Neem eerste niet-lege, niet-private IP
         ip = ""
+        used_header = ""
+        for header_name, header_value in ip_headers.items():
+            if header_value:
+                # X-Forwarded-For kan meerdere IP's bevatten, pak de eerste
+                first_ip = header_value.split(",")[0].strip()
+                # Check of het geen privé IP is
+                if not first_ip.startswith(("10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "127.", "169.254.")):
+                    ip = first_ip
+                    used_header = header_name
+                    break
+        
+        # Debug: toon alle headers
+        debug_info = {k: v for k, v in ip_headers.items() if v}
+        
+    except Exception as e:
+        return {"ip": f"Error: {e}", "country": "?", "allowed": True, "debug": {}}
     
     if not ip:
-        return {"ip": "Lokaal", "country": "N/A", "allowed": True}
+        return {"ip": "Niet gevonden", "country": "N/A", "allowed": True, "debug": debug_info, "used_header": "geen"}
     
     country = _get_country_from_ip(ip)
-    return {"ip": ip, "country": country, "allowed": country == "NL"}
+    return {
+        "ip": ip, 
+        "country": country, 
+        "allowed": country == "NL",
+        "debug": debug_info,
+        "used_header": used_header
+    }
 
 def check_geo_access() -> bool:
     """
     Check of gebruiker uit Nederland komt.
     Stopt de app als toegang geweigerd wordt.
     """
-    try:
-        ip = st.context.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    except:
-        ip = ""
+    ip_info = get_ip_info()
+    ip = ip_info.get("ip", "")
     
-    if not ip:
+    if not ip or ip == "Niet gevonden":
         return True  # Geen IP = lokaal development
     
-    country = _get_country_from_ip(ip)
-    
-    if country != "NL":
+    if not ip_info.get("allowed", True):
         st.error("🚫 Deze app is alleen toegankelijk vanuit Nederland.")
         st.stop()
         return False

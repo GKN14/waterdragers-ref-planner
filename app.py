@@ -22,9 +22,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.11.1"
+APP_VERSIE = "1.11.2"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.11.2 (2025-12-29)
+**Debug IP detectie:**
+- 🌍 Toont welke header gebruikt wordt voor IP
+- 🔍 Filtert private IP's (192.168.x, 10.x, etc.)
+- 📋 Toont alle gevonden IP headers
+
 ### v1.11.1 (2025-12-29)
 **Debug:**
 - 🌍 IP en land info zichtbaar in sidebar (expander "Netwerk info")
@@ -2197,12 +2203,19 @@ def toon_speler_view(nbb_nummer: str):
         # IP debug info (tijdelijk)
         ip_info = db.get_ip_info()
         with st.expander("🌍 Netwerk info"):
-            st.write(f"**IP:** {ip_info['ip']}")
+            st.write(f"**Publiek IP:** {ip_info['ip']}")
             st.write(f"**Land:** {ip_info['country']}")
+            st.write(f"**Header:** {ip_info.get('used_header', '?')}")
             if ip_info['allowed']:
                 st.success("✅ Toegang OK")
             else:
                 st.error("❌ Geblokkeerd")
+            
+            # Debug: toon alle gevonden headers
+            if ip_info.get('debug'):
+                st.caption("**Gevonden headers:**")
+                for h, v in ip_info['debug'].items():
+                    st.caption(f"{h}: {v}")
     
     # ============================================================
     # COMPACTE HEADER
@@ -3427,12 +3440,19 @@ def toon_beheerder_view():
         st.markdown("### 🔧 Beheerder")
         ip_info = db.get_ip_info()
         with st.expander("🌍 Netwerk info"):
-            st.write(f"**IP:** {ip_info['ip']}")
+            st.write(f"**Publiek IP:** {ip_info['ip']}")
             st.write(f"**Land:** {ip_info['country']}")
+            st.write(f"**Header:** {ip_info.get('used_header', '?')}")
             if ip_info['allowed']:
                 st.success("✅ Toegang OK")
             else:
                 st.error("❌ Geblokkeerd")
+            
+            # Debug: toon alle gevonden headers
+            if ip_info.get('debug'):
+                st.caption("**Gevonden headers:**")
+                for h, v in ip_info['debug'].items():
+                    st.caption(f"{h}: {v}")
     
     # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"
