@@ -24,14 +24,19 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.15.1"
+APP_VERSIE = "1.15.2"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.15.2 (2025-12-29)
+**Mobiele fix:**
+- 📱 Header met hamburger menu nu zichtbaar op mobiel
+- 📱 Blauwe header balk in BOB huisstijl
+- 📱 Header alleen verborgen op desktop
+
 ### v1.15.1 (2025-12-29)
 **Mobiele verbeteringen:**
 - 📱 Klassement expander toegevoegd onder metrics
 - 📱 Zichtbaar op mobiel waar sidebar verborgen is
-- 📱 Hint naar sidebar menu (☰) voor meer opties
 - 📱 Compactere metrics op kleine schermen
 
 ### v1.15.0 (2025-12-29)
@@ -1880,9 +1885,24 @@ def toon_speler_view(nbb_nummer: str):
             --bob-oranje: #FF6600;
         }
         
-        /* Verberg standaard Streamlit header */
-        header[data-testid="stHeader"] {
-            display: none;
+        /* Verberg standaard Streamlit header - ALLEEN op desktop */
+        @media (min-width: 769px) {
+            header[data-testid="stHeader"] {
+                display: none;
+            }
+        }
+        
+        /* Op mobiel: header zichtbaar houden voor hamburger menu */
+        @media (max-width: 768px) {
+            header[data-testid="stHeader"] {
+                background-color: #003082 !important;
+                height: 2.5rem !important;
+            }
+            
+            /* Sidebar toggle button styling */
+            header[data-testid="stHeader"] button {
+                color: white !important;
+            }
         }
         
         /* Verberg toolbar */
@@ -1929,14 +1949,7 @@ def toon_speler_view(nbb_nummer: str):
         /* MOBIELE OPTIMALISATIES                      */
         /* ============================================ */
         
-        /* Mobiel: Sidebar hamburger menu duidelijker maken */
         @media (max-width: 768px) {
-            /* Sidebar button (hamburger) prominenter */
-            button[kind="header"] {
-                background-color: #003082 !important;
-                color: white !important;
-            }
-            
             /* Metrics compacter op mobiel */
             [data-testid="stMetricValue"] {
                 font-size: 1.2rem !important;
@@ -1950,11 +1963,11 @@ def toon_speler_view(nbb_nummer: str):
             .streamlit-expanderHeader {
                 font-size: 0.9rem !important;
             }
-        }
-        
-        /* Desktop: Klassement expander subtiel (sidebar is zichtbaar) */
-        @media (min-width: 769px) {
-            /* Optioneel: maak de mobiele klassement expander minder prominent op desktop */
+            
+            /* Padding bovenaan voor header ruimte */
+            .main .block-container {
+                padding-top: 0.5rem !important;
+            }
         }
         
         section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3 {
@@ -2506,7 +2519,7 @@ def toon_speler_view(nbb_nummer: str):
             else:
                 st.caption("*Nog geen begeleidingen*")
         
-        st.caption("*Tik op ☰ linksboven voor meer opties*")
+        st.caption("*Tik op ☰ bovenaan voor meer opties*")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
