@@ -24,19 +24,22 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.15.2"
+APP_VERSIE = "1.15.3"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.15.3 (2025-12-29)
+**Mobiele info expander:**
+- 📱 "Klassement & Info" expander in main content
+- 📱 Bevat: klassement, begeleiders, jouw gegevens, regels, punten, legenda
+- 📱 Volledig bruikbaar zonder sidebar op mobiel
+
 ### v1.15.2 (2025-12-29)
 **Mobiele fix:**
 - 📱 Header met hamburger menu nu zichtbaar op mobiel
-- 📱 Blauwe header balk in BOB huisstijl
-- 📱 Header alleen verborgen op desktop
 
 ### v1.15.1 (2025-12-29)
 **Mobiele verbeteringen:**
 - 📱 Klassement expander toegevoegd onder metrics
-- 📱 Zichtbaar op mobiel waar sidebar verborgen is
 - 📱 Compactere metrics op kleine schermen
 
 ### v1.15.0 (2025-12-29)
@@ -1885,24 +1888,9 @@ def toon_speler_view(nbb_nummer: str):
             --bob-oranje: #FF6600;
         }
         
-        /* Verberg standaard Streamlit header - ALLEEN op desktop */
-        @media (min-width: 769px) {
-            header[data-testid="stHeader"] {
-                display: none;
-            }
-        }
-        
-        /* Op mobiel: header zichtbaar houden voor hamburger menu */
-        @media (max-width: 768px) {
-            header[data-testid="stHeader"] {
-                background-color: #003082 !important;
-                height: 2.5rem !important;
-            }
-            
-            /* Sidebar toggle button styling */
-            header[data-testid="stHeader"] button {
-                color: white !important;
-            }
+        /* Verberg standaard Streamlit header op alle schermen */
+        header[data-testid="stHeader"] {
+            display: none;
         }
         
         /* Verberg toolbar */
@@ -1962,11 +1950,6 @@ def toon_speler_view(nbb_nummer: str):
             /* Expanders volle breedte */
             .streamlit-expanderHeader {
                 font-size: 0.9rem !important;
-            }
-            
-            /* Padding bovenaan voor header ruimte */
-            .main .block-container {
-                padding-top: 0.5rem !important;
             }
         }
         
@@ -2480,9 +2463,9 @@ def toon_speler_view(nbb_nummer: str):
     "></div>
     """, unsafe_allow_html=True)
     
-    # Mobiele klassement (compacte versie voor als sidebar niet zichtbaar is)
-    # Deze expander is handig op mobiel waar de sidebar verborgen is
-    with st.expander("🏆 Klassement & 🎓 Begeleiders", expanded=False):
+    # Mobiele info sectie (compacte versie van sidebar content)
+    # Deze expanders zijn handig op mobiel waar de sidebar verborgen is
+    with st.expander("🏆 Klassement & Info", expanded=False):
         col_klas1, col_klas2 = st.columns(2)
         
         with col_klas1:
@@ -2519,7 +2502,36 @@ def toon_speler_view(nbb_nummer: str):
             else:
                 st.caption("*Nog geen begeleidingen*")
         
-        st.caption("*Tik op ☰ bovenaan voor meer opties*")
+        st.divider()
+        
+        # Jouw gegevens compact
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.markdown("**👤 Jouw gegevens**")
+            st.caption(f"1e scheids: niveau {eigen_niveau}")
+            st.caption(f"2e scheids: niveau {min(eigen_niveau + 1, 5)}")
+            if scheids.get("bs2_diploma"):
+                st.caption("✅ BS2 diploma")
+        with col_info2:
+            st.markdown("**📐 Regels**")
+            st.caption(f"Max 1e: niveau {eigen_niveau}")
+            st.caption(f"Max 2e: niveau {min(eigen_niveau + 1, 5)}")
+            st.caption("Met MSE: geen limiet 🎓")
+        
+        st.divider()
+        
+        # Punten systeem compact
+        st.markdown("**🏆 Punten verdienen**")
+        beloningsinst_mob = laad_beloningsinstellingen()
+        st.caption(f"Wedstrijd: {beloningsinst_mob['punten_per_wedstrijd']}pt | Lastig tijdstip: +{beloningsinst_mob['punten_lastig_tijdstip']}pt")
+        st.caption(f"Invallen <48u: +{beloningsinst_mob['punten_inval_48u']}pt | <24u: +{beloningsinst_mob['punten_inval_24u']}pt")
+        st.caption(f"**{beloningsinst_mob['punten_voor_voucher']} punten = voucher Clinic!**")
+        
+        st.divider()
+        
+        # Symbolen legenda
+        st.markdown("**📋 Symbolen**")
+        st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
