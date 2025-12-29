@@ -24,20 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.1"
+APP_VERSIE = "1.16.2"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.16.2 (2025-12-29)
+**Layout fixes:**
+- 🖥️ Desktop: Header weer logo - titel - logo
+- 📱 Mobiel: Logo's naast elkaar, welkom eronder
+- 📱 Mobiel: Filters nu onder elkaar (via CSS :has selector)
+- 📱 Mobiel: Metrics blijven naast elkaar
+
 ### v1.16.1 (2025-12-29)
 **Fixes:**
-- 📱 Fix: Metrics nu echt naast elkaar op mobiel (flex-wrap: nowrap)
-- 📅 Fix: Deadline maand logica hersteld (dag <= 15 = huidige maand)
-
-### v1.16.0 (2025-12-29)
-**Mobiele verbeteringen & Bug fixes:**
-- 📱 Header: Logo's naast elkaar, welkom eronder op mobiel
-- 📱 Metrics: Kortere labels (Niv3+, Min, 🏆, ⚠️)
-- 📅 Deadline tekst: "Deadline X dagen voor inschrijving [maand]"
-- 🐛 Fix: Afmelden knop niet meer zichtbaar bij gespeelde wedstrijden
+- 📱 Fix: Metrics nu echt naast elkaar op mobiel
+- 📅 Fix: Deadline maand logica hersteld
 
 ### v1.15.0 (2025-12-29)
 **Seizoen beheer:**
@@ -2427,12 +2427,13 @@ def toon_speler_view(nbb_nummer: str):
             bob_logo_b64 = base64.b64encode(f.read()).decode()
     
     # Responsive header met CSS
-    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="header-logo">' if logo_b64 else ""
-    bob_html = f'<img src="data:image/svg+xml;base64,{bob_logo_b64}" class="header-logo">' if bob_logo_b64 else ""
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="header-logo" alt="Logo">' if logo_b64 else ""
+    bob_html = f'<img src="data:image/svg+xml;base64,{bob_logo_b64}" class="header-logo" alt="BOB Logo">' if bob_logo_b64 else ""
     
     st.markdown(f"""
     <style>
-        .responsive-header {{
+        /* Desktop header: logo - titel - logo */
+        .desktop-header {{
             display: flex;
             flex-direction: row;
             align-items: center;
@@ -2452,41 +2453,54 @@ def toon_speler_view(nbb_nummer: str):
             margin: 0;
         }}
         
-        /* Mobiel: logo's links, welkom eronder */
-        @media (max-width: 768px) {{
-            .responsive-header {{
-                flex-wrap: wrap;
-            }}
-            .header-logos {{
-                display: flex;
-                gap: 1rem;
-                width: 100%;
-                justify-content: center;
-            }}
-            .header-logo {{
-                width: 60px;
-            }}
-            .header-title {{
-                width: 100%;
-                font-size: 1.1rem;
-                margin-top: 0.3rem;
-            }}
+        /* Mobiele header: logo's naast elkaar, titel eronder */
+        .mobile-header {{
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }}
+        .mobile-logos {{
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 0.3rem;
+        }}
+        .mobile-header .header-logo {{
+            width: 60px;
+        }}
+        .mobile-title {{
+            font-size: 1.1rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 0;
         }}
         
-        /* Desktop: logo - titel - logo */
-        @media (min-width: 769px) {{
-            .header-logos {{
-                display: contents;
+        /* Switch tussen desktop en mobiel */
+        @media (max-width: 768px) {{
+            .desktop-header {{
+                display: none !important;
+            }}
+            .mobile-header {{
+                display: flex !important;
             }}
         }}
     </style>
     
-    <div class="responsive-header">
-        <div class="header-logos">
+    <!-- Desktop header -->
+    <div class="desktop-header">
+        {logo_html}
+        <p class="header-title">🏀 Welkom, {scheids['naam']}</p>
+        {bob_html}
+    </div>
+    
+    <!-- Mobiele header -->
+    <div class="mobile-header">
+        <div class="mobile-logos">
             {logo_html}
             {bob_html}
         </div>
-        <p class="header-title">🏀 Welkom, {scheids['naam']}</p>
+        <p class="mobile-title">🏀 Welkom, {scheids['naam']}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -2499,19 +2513,20 @@ def toon_speler_view(nbb_nummer: str):
     beloningsinst = laad_beloningsinstellingen()
     strikes = speler_stats["strikes"]
     
-    # Custom CSS voor compactere metrics die NAAST elkaar blijven op mobiel
+    # Custom CSS voor responsive layout
     st.markdown("""
     <style>
-        /* Forceer metrics naast elkaar op mobiel */
+        /* ============================================ */
+        /* METRICS: altijd naast elkaar, ook op mobiel */
+        /* ============================================ */
         @media (max-width: 768px) {
-            /* Metrics container */
-            [data-testid="stHorizontalBlock"] {
+            /* Target alleen rijen die metrics bevatten */
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetricValue"]) {
                 flex-wrap: nowrap !important;
                 gap: 0.2rem !important;
             }
             
-            /* Elke metric kolom */
-            [data-testid="stHorizontalBlock"] > div {
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetricValue"]) > div {
                 flex: 1 1 0 !important;
                 min-width: 0 !important;
                 width: auto !important;
@@ -2530,6 +2545,19 @@ def toon_speler_view(nbb_nummer: str):
             /* Metric delta kleiner */
             [data-testid="stMetricDelta"] {
                 font-size: 0.55rem !important;
+            }
+            
+            /* ============================================ */
+            /* FILTERS: onder elkaar op mobiel             */
+            /* ============================================ */
+            /* Target rijen die toggles bevatten */
+            [data-testid="stHorizontalBlock"]:has([data-testid="stToggle"]) {
+                flex-wrap: wrap !important;
+            }
+            
+            [data-testid="stHorizontalBlock"]:has([data-testid="stToggle"]) > div {
+                flex: 0 0 100% !important;
+                max-width: 100% !important;
             }
         }
     </style>
@@ -3137,7 +3165,7 @@ def toon_speler_view(nbb_nummer: str):
         else:
             aantal_buiten_maand += 1
     
-    # Filter toggles in compacte rij
+    # Filter toggles (op mobiel onder elkaar via CSS :has selector)
     st.markdown("**Filters:**")
     col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
     
