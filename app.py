@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.12.3"
+APP_VERSIE = "1.13.0"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.13.0 (2025-12-29)
+**Verbeterd klassement:**
+- 🏆 Top 3 + eigen positie in punten klassement
+- 🎓 Top 3 + eigen positie in begeleiders klassement
+- 👈 Eigen positie is gemarkeerd
+- ... scheiding als je niet in top 3 staat
+
 ### v1.12.3 (2025-12-29)
 **Verbeterde Data Reset tab:**
 - 📊 Overzicht met metrics bovenaan
@@ -765,6 +772,53 @@ def get_top_scheidsrechters(n: int = 3) -> list:
     punten_lijst.sort(key=lambda x: x["punten"], reverse=True)
     return punten_lijst[:n]
 
+def get_punten_klassement_met_positie(eigen_nbb: str) -> dict:
+    """
+    Haal punten klassement op met top 3 en eigen positie.
+    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "punten": ...} of None}
+    """
+    beloningen = laad_beloningen()
+    scheidsrechters = laad_scheidsrechters()
+    
+    punten_lijst = []
+    for nbb, data in beloningen.get("spelers", {}).items():
+        punten = data.get("punten", 0)
+        if nbb in scheidsrechters:
+            naam = scheidsrechters[nbb].get("naam", "Onbekend")
+            punten_lijst.append({"nbb": nbb, "naam": naam, "punten": punten})
+    
+    # Sorteer op punten (hoogste eerst), dan op naam
+    punten_lijst.sort(key=lambda x: (-x["punten"], x["naam"]))
+    
+    # Top 3
+    top3 = punten_lijst[:3]
+    
+    # Eigen positie zoeken
+    eigen = None
+    for i, speler in enumerate(punten_lijst):
+        if speler["nbb"] == eigen_nbb:
+            eigen = {
+                "positie": i + 1,
+                "nbb": speler["nbb"],
+                "naam": speler["naam"],
+                "punten": speler["punten"]
+            }
+            break
+    
+    # Als eigen niet in lijst staat (0 punten), voeg toe
+    if eigen is None and eigen_nbb in scheidsrechters:
+        eigen_punten = beloningen.get("spelers", {}).get(eigen_nbb, {}).get("punten", 0)
+        # Tel hoeveel spelers meer punten hebben
+        positie = sum(1 for s in punten_lijst if s["punten"] > eigen_punten) + 1
+        eigen = {
+            "positie": positie,
+            "nbb": eigen_nbb,
+            "naam": scheidsrechters[eigen_nbb].get("naam", "Onbekend"),
+            "punten": eigen_punten
+        }
+    
+    return {"top3": top3, "eigen": eigen}
+
 def get_top_begeleiders(n: int = 3) -> list:
     """
     Haal top N begeleiders (MSE's) op basis van aantal bevestigde begeleidingen.
@@ -837,6 +891,102 @@ def get_top_begeleiders(n: int = 3) -> list:
     
     begeleiders_lijst.sort(key=lambda x: x["begeleidingen"], reverse=True)
     return begeleiders_lijst[:n]
+
+def get_begeleiders_klassement_met_positie(eigen_nbb: str) -> dict:
+    """
+    Haal begeleiders klassement op met top 3 en eigen positie.
+    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "begeleidingen": ...} of None}
+    """
+    scheidsrechters = laad_scheidsrechters()
+    wedstrijden = laad_wedstrijden()
+    feedback_data = laad_begeleiding_feedback()
+    
+    # Tel begeleidingen per MSE (zelfde logica als get_top_begeleiders)
+    begeleiding_count = {}
+    
+    for wed_id, wed in wedstrijden.items():
+        begeleider_nbb = wed.get("begeleider")
+        
+        # Tel niet-fluitende begeleider (alleen met positieve feedback)
+        if begeleider_nbb and begeleider_nbb in scheidsrechters:
+            scheids_1 = wed.get("scheids_1")
+            scheids_2 = wed.get("scheids_2")
+            
+            heeft_positieve_feedback = False
+            for scheids_nbb in [scheids_1, scheids_2]:
+                if scheids_nbb:
+                    fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
+                    if fb and fb.get("status") == "aanwezig_geholpen":
+                        heeft_positieve_feedback = True
+                        break
+            
+            if heeft_positieve_feedback:
+                if begeleider_nbb not in begeleiding_count:
+                    begeleiding_count[begeleider_nbb] = 0
+                begeleiding_count[begeleider_nbb] += 1
+        
+        # Tel fluitende begeleiding
+        scheids_1_nbb = wed.get("scheids_1")
+        scheids_2_nbb = wed.get("scheids_2")
+        
+        if not scheids_1_nbb or not scheids_2_nbb:
+            continue
+        
+        scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
+        scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
+        
+        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
+        is_mse = niveau_1e == 5 or any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
+        
+        if not is_mse:
+            continue
+        
+        niveau_2e_scheids = scheids_2.get("niveau_1e_scheids", 1)
+        wed_niveau = wed.get("niveau", 1)
+        
+        max_niveau_2e = min(niveau_2e_scheids + 1, 5)
+        if wed_niveau > max_niveau_2e:
+            if scheids_1_nbb not in begeleiding_count:
+                begeleiding_count[scheids_1_nbb] = 0
+            begeleiding_count[scheids_1_nbb] += 1
+    
+    # Maak lijst en sorteer
+    begeleiders_lijst = []
+    for nbb, count in begeleiding_count.items():
+        naam = scheidsrechters.get(nbb, {}).get("naam", "Onbekend")
+        begeleiders_lijst.append({"nbb": nbb, "naam": naam, "begeleidingen": count})
+    
+    # Sorteer op begeleidingen (hoogste eerst), dan op naam
+    begeleiders_lijst.sort(key=lambda x: (-x["begeleidingen"], x["naam"]))
+    
+    # Top 3
+    top3 = begeleiders_lijst[:3]
+    
+    # Eigen positie zoeken
+    eigen = None
+    for i, begeleider in enumerate(begeleiders_lijst):
+        if begeleider["nbb"] == eigen_nbb:
+            eigen = {
+                "positie": i + 1,
+                "nbb": begeleider["nbb"],
+                "naam": begeleider["naam"],
+                "begeleidingen": begeleider["begeleidingen"]
+            }
+            break
+    
+    # Als eigen niet in lijst staat (0 begeleidingen)
+    if eigen is None and eigen_nbb in scheidsrechters:
+        eigen_count = begeleiding_count.get(eigen_nbb, 0)
+        # Tel hoeveel begeleiders meer begeleidingen hebben
+        positie = sum(1 for b in begeleiders_lijst if b["begeleidingen"] > eigen_count) + 1
+        eigen = {
+            "positie": positie,
+            "nbb": eigen_nbb,
+            "naam": scheidsrechters[eigen_nbb].get("naam", "Onbekend"),
+            "begeleidingen": eigen_count
+        }
+    
+    return {"top3": top3, "eigen": eigen}
 
 def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None, berekening: dict = None):
     """Voeg punten toe aan een speler met volledige berekening voor transparantie."""
@@ -1867,25 +2017,51 @@ def toon_speler_view(nbb_nummer: str):
     
     # Sidebar met legenda
     with st.sidebar:
-        # Top 3 Klassementen
+        # Klassement Punten
         st.markdown("### 🏆 Klassement")
+        punten_klassement = get_punten_klassement_met_positie(nbb_nummer)
         
-        # Top 3 Scheidsrechters (punten)
-        top_scheids = get_top_scheidsrechters(3)
-        if top_scheids:
+        if punten_klassement["top3"]:
             medailles = ["🥇", "🥈", "🥉"]
-            for i, scheids_info in enumerate(top_scheids):
-                st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt")
+            eigen_in_top3 = False
+            
+            for i, scheids_info in enumerate(punten_klassement["top3"]):
+                is_eigen = scheids_info["nbb"] == nbb_nummer
+                if is_eigen:
+                    eigen_in_top3 = True
+                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt 👈")
+                else:
+                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt")
+            
+            # Toon eigen positie als niet in top 3
+            if not eigen_in_top3 and punten_klassement["eigen"]:
+                eigen = punten_klassement["eigen"]
+                st.caption("...")
+                st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']} pt 👈")
         else:
             st.caption("*Nog geen punten verdiend*")
         
-        # Top 3 Begeleiders
+        # Klassement Begeleiders
         st.markdown("### 🎓 Top Begeleiders")
-        top_begeleiders = get_top_begeleiders(3)
-        if top_begeleiders:
+        beg_klassement = get_begeleiders_klassement_met_positie(nbb_nummer)
+        
+        if beg_klassement["top3"]:
             medailles = ["🥇", "🥈", "🥉"]
-            for i, begeleider in enumerate(top_begeleiders):
-                st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x")
+            eigen_in_top3 = False
+            
+            for i, begeleider in enumerate(beg_klassement["top3"]):
+                is_eigen = begeleider["nbb"] == nbb_nummer
+                if is_eigen:
+                    eigen_in_top3 = True
+                    st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x 👈")
+                else:
+                    st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x")
+            
+            # Toon eigen positie als niet in top 3
+            if not eigen_in_top3 and beg_klassement["eigen"]:
+                eigen = beg_klassement["eigen"]
+                st.caption("...")
+                st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['begeleidingen']}x 👈")
         else:
             st.caption("*Nog geen begeleidingen*")
         
