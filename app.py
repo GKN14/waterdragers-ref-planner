@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.15.0"
+APP_VERSIE = "1.15.1"
 APP_VERSIE_DATUM = "2025-12-29"
 APP_CHANGELOG = """
+### v1.15.1 (2025-12-29)
+**Mobiele verbeteringen:**
+- 📱 Klassement expander toegevoegd onder metrics
+- 📱 Zichtbaar op mobiel waar sidebar verborgen is
+- 📱 Hint naar sidebar menu (☰) voor meer opties
+- 📱 Compactere metrics op kleine schermen
+
 ### v1.15.0 (2025-12-29)
 **Seizoen beheer:**
 - 📅 Nieuwe tab: Seizoen in Instellingen
@@ -1918,6 +1925,38 @@ def toon_speler_view(nbb_nummer: str):
             border-right: 3px solid #003082 !important;
         }
         
+        /* ============================================ */
+        /* MOBIELE OPTIMALISATIES                      */
+        /* ============================================ */
+        
+        /* Mobiel: Sidebar hamburger menu duidelijker maken */
+        @media (max-width: 768px) {
+            /* Sidebar button (hamburger) prominenter */
+            button[kind="header"] {
+                background-color: #003082 !important;
+                color: white !important;
+            }
+            
+            /* Metrics compacter op mobiel */
+            [data-testid="stMetricValue"] {
+                font-size: 1.2rem !important;
+            }
+            
+            [data-testid="stMetricLabel"] {
+                font-size: 0.7rem !important;
+            }
+            
+            /* Expanders volle breedte */
+            .streamlit-expanderHeader {
+                font-size: 0.9rem !important;
+            }
+        }
+        
+        /* Desktop: Klassement expander subtiel (sidebar is zichtbaar) */
+        @media (min-width: 769px) {
+            /* Optioneel: maak de mobiele klassement expander minder prominent op desktop */
+        }
+        
         section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3 {
             color: #003082 !important;
             border-bottom: 2px solid #FF6600 !important;
@@ -2427,6 +2466,47 @@ def toon_speler_view(nbb_nummer: str):
         margin: 0.3rem 0;
     "></div>
     """, unsafe_allow_html=True)
+    
+    # Mobiele klassement (compacte versie voor als sidebar niet zichtbaar is)
+    # Deze expander is handig op mobiel waar de sidebar verborgen is
+    with st.expander("🏆 Klassement & 🎓 Begeleiders", expanded=False):
+        col_klas1, col_klas2 = st.columns(2)
+        
+        with col_klas1:
+            st.markdown("**🏆 Punten**")
+            punten_klas = get_punten_klassement_met_positie(nbb_nummer)
+            if punten_klas["top3"]:
+                medailles = ["🥇", "🥈", "🥉"]
+                for i, s in enumerate(punten_klas["top3"]):
+                    marker = " 👈" if s["nbb"] == nbb_nummer else ""
+                    st.caption(f"{medailles[i]} {s['naam']} - {s['punten']}pt{marker}")
+                
+                if punten_klas["eigen"] and punten_klas["eigen"]["nbb"] != nbb_nummer:
+                    eigen = punten_klas["eigen"]
+                    in_top3 = any(s["nbb"] == nbb_nummer for s in punten_klas["top3"])
+                    if not in_top3:
+                        st.caption(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']}pt 👈")
+            else:
+                st.caption("*Nog geen punten*")
+        
+        with col_klas2:
+            st.markdown("**🎓 Begeleiders**")
+            beg_klas = get_begeleiders_klassement_met_positie(nbb_nummer)
+            if beg_klas["top3"]:
+                medailles = ["🥇", "🥈", "🥉"]
+                for i, b in enumerate(beg_klas["top3"]):
+                    marker = " 👈" if b["nbb"] == nbb_nummer else ""
+                    st.caption(f"{medailles[i]} {b['naam']} - {b['begeleidingen']}x{marker}")
+                
+                if beg_klas["eigen"] and beg_klas["eigen"]["nbb"] != nbb_nummer:
+                    eigen = beg_klas["eigen"]
+                    in_top3 = any(b["nbb"] == nbb_nummer for b in beg_klas["top3"])
+                    if not in_top3:
+                        st.caption(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['begeleidingen']}x 👈")
+            else:
+                st.caption("*Nog geen begeleidingen*")
+        
+        st.caption("*Tik op ☰ linksboven voor meer opties*")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
