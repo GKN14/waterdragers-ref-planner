@@ -24,14 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.4"
+APP_VERSIE = "1.17.5"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.17.4 (2025-12-30)
-**Scrollbar fix:**
-- 📱 Exacte CSS van v1.16.15 teruggezet
+### v1.17.5 (2025-12-30)
+**Mobiel scroll fix:**
+- 📱 Bredere CSS selectors voor container override
+- 📱 Doel: geen nested scrolling op mobiel
 
-### v1.17.3 (2025-12-30)
+### v1.17.4 (2025-12-30)
 **Scrollbar fix:**
 - 📱 CSS voor zichtbare scrollbar op iOS
 - 📱 Container met border=True
@@ -3240,20 +3241,25 @@ def toon_speler_view(nbb_nummer: str):
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
     <style>
-        /* Op mobiel: geen vaste hoogte, alles op één pagina */
+        /* Op mobiel: geen vaste container hoogte, alles op één pagina scrollt */
         @media (max-width: 768px) {
-            /* Override de height van scrollbare containers */
-            [data-testid="stVerticalBlockBorderWrapper"] > div[style*="height"] {
+            /* Target de scrollbare container div */
+            [data-testid="stVerticalBlockBorderWrapper"] [style*="overflow: auto"] {
                 height: auto !important;
                 max-height: none !important;
                 overflow: visible !important;
             }
             
-            /* Alternatieve selector */
-            [style*="height: 600px"] {
+            [data-testid="stVerticalBlockBorderWrapper"] [style*="height: 600px"] {
                 height: auto !important;
                 max-height: none !important;
                 overflow: visible !important;
+            }
+            
+            /* Alle elementen met vaste hoogte binnen containers */
+            .stVerticalBlock [style*="height"] {
+                height: auto !important;
+                max-height: none !important;
             }
         }
     </style>
