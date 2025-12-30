@@ -24,13 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.11"
+APP_VERSIE = "1.16.12"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.11 (2025-12-30)
-**Visuele scheiding:**
-- 📱 Gradient lijn (blauw→oranje) boven wedstrijden container
-- 📱 Duidelijke scheiding tussen filters en scroll-gebied
+### v1.16.12 (2025-12-30)
+**Scroll zone indicator:**
+- 📱 Duidelijke header "Wedstrijden ↕️ Scroll zone"
+- 📱 Container met rand (border=True)
+- 📱 Visuele afbakening van scroll-gebied
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -3195,26 +3196,35 @@ def toon_speler_view(nbb_nummer: str):
     with col_f5:
         filter_hele_overzicht = st.toggle(f"Hele overzicht (+{aantal_buiten_maand})", value=False, key="filter_hele_overzicht")
     
-    # Visuele scheiding - header voor wedstrijden sectie + container styling
+    # Visuele scheiding + scroll indicator
     st.markdown("""
     <style>
-        /* Style de scrollbare container (heeft height attribuut) */
-        [data-testid="stVerticalBlockBorderWrapper"]:has([style*="height"]) {
-            background-color: #f8f9fa !important;
-            border: 2px solid #dee2e6 !important;
+        /* Scrollbare container duidelijk markeren */
+        [data-testid="stVerticalBlockBorderWrapper"]:has([style*="height: 600px"]) {
+            background-color: #f0f4f8 !important;
+            border: 2px solid #003082 !important;
             border-radius: 0.75rem !important;
+            position: relative;
         }
     </style>
     <div style="
         background: linear-gradient(90deg, #003082 0%, #FF6600 100%);
-        height: 4px;
-        border-radius: 2px;
+        color: white;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
         margin: 0.5rem 0;
-    "></div>
+        font-size: 0.85rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    ">
+        <span>📋 <strong>Wedstrijden</strong></span>
+        <span style="opacity: 0.9;">↕️ Scroll zone</span>
+    </div>
     """, unsafe_allow_html=True)
     
-    # Scrollbare container voor wedstrijden
-    with st.container(height=600):
+    # Scrollbare container voor wedstrijden (met rand voor visuele afbakening)
+    with st.container(height=600, border=True):
         
         # Toon huidige inschrijvingen (indien filter aan)
         if filter_ingeschreven:
