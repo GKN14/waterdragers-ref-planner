@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.1"
+APP_VERSIE = "1.17.2"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.2 (2025-12-30)
+**Test:**
+- 🧪 Test CSS marker voor expander
+
 ### v1.17.1 (2025-12-30)
 **Desktop/Mobiel scheiding:**
 - 🖥️ Desktop: klassement alleen in sidebar
@@ -2612,15 +2616,28 @@ def toon_speler_view(nbb_nummer: str):
     # PUNTEN KLASSEMENT (alleen op mobiel zichtbaar)
     # ============================================================
     
-    # CSS om klassement te verbergen op desktop
+    # CSS om klassement en info te verbergen op desktop
     st.markdown("""
     <style>
         .mobiel-klassement {
             display: block;
         }
+        .mobiel-info-start {
+            height: 0;
+            overflow: hidden;
+        }
+        .mobiel-info-end {
+            display: none;
+        }
         @media (min-width: 769px) {
             .mobiel-klassement {
                 display: none !important;
+            }
+            /* Test: maak alles na de marker rood */
+            .mobiel-info-start {
+                height: 5px !important;
+                background: red !important;
+                overflow: visible !important;
             }
         }
     </style>
@@ -2649,6 +2666,9 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown(f'<div class="mobiel-klassement">🏆 <strong>Klassement:</strong> {" · ".join(klassement_items)}</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="mobiel-klassement"><em>🏆 Klassement: nog geen punten verdiend</em></div>', unsafe_allow_html=True)
+    
+    # Marker voor CSS targeting van de expander
+    st.markdown('<div class="mobiel-info-start"></div>', unsafe_allow_html=True)
     
     # Mobiele info sectie (begeleiders + info - kan opvouwen)
     with st.expander("🎓 Begeleiders & Info", expanded=False):
@@ -2698,6 +2718,8 @@ def toon_speler_view(nbb_nummer: str):
         # Symbolen legenda
         st.markdown("**📋 Symbolen**")
         st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
+    
+    st.markdown('<div class="mobiel-info-end"></div>', unsafe_allow_html=True)
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
