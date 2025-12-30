@@ -24,17 +24,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.5"
+APP_VERSIE = "1.17.0"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.17.5 (2025-12-30)
-**Desktop/Mobiel:**
-- 🖥️ Desktop: klassement verborgen in hoofdscherm (staat in sidebar)
-- 📱 Mobiel: klassement + begeleiders info zichtbaar
-- 📱 Scrollbar fix
-
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
+- 📱 Blauwe lijn boven wedstrijden container
+- 📱 Container met rand (border=True) voor visuele afbakening
+- 🏆 Punten klassement permanent zichtbaar
+- 🎓 Begeleiders & Info in opvouwbare expander
+
+### v1.16.4 (2025-12-30)
+**Klassement & Feedback:**
 - 🖥️ Desktop: klassement + begeleiders info alleen in sidebar
 - 📱 Mobiel: klassement + begeleiders info in hoofdscherm
 
@@ -2620,22 +2621,8 @@ def toon_speler_view(nbb_nummer: str):
     """, unsafe_allow_html=True)
     
     # ============================================================
-    # PUNTEN KLASSEMENT (alleen op mobiel zichtbaar)
+    # PUNTEN KLASSEMENT (altijd zichtbaar)
     # ============================================================
-    
-    # CSS om klassement te verbergen op desktop (expander blijft, is niet storend)
-    st.markdown("""
-    <style>
-        .mobiel-klassement {
-            display: block;
-        }
-        @media (min-width: 769px) {
-            .mobiel-klassement {
-                display: none !important;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
     
     punten_klas = get_punten_klassement_met_positie(nbb_nummer)
     
@@ -2657,12 +2644,11 @@ def toon_speler_view(nbb_nummer: str):
     
     # Wrap in div die alleen op mobiel zichtbaar is
     if klassement_items:
-        st.markdown(f'<div class="mobiel-klassement">🏆 <strong>Klassement:</strong> {" · ".join(klassement_items)}</div>', unsafe_allow_html=True)
+        st.markdown(f"🏆 **Klassement:** {' · '.join(klassement_items)}")
     else:
-        st.markdown('<div class="mobiel-klassement"><em>🏆 Klassement: nog geen punten verdiend</em></div>', unsafe_allow_html=True)
+        st.caption("🏆 *Klassement: nog geen punten verdiend*")
     
-    # Mobiele info sectie (begeleiders + info - kan opvouwen)
-    # Op desktop is dit overbodig maar niet storend
+    # Info sectie (begeleiders + info - kan opvouwen)
     with st.expander("🎓 Begeleiders & Info", expanded=False):
         # Begeleiders klassement
         st.markdown("**🎓 Top Begeleiders**")
