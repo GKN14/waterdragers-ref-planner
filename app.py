@@ -24,20 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.12"
+APP_VERSIE = "1.16.13"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.13 (2025-12-30)
+**Scroll zone styling:**
+- 📱 Blauwe lijn boven wedstrijden container
+- 📱 Container met rand (border=True)
+
 ### v1.16.12 (2025-12-30)
 **Scroll zone indicator:**
-- 📱 Duidelijke header "Wedstrijden ↕️ Scroll zone"
-- 📱 Container met rand (border=True)
-- 📱 Visuele afbakening van scroll-gebied
-- 📱 Versienummer in Begeleiders & Info expander
-- 🏆 Punten klassement permanent zichtbaar
-- 🎓 Begeleiders & Info in opvouwbare expander
-
-### v1.16.4 (2025-12-30)
-**Klassement & Feedback:**
 - 📱 CSS voor zichtbare scrollbar op iOS
 - 📱 Container met border=True
 
@@ -3242,22 +3238,14 @@ def toon_speler_view(nbb_nummer: str):
     with col_f5:
         filter_hele_overzicht = st.toggle(f"Hele overzicht (+{aantal_buiten_maand})", value=False, key="filter_hele_overzicht")
     
-    # Scroll zone indicator header
+    # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
     <div style="
-        background: linear-gradient(90deg, #003082 0%, #FF6600 100%);
-        color: white;
-        padding: 0.4rem 0.75rem;
+        border-top: 3px solid #003082;
         border-radius: 0.5rem;
+        height: 0.5rem;
         margin: 0.5rem 0;
-        font-size: 0.85rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    ">
-        <span>📋 <strong>Wedstrijden</strong></span>
-        <span style="opacity: 0.9;">↕️ Scroll zone</span>
-    </div>
+    "></div>
     """, unsafe_allow_html=True)
     
     # Scrollbare container voor wedstrijden
