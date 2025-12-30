@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.1"
+APP_VERSIE = "1.17.2"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.2 (2025-12-30)
+**Test:**
+- 📱 Container zonder border=True parameter
+
 ### v1.17.1 (2025-12-30)
 **Versienummer op mobiel:**
 - 📱 Versienummer toegevoegd aan Begeleiders & Info expander
@@ -3234,8 +3238,8 @@ def toon_speler_view(nbb_nummer: str):
     "></div>
     """, unsafe_allow_html=True)
     
-    # Scrollbare container voor wedstrijden (met rand voor visuele afbakening)
-    with st.container(height=600, border=True):
+    # Scrollbare container voor wedstrijden
+    with st.container(height=600):
         
         # Toon huidige inschrijvingen (indien filter aan)
         if filter_ingeschreven:
