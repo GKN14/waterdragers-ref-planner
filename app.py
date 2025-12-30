@@ -24,18 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.15"
+APP_VERSIE = "1.17.0"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.15 (2025-12-30)
-**Responsive container:**
-- 🖥️ Desktop: scrollbare container (600px)
-- 📱 Mobiel: geen vaste hoogte, alles op één pagina
-
-### v1.16.13 (2025-12-30)
-**Scroll zone styling:**
+### v1.17.0 (2025-12-30)
+**Mobiele UX verbeteringen:**
 - 📱 Blauwe lijn boven wedstrijden container
-- 📱 Container met rand (border=True)
+- 📱 Container met rand voor visuele afbakening scroll-zone
+- 🏆 Punten klassement permanent zichtbaar (ook op mobiel)
+- 🎓 Begeleiders & Info in opvouwbare expander
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -3202,24 +3199,6 @@ def toon_speler_view(nbb_nummer: str):
     
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
-    <style>
-        /* Op mobiel: geen vaste hoogte, alles op één pagina */
-        @media (max-width: 768px) {
-            /* Override de height van scrollbare containers */
-            [data-testid="stVerticalBlockBorderWrapper"] > div[style*="height"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-            
-            /* Alternatieve selector */
-            [style*="height: 600px"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-        }
-    </style>
     <div style="
         border-top: 3px solid #003082;
         border-radius: 0.5rem;
