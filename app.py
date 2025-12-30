@@ -24,15 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.6"
+APP_VERSIE = "1.17.0"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.17.6 (2025-12-30)
-**Test:**
-- 🧪 CSS selector test met kleuren (rood/groen/blauw)
+### v1.17.0 (2025-12-30)
+**Mobiele UX verbeteringen:**
+- 📱 Blauwe lijn boven wedstrijden container
+- 📱 Container met rand voor visuele afbakening
+- 📱 Scrollbar zichtbaar tijdens scrollen
+- 📱 Versienummer in Begeleiders & Info expander
+- 🏆 Punten klassement permanent zichtbaar
+- 🎓 Begeleiders & Info in opvouwbare expander
 
-### v1.17.5 (2025-12-30)
-**Mobiel scroll fix:**
+### v1.16.4 (2025-12-30)
+**Klassement & Feedback:**
 - 📱 CSS voor zichtbare scrollbar op iOS
 - 📱 Container met border=True
 
@@ -3239,25 +3244,6 @@ def toon_speler_view(nbb_nummer: str):
     
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
-    <style>
-        /* TEST: welke selector werkt voor de scrollbare container? */
-        @media (max-width: 768px) {
-            /* Test 1: rode rand */
-            [data-testid="stVerticalBlockBorderWrapper"] {
-                border: 3px solid red !important;
-            }
-            
-            /* Test 2: groene achtergrond op overflow elementen */
-            [style*="overflow"] {
-                background-color: lightgreen !important;
-            }
-            
-            /* Test 3: blauwe rand op height elementen */
-            [style*="height: 600"] {
-                border: 3px solid blue !important;
-            }
-        }
-    </style>
     <div style="
         border-top: 3px solid #003082;
         border-radius: 0.5rem;
