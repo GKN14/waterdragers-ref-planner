@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.2"
+APP_VERSIE = "1.17.3"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.3 (2025-12-30)
+**Scrollbar fix:**
+- 📱 CSS voor zichtbare scrollbar op iOS
+- 📱 Container met border=True
+
 ### v1.17.2 (2025-12-30)
 **Test:**
 - 📱 Container zonder border=True parameter
@@ -3230,6 +3235,26 @@ def toon_speler_view(nbb_nummer: str):
     
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
+    <style>
+        /* Op mobiel: scrollbar altijd zichtbaar */
+        @media (max-width: 768px) {
+            /* Scrollbare containers */
+            [style*="overflow"] {
+                -webkit-overflow-scrolling: touch !important;
+                overflow-y: scroll !important;
+            }
+            
+            /* Scrollbar altijd tonen op webkit (iOS/Safari) */
+            ::-webkit-scrollbar {
+                -webkit-appearance: none;
+                width: 7px;
+            }
+            ::-webkit-scrollbar-thumb {
+                border-radius: 4px;
+                background-color: rgba(0, 48, 130, 0.5);
+            }
+        }
+    </style>
     <div style="
         border-top: 3px solid #003082;
         border-radius: 0.5rem;
@@ -3239,7 +3264,7 @@ def toon_speler_view(nbb_nummer: str):
     """, unsafe_allow_html=True)
     
     # Scrollbare container voor wedstrijden
-    with st.container(height=600):
+    with st.container(height=600, border=True):
         
         # Toon huidige inschrijvingen (indien filter aan)
         if filter_ingeschreven:
