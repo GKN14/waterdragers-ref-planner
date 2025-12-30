@@ -18,83 +18,16 @@ from io import BytesIO
 # Database module voor Supabase
 import database as db
 
-# Geofiltering - alleen toegang vanuit Nederland
-# Let op: Werkt momenteel NIET op Streamlit Cloud (geen publiek IP beschikbaar)
-# Zie database.py voor details. Code is voorbereid voor toekomstig gebruik.
-db.check_geo_access()
-
 # Versie informatie
-APP_VERSIE = "1.16.3"
-APP_VERSIE_DATUM = "2025-12-29"
+APP_VERSIE = "1.9.35"
+APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.3 (2025-12-29)
-**Fix:**
-- 🐛 Fix: Ingeschreven telling toont nu alle wedstrijden (inclusief verleden)
-
-### v1.16.2 (2025-12-29)
-**Layout fixes:**
-- 🖥️ Desktop: Header weer logo - titel - logo
-- 📱 Mobiel: Logo's naast elkaar, welkom eronder
-- 📱 Mobiel: Filters nu onder elkaar
-- 📱 Mobiel: Metrics blijven naast elkaar
-
-### v1.15.0 (2025-12-29)
-**Seizoen beheer:**
-- 📅 Nieuwe tab: Seizoen in Instellingen
-- 🔒 Seizoen afsluiten met archivering
-- 📚 Bekijk gearchiveerde seizoenen
-- 📊 Statistieken per speler per seizoen (incl. minimums)
-- 📥 Export archief naar CSV
-
-### v1.14.0 (2025-12-29)
-**Analyse Dashboard & Export uitbreiding:**
-- 📊 Nieuw: Analyse tab voor fluitgedrag analyse
-- 🌟 Overzicht: Wie fluit veel (+3 boven minimum)
-- ⚠️ Overzicht: Wie fluit weinig (onder minimum)
-- 💡 Suggesties voor minimum aanpassingen
-- 🔧 Bulk minimum aanpassen (verhogen/verlagen)
-- 📤 Export: Scheidsrechters + statistieken
-- ... scheiding als je niet in top 3 staat
-
-### v1.12.3 (2025-12-29)
-**Verbeterde Data Reset tab:**
-- 📊 Overzicht met metrics bovenaan
-- 🔢 Toont aantal items per categorie
-- ✅ Groen vinkje als er niets te resetten valt
-- 🗑️ Nieuwe optie: begeleiders uit wedstrijden resetten
-
-### v1.12.2 (2025-12-29)
-**Bugfix:**
-- 🐛 Reset functies gebruiken nu correcte kolom namen per tabel
-
-### v1.12.1 (2025-12-29)
-**Bugfix:**
-- 🐛 Reset beloningen gebruikt nu correcte beloningen tabel
-
-### v1.12.0 (2025-12-29)
-**Data Reset functionaliteit:**
-- 🗑️ Nieuwe "Data Reset" tab in beheerder instellingen
-- 💰 Reset punten/strikes per speler of voor alle spelers
-- 👥 Reset MSE begeleidingsuitnodigingen en feedback
-- 📱 Reset apparaten en apparaat instellingen
-
-### v1.11.5 (2025-12-29)
-**Device verificatie & beheer - Definitieve versie:**
-- 🔐 Apparaat verificatie via geboortedatum
-- 🔍 Apparaten worden herkend op basis van browser fingerprint
-- 📱 Browser type wordt getoond (Chrome, Firefox, Safari, etc.)
-- 📱 Spelers kunnen gekoppelde apparaten zien en verwijderen
-- ⚙️ Spelers kunnen max aantal apparaten instellen
-- ✅ Optionele goedkeuring voor nieuwe apparaten
-- 🔐 Beheerder tab voor apparaatoverzicht
-- 🌍 Netwerk info in sidebar (IP/land detectie voorbereid)
-
-### v1.9.35 (2025-12-28)
-**Beveiliging update:**
-- 🔐 Device verificatie met cookies (90 dagen)
-- 🌍 Geofiltering (alleen Nederland - voorbereid)
-- 🔑 Admin wachtwoord in database (niet meer in code)
-- 📥 Ledengegevens import (geboortedatum + teams)
+### v1.9.35 (2025-12-30)
+**Klassement in hoofdscherm:**
+- 🏆 Klassement verplaatst van sidebar naar hoofdscherm
+- 📱 Altijd zichtbaar, ook op mobiel (niet meer in ingeklapt menu)
+- 🔶 Eigen positie gemarkeerd met oranje achtergrond
+- 📊 Als je niet in top 3 zit: toont "··· #6 Jij (X)"
 
 ### v1.9.34 (2025-12-28)
 **Bugfix sidebar feedback:**
@@ -541,7 +474,7 @@ def inject_custom_css():
 
 # Configuratie
 DATA_DIR = Path(__file__).parent / "data"
-# Wachtwoord wordt nu veilig beheerd via database en Streamlit Secrets
+BEHEERDER_WACHTWOORD = "waterdragers2025"  # Pas aan!
 
 # Teams waaruit scheidsrechters komen (vanaf U16, plus coaches van lagere teams)
 SCHEIDSRECHTER_TEAMS = [
@@ -794,52 +727,27 @@ def get_top_scheidsrechters(n: int = 3) -> list:
     punten_lijst.sort(key=lambda x: x["punten"], reverse=True)
     return punten_lijst[:n]
 
-def get_punten_klassement_met_positie(eigen_nbb: str) -> dict:
-    """
-    Haal punten klassement op met top 3 en eigen positie.
-    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "punten": ...} of None}
-    """
+def get_speler_ranking(nbb_nummer: str) -> dict:
+    """Haal de positie van een speler in het klassement."""
     beloningen = laad_beloningen()
     scheidsrechters = laad_scheidsrechters()
     
     punten_lijst = []
     for nbb, data in beloningen.get("spelers", {}).items():
         punten = data.get("punten", 0)
-        if nbb in scheidsrechters:
+        if punten > 0 and nbb in scheidsrechters:
             naam = scheidsrechters[nbb].get("naam", "Onbekend")
             punten_lijst.append({"nbb": nbb, "naam": naam, "punten": punten})
     
-    # Sorteer op punten (hoogste eerst), dan op naam
-    punten_lijst.sort(key=lambda x: (-x["punten"], x["naam"]))
+    # Sorteer op punten (hoogste eerst)
+    punten_lijst.sort(key=lambda x: x["punten"], reverse=True)
     
-    # Top 3
-    top3 = punten_lijst[:3]
+    # Zoek positie van de speler
+    for i, item in enumerate(punten_lijst):
+        if item["nbb"] == nbb_nummer:
+            return {"positie": i + 1, "punten": item["punten"], "totaal": len(punten_lijst)}
     
-    # Eigen positie zoeken
-    eigen = None
-    for i, speler in enumerate(punten_lijst):
-        if speler["nbb"] == eigen_nbb:
-            eigen = {
-                "positie": i + 1,
-                "nbb": speler["nbb"],
-                "naam": speler["naam"],
-                "punten": speler["punten"]
-            }
-            break
-    
-    # Als eigen niet in lijst staat (0 punten), voeg toe
-    if eigen is None and eigen_nbb in scheidsrechters:
-        eigen_punten = beloningen.get("spelers", {}).get(eigen_nbb, {}).get("punten", 0)
-        # Tel hoeveel spelers meer punten hebben
-        positie = sum(1 for s in punten_lijst if s["punten"] > eigen_punten) + 1
-        eigen = {
-            "positie": positie,
-            "nbb": eigen_nbb,
-            "naam": scheidsrechters[eigen_nbb].get("naam", "Onbekend"),
-            "punten": eigen_punten
-        }
-    
-    return {"top3": top3, "eigen": eigen}
+    return {"positie": None, "punten": 0, "totaal": len(punten_lijst)}
 
 def get_top_begeleiders(n: int = 3) -> list:
     """
@@ -913,102 +821,6 @@ def get_top_begeleiders(n: int = 3) -> list:
     
     begeleiders_lijst.sort(key=lambda x: x["begeleidingen"], reverse=True)
     return begeleiders_lijst[:n]
-
-def get_begeleiders_klassement_met_positie(eigen_nbb: str) -> dict:
-    """
-    Haal begeleiders klassement op met top 3 en eigen positie.
-    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "begeleidingen": ...} of None}
-    """
-    scheidsrechters = laad_scheidsrechters()
-    wedstrijden = laad_wedstrijden()
-    feedback_data = laad_begeleiding_feedback()
-    
-    # Tel begeleidingen per MSE (zelfde logica als get_top_begeleiders)
-    begeleiding_count = {}
-    
-    for wed_id, wed in wedstrijden.items():
-        begeleider_nbb = wed.get("begeleider")
-        
-        # Tel niet-fluitende begeleider (alleen met positieve feedback)
-        if begeleider_nbb and begeleider_nbb in scheidsrechters:
-            scheids_1 = wed.get("scheids_1")
-            scheids_2 = wed.get("scheids_2")
-            
-            heeft_positieve_feedback = False
-            for scheids_nbb in [scheids_1, scheids_2]:
-                if scheids_nbb:
-                    fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
-                    if fb and fb.get("status") == "aanwezig_geholpen":
-                        heeft_positieve_feedback = True
-                        break
-            
-            if heeft_positieve_feedback:
-                if begeleider_nbb not in begeleiding_count:
-                    begeleiding_count[begeleider_nbb] = 0
-                begeleiding_count[begeleider_nbb] += 1
-        
-        # Tel fluitende begeleiding
-        scheids_1_nbb = wed.get("scheids_1")
-        scheids_2_nbb = wed.get("scheids_2")
-        
-        if not scheids_1_nbb or not scheids_2_nbb:
-            continue
-        
-        scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
-        scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
-        
-        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
-        is_mse = niveau_1e == 5 or any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
-        
-        if not is_mse:
-            continue
-        
-        niveau_2e_scheids = scheids_2.get("niveau_1e_scheids", 1)
-        wed_niveau = wed.get("niveau", 1)
-        
-        max_niveau_2e = min(niveau_2e_scheids + 1, 5)
-        if wed_niveau > max_niveau_2e:
-            if scheids_1_nbb not in begeleiding_count:
-                begeleiding_count[scheids_1_nbb] = 0
-            begeleiding_count[scheids_1_nbb] += 1
-    
-    # Maak lijst en sorteer
-    begeleiders_lijst = []
-    for nbb, count in begeleiding_count.items():
-        naam = scheidsrechters.get(nbb, {}).get("naam", "Onbekend")
-        begeleiders_lijst.append({"nbb": nbb, "naam": naam, "begeleidingen": count})
-    
-    # Sorteer op begeleidingen (hoogste eerst), dan op naam
-    begeleiders_lijst.sort(key=lambda x: (-x["begeleidingen"], x["naam"]))
-    
-    # Top 3
-    top3 = begeleiders_lijst[:3]
-    
-    # Eigen positie zoeken
-    eigen = None
-    for i, begeleider in enumerate(begeleiders_lijst):
-        if begeleider["nbb"] == eigen_nbb:
-            eigen = {
-                "positie": i + 1,
-                "nbb": begeleider["nbb"],
-                "naam": begeleider["naam"],
-                "begeleidingen": begeleider["begeleidingen"]
-            }
-            break
-    
-    # Als eigen niet in lijst staat (0 begeleidingen)
-    if eigen is None and eigen_nbb in scheidsrechters:
-        eigen_count = begeleiding_count.get(eigen_nbb, 0)
-        # Tel hoeveel begeleiders meer begeleidingen hebben
-        positie = sum(1 for b in begeleiders_lijst if b["begeleidingen"] > eigen_count) + 1
-        eigen = {
-            "positie": positie,
-            "nbb": eigen_nbb,
-            "naam": scheidsrechters[eigen_nbb].get("naam", "Onbekend"),
-            "begeleidingen": eigen_count
-        }
-    
-    return {"top3": top3, "eigen": eigen}
 
 def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None, berekening: dict = None):
     """Voeg punten toe aan een speler met volledige berekening voor transparantie."""
@@ -1884,7 +1696,7 @@ def toon_speler_view(nbb_nummer: str):
             --bob-oranje: #FF6600;
         }
         
-        /* Verberg standaard Streamlit header op alle schermen */
+        /* Verberg standaard Streamlit header */
         header[data-testid="stHeader"] {
             display: none;
         }
@@ -1927,26 +1739,6 @@ def toon_speler_view(nbb_nummer: str):
         section[data-testid="stSidebar"] {
             background-color: #f8f9fa !important;
             border-right: 3px solid #003082 !important;
-        }
-        
-        /* ============================================ */
-        /* MOBIELE OPTIMALISATIES                      */
-        /* ============================================ */
-        
-        @media (max-width: 768px) {
-            /* Metrics compacter op mobiel */
-            [data-testid="stMetricValue"] {
-                font-size: 1.2rem !important;
-            }
-            
-            [data-testid="stMetricLabel"] {
-                font-size: 0.7rem !important;
-            }
-            
-            /* Expanders volle breedte */
-            .streamlit-expanderHeader {
-                font-size: 0.9rem !important;
-            }
         }
         
         section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3 {
@@ -2059,209 +1851,76 @@ def toon_speler_view(nbb_nummer: str):
     
     # Sidebar met legenda
     with st.sidebar:
-        # ============================================================
-        # KLASSEMENT (NIET SAMENGEVOUWEN)
-        # ============================================================
-        st.markdown("### 🏆 Klassement")
-        punten_klassement = get_punten_klassement_met_positie(nbb_nummer)
+        st.markdown("### 📋 Legenda")
         
-        if punten_klassement["top3"]:
-            medailles = ["🥇", "🥈", "🥉"]
-            eigen_in_top3 = False
-            
-            for i, scheids_info in enumerate(punten_klassement["top3"]):
-                is_eigen = scheids_info["nbb"] == nbb_nummer
-                if is_eigen:
-                    eigen_in_top3 = True
-                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt 👈")
-                else:
-                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt")
-            
-            # Toon eigen positie als niet in top 3
-            if not eigen_in_top3 and punten_klassement["eigen"]:
-                eigen = punten_klassement["eigen"]
-                st.caption("...")
-                st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']} pt 👈")
-        else:
-            st.caption("*Nog geen punten verdiend*")
-        
-        # ============================================================
-        # TOP BEGELEIDERS (NIET SAMENGEVOUWEN)
-        # ============================================================
-        st.markdown("### 🎓 Top Begeleiders")
-        beg_klassement = get_begeleiders_klassement_met_positie(nbb_nummer)
-        
-        if beg_klassement["top3"]:
-            medailles = ["🥇", "🥈", "🥉"]
-            eigen_in_top3 = False
-            
-            for i, begeleider in enumerate(beg_klassement["top3"]):
-                is_eigen = begeleider["nbb"] == nbb_nummer
-                if is_eigen:
-                    eigen_in_top3 = True
-                    st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x 👈")
-                else:
-                    st.markdown(f"{medailles[i]} **{begeleider['naam']}** - {begeleider['begeleidingen']}x")
-            
-            # Toon eigen positie als niet in top 3
-            if not eigen_in_top3 and beg_klassement["eigen"]:
-                eigen = beg_klassement["eigen"]
-                st.caption("...")
-                st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['begeleidingen']}x 👈")
-        else:
-            st.caption("*Nog geen begeleidingen*")
+        # Niveau uitleg
+        st.markdown("**Niveaus**")
+        niveaus = instellingen.get("niveaus", {})
+        for niveau in sorted(niveaus.keys(), key=int):
+            omschrijving = niveaus[niveau]
+            st.markdown(f"**{niveau}** - {omschrijving}")
         
         st.divider()
         
-        # ============================================================
-        # JOUW GEGEVENS (SAMENGEVOUWEN)
-        # ============================================================
+        # Kleuren uitleg
+        st.markdown("**Kleuren**")
+        st.markdown("""
+        <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            ⭐ <strong>Jouw niveau</strong>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            🏀 Onder jouw niveau
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 0.5rem; margin: 0.25rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.85rem;">
+            🏠🚗 Eigen wedstrijd
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # Iconen uitleg
+        st.markdown("**Symbolen**")
+        st.markdown("🙋 Jij bent ingeschreven")
+        st.markdown("👤 Iemand anders")
+        st.markdown("📋 Beschikbaar")
+        st.markdown("🎓 Begeleider (MSE)")
+        if is_mse:
+            st.markdown("👤🎓 Wil begeleiding ontvangen")
+        
+        st.divider()
+        
+        # Jouw gegevens
+        st.markdown("**Jouw gegevens**")
         eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+        st.markdown(f"1e scheids niveau: **{eigen_niveau}**")
         max_niveau_2e = min(eigen_niveau + 1, 5)
+        st.markdown(f"2e scheids niveau: **{max_niveau_2e}**")
+        if scheids.get("bs2_diploma", False):
+            st.markdown("✅ BS2 diploma")
+        eigen_teams = scheids.get("eigen_teams", [])
+        if eigen_teams:
+            st.markdown(f"Teams: {', '.join(eigen_teams)}")
         
-        with st.expander("👤 Jouw gegevens"):
-            st.markdown(f"**1e scheids niveau:** {eigen_niveau}")
-            st.markdown(f"**2e scheids niveau:** {max_niveau_2e}")
-            if scheids.get("bs2_diploma", False):
-                st.markdown("✅ BS2 diploma")
-            eigen_teams = scheids.get("eigen_teams", [])
-            if eigen_teams:
-                st.markdown(f"**Teams:** {', '.join(eigen_teams)}")
-            if scheids.get("open_voor_begeleiding", False):
-                st.markdown("🎓 Open voor begeleiding")
-            
-            st.divider()
-            st.caption("**Niveau regels:**")
-            st.markdown(f"""
-            - 1e scheids: max niveau **{eigen_niveau}**
-            - 2e scheids: max niveau **{max_niveau_2e}**
-            - *Met MSE als 1e: **geen limiet** 🎓*
-            - BS2 wedstrijden: alleen met diploma
-            """)
+        # Begeleidingsstatus
+        if scheids.get("open_voor_begeleiding", False):
+            st.markdown("🎓 Open voor begeleiding")
         
-        # ============================================================
-        # PUNTEN & STRIKES (SAMENGEVOUWEN)
-        # ============================================================
-        beloningsinst = laad_beloningsinstellingen()
-        
-        with st.expander("🏆 Punten & Strikes"):
-            st.markdown("**Punten verdienen:**")
-            st.markdown(f"""
-            | Actie | Punten |
-            |-------|--------|
-            | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
-            | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
-            | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
-            | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
-            
-            *Lastig = apart terugkomen om te fluiten  
-            **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
-            """)
-            
-            st.divider()
-            
-            st.markdown("**Strikes:**")
-            strikes_vervallen_tekst = "*Vervallen einde seizoen*" if beloningsinst['strikes_vervallen_einde_seizoen'] else ""
-            st.markdown(f"""
-            | Situatie | Strikes |
-            |----------|---------|
-            | Afmelding <48u | {beloningsinst['strikes_afmelding_48u']} |
-            | Afmelding <24u | {beloningsinst['strikes_afmelding_24u']} |
-            | No-show | {beloningsinst['strikes_no_show']} |
-            
-            **Met vervanging** = geen strike!
-            
-            ⚠️ {beloningsinst['strikes_waarschuwing_bij']} strikes = Let op!  
-            ❌ {beloningsinst['strikes_gesprek_bij']} strikes = Gesprek TC
-            
-            **Wegwerken:** Klusje (-1), Extra wedstrijd (-{beloningsinst['strike_reductie_extra_wedstrijd']}), Invallen <48u (-{beloningsinst['strike_reductie_invallen']})
-            
-            {strikes_vervallen_tekst}
-            """)
-        
-        # ============================================================
-        # JOUW HISTORIE (SAMENGEVOUWEN - alleen als er data is)
-        # ============================================================
-        if speler_stats["punten"] > 0 or speler_stats["strikes"] > 0:
-            with st.expander(f"📊 Jouw historie ({speler_stats['punten']} pt, {speler_stats['strikes']} strikes)"):
-                # Combineer wedstrijd punten en handmatige aanpassingen
-                heeft_punten_historie = speler_stats["gefloten_wedstrijden"] or speler_stats.get("punten_log", [])
-                
-                if heeft_punten_historie:
-                    st.markdown("**🏆 Punten:**")
-                    # Wedstrijd punten
-                    for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
-                        berekening = wed_reg.get("berekening", {})
-                        if berekening:
-                            st.caption(f"+{wed_reg['punten']} op {berekening.get('inschrijf_moment_leesbaar', '?')}")
-                        else:
-                            st.caption(f"+{wed_reg['punten']} - {wed_reg.get('reden', '')}")
-                    
-                    # Handmatige aanpassingen
-                    for entry in reversed(speler_stats.get("punten_log", [])[-3:]):
-                        teken = "+" if entry["punten"] > 0 else ""
-                        st.caption(f"{teken}{entry['punten']} - {entry['reden']}")
-                
-                if speler_stats["strike_log"]:
-                    st.divider()
-                    st.markdown("**⚠️ Strikes:**")
-                    for strike in reversed(speler_stats["strike_log"][-5:]):
-                        teken = "+" if strike["strikes"] > 0 else ""
-                        st.caption(f"{teken}{strike['strikes']} - {strike['reden']}")
-        
-        # ============================================================
-        # LEGENDA (SAMENGEVOUWEN)
-        # ============================================================
-        with st.expander("📋 Legenda"):
-            # Niveau uitleg
-            st.markdown("**Niveaus:**")
-            niveaus = instellingen.get("niveaus", {})
-            for niveau in sorted(niveaus.keys(), key=int):
-                omschrijving = niveaus[niveau]
-                st.caption(f"**{niveau}** - {omschrijving}")
-            
-            st.divider()
-            
-            # Kleuren uitleg
-            st.markdown("**Kleuren:**")
-            st.markdown("""
-            <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
-                ⭐ Jouw niveau
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("""
-            <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
-                🏀 Onder jouw niveau
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("""
-            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 0.3rem; margin: 0.15rem 0; border-radius: 0 0.25rem 0.25rem 0; font-size: 0.75rem;">
-                🏠🚗 Eigen wedstrijd
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.divider()
-            
-            # Symbolen uitleg
-            st.markdown("**Symbolen:**")
-            st.caption("🙋 Jij bent ingeschreven")
-            st.caption("👤 Iemand anders")
-            st.caption("📋 Beschikbaar")
-            st.caption("🎓 Begeleider (MSE)")
-            if is_mse:
-                st.caption("👤🎓 Wil begeleiding ontvangen")
-        
-        # ============================================================
-        # MIJN FEEDBACK (SAMENGEVOUWEN - alleen als er data is)
-        # ============================================================
+        # Mijn gegeven feedback (voor wijzigen)
+        # Alleen feedback die ik als scheidsrechter heb gegeven, niet "begeleider_gezien" records
         feedback_data = laad_begeleiding_feedback()
         mijn_feedback = [fb for fb_id, fb in feedback_data.items() 
                          if fb.get("speler_nbb") == nbb_nummer 
                          and fb.get("status") != "begeleider_gezien"
-                         and fb.get("begeleider_nbb") != nbb_nummer]
+                         and fb.get("begeleider_nbb") != nbb_nummer]  # Niet waar ik zelf begeleider was
         
         if mijn_feedback:
-            with st.expander(f"📝 Mijn feedback ({len(mijn_feedback)})"):
+            st.divider()
+            st.markdown("**📋 Mijn feedback**")
+            with st.expander(f"Gegeven feedback ({len(mijn_feedback)})", expanded=False):
                 for fb in sorted(mijn_feedback, key=lambda x: x.get("feedback_datum", ""), reverse=True)[:5]:
                     wed = wedstrijden.get(fb.get("wed_id"), {})
                     if not wed:
@@ -2280,9 +1939,11 @@ def toon_speler_view(nbb_nummer: str):
                     
                     # Wijzig knop (alleen voor echte feedback, niet voor bevestigingen)
                     if fb.get("status") != "bevestigd":
+                        # Check of de andere scheidsrechter al bevestigd heeft
                         wed_id = fb.get("wed_id")
-                        mijn_nbb = fb.get("speler_nbb")
+                        mijn_nbb = fb.get("speler_nbb")  # Gebruik speler_nbb uit feedback, niet nbb_nummer
                         
+                        # Bepaal wie de andere scheidsrechter is
                         scheids_1_nbb = wed.get("scheids_1")
                         scheids_2_nbb = wed.get("scheids_2")
                         
@@ -2301,209 +1962,124 @@ def toon_speler_view(nbb_nummer: str):
                                 andere_bevestigd = True
                         
                         if andere_bevestigd:
-                            st.caption("*Collega heeft bevestigd*")
+                            st.caption("*Collega heeft bevestigd - wijzigen via TC*")
                         else:
                             if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
                                 verwijder_begeleiding_feedback(fb.get("feedback_id"))
                                 st.rerun()
         
-        # ============================================================
-        # APPARATEN (SAMENGEVOUWEN)
-        # ============================================================
-        device_count = db.get_device_count(nbb_nummer)
-        pending_devices = db.get_pending_devices(nbb_nummer)
+        st.divider()
         
-        apparaat_label = f"📱 Apparaten ({device_count})"
-        if pending_devices:
-            apparaat_label += f" ⏳{len(pending_devices)}"
+        # Niveau regels
+        st.markdown("**📐 Niveau regels**")
+        st.markdown(f"""
+        - 1e scheids: max niveau **{eigen_niveau}**
+        - 2e scheids: max niveau **{max_niveau_2e}**
+        - *Met MSE als 1e: **geen limiet** 🎓*
+        - BS2 wedstrijden: alleen met diploma
+        """)
         
-        with st.expander(apparaat_label):
-            # Pending approvals
-            if pending_devices:
-                st.warning(f"⏳ {len(pending_devices)} wacht op goedkeuring!")
-                for device in pending_devices:
-                    device_name = device.get("device_name", "Onbekend")
-                    created = db.format_datetime(device.get("created_at", ""))
-                    
-                    st.markdown(f"**{device_name}**")
-                    st.caption(f"Aangevraagd: {created}")
-                    
-                    col_approve, col_reject = st.columns(2)
-                    with col_approve:
-                        if st.button("✅", key=f"approve_{device['id']}", use_container_width=True, help="Goedkeuren"):
-                            if db.approve_device(device["id"], nbb_nummer):
-                                st.success("Goedgekeurd!")
-                                st.rerun()
-                    with col_reject:
-                        if st.button("❌", key=f"reject_{device['id']}", use_container_width=True, help="Weigeren"):
-                            if db.reject_device(device["id"], nbb_nummer):
-                                st.success("Geweigerd!")
-                                st.rerun()
-                    st.divider()
-            
-            # Gekoppelde apparaten
-            devices = db.get_devices(nbb_nummer)
-            approved_devices = [d for d in devices if d.get("approved", True)]
-            
-            if approved_devices:
-                st.caption("**Gekoppeld:**")
-                for device in approved_devices:
-                    col_info, col_btn = st.columns([4, 1])
-                    with col_info:
-                        device_name = device.get("device_name", "Onbekend")
-                        fingerprint = device.get("fingerprint", "")[:6] if device.get("fingerprint") else ""
-                        st.caption(f"{device_name} ({fingerprint})")
-                    with col_btn:
-                        if st.button("🗑️", key=f"del_device_{device['id']}", help="Verwijder"):
-                            if db.remove_device(device["id"], nbb_nummer):
-                                st.rerun()
-            
+        st.divider()
+        
+        # Puntensysteem uitleg - dynamisch uit instellingen
+        beloningsinst = laad_beloningsinstellingen()
+        
+        st.markdown("### 🏆 Punten verdienen")
+        st.markdown(f"""
+        Wedstrijden **boven je minimum** leveren punten op:
+        
+        | Actie | Punten |
+        |-------|--------|
+        | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
+        | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
+        | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
+        | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
+        
+        *Lastig = apart terugkomen om te fluiten
+        
+        **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
+        """)
+        
+        st.divider()
+        
+        # Strikes uitleg - dynamisch
+        st.markdown("### ⚠️ Strikes")
+        strikes_vervallen_tekst = "*Strikes vervallen aan einde seizoen.*" if beloningsinst['strikes_vervallen_einde_seizoen'] else ""
+        st.markdown(f"""
+        | Situatie | Strikes |
+        |----------|---------|
+        | Afmelding <48u | {beloningsinst['strikes_afmelding_48u']} |
+        | Afmelding <24u | {beloningsinst['strikes_afmelding_24u']} |
+        | No-show | {beloningsinst['strikes_no_show']} |
+        
+        **Met vervanging** = geen strike!
+        
+        ⚠️ {beloningsinst['strikes_waarschuwing_bij']} strikes = Let op!  
+        ❌ {beloningsinst['strikes_gesprek_bij']} strikes = Gesprek TC
+        
+        Strikes wegwerken:
+        - Klusje doen (-1)
+        - Extra wedstrijd (-{beloningsinst['strike_reductie_extra_wedstrijd']})
+        - Invallen <48u (-{beloningsinst['strike_reductie_invallen']})
+        
+        {strikes_vervallen_tekst}
+        """)
+        
+        # Toon eigen puntenhistorie als er punten zijn
+        if speler_stats["punten"] > 0 or speler_stats["strikes"] > 0:
             st.divider()
+            st.markdown("### 📊 Jouw historie")
             
-            # Instellingen (compact)
-            st.caption("**Instellingen:**")
-            settings = db.get_speler_device_settings(nbb_nummer)
+            # Combineer wedstrijd punten en handmatige aanpassingen
+            heeft_punten_historie = speler_stats["gefloten_wedstrijden"] or speler_stats.get("punten_log", [])
             
-            current_max = settings.get("max_devices")
-            max_options = {"Geen limiet": None, "1": 1, "2": 2, "3": 3, "5": 5}
-            current_label = next((k for k, v in max_options.items() if v == current_max), "Geen limiet")
+            if heeft_punten_historie:
+                with st.expander(f"🏆 Punten ({speler_stats['punten']} totaal)"):
+                    # Wedstrijd punten
+                    for wed_reg in reversed(speler_stats["gefloten_wedstrijden"][-5:]):
+                        berekening = wed_reg.get("berekening", {})
+                        if berekening:
+                            st.markdown(f"""
+                            **+{wed_reg['punten']}** op {berekening.get('inschrijf_moment_leesbaar', '?')}  
+                            *{berekening.get('uren_tot_wedstrijd', '?')}u tot wedstrijd*
+                            """)
+                        else:
+                            st.markdown(f"**+{wed_reg['punten']}** - {wed_reg.get('reden', '')}")
+                    
+                    # Handmatige aanpassingen
+                    for entry in reversed(speler_stats.get("punten_log", [])[-3:]):
+                        teken = "+" if entry["punten"] > 0 else ""
+                        st.markdown(f"**{teken}{entry['punten']}** - {entry['reden']}")
             
-            new_max_label = st.selectbox(
-                "Max apparaten",
-                options=list(max_options.keys()),
-                index=list(max_options.keys()).index(current_label),
-                key="device_max_select",
-                label_visibility="collapsed"
-            )
-            new_max = max_options[new_max_label]
-            
-            require_approval = st.checkbox(
-                "Goedkeuring vereist",
-                value=settings.get("require_approval", False),
-                key="device_require_approval"
-            )
-            
-            if st.button("💾 Opslaan", key="save_device_settings", use_container_width=True):
-                if db.save_speler_device_settings(nbb_nummer, new_max, require_approval):
-                    st.success("Opgeslagen!")
-                    st.rerun()
+            if speler_stats["strike_log"]:
+                with st.expander(f"⚠️ Strikes ({speler_stats['strikes']} actief)"):
+                    for strike in reversed(speler_stats["strike_log"][-5:]):
+                        teken = "+" if strike["strikes"] > 0 else ""
+                        st.markdown(f"**{teken}{strike['strikes']}** - {strike['reden']}")
         
-        # ============================================================
-        # FOOTER
-        # ============================================================
+        # Versie info onderaan sidebar
         st.divider()
         st.caption(f"Ref Planner v{APP_VERSIE}")
-        
-        # Netwerk info (samengevouwen)
-        ip_info = db.get_ip_info()
-        with st.expander("🌍 Netwerk"):
-            st.caption(f"IP: {ip_info['ip']}")
-            st.caption(f"Land: {ip_info['country']}")
-            if ip_info['allowed']:
-                st.caption("✅ Toegang OK")
-            else:
-                st.caption("❌ Geblokkeerd")
     
     # ============================================================
     # COMPACTE HEADER
     # ============================================================
     
-    # Logo's en titel - responsive via CSS
+    # Logo's en titel
     logo_path = Path(__file__).parent / "logo.png"
     bob_logo_path = Path(__file__).parent / "bob-logo.svg"
     
-    # Lees logo's als base64 voor HTML embedding
-    import base64
-    logo_b64 = ""
-    bob_logo_b64 = ""
+    col_logo_left, col_title, col_logo_right = st.columns([1, 3, 1])
+    with col_logo_left:
+        if logo_path.exists():
+            st.image(str(logo_path), width=90)
+    with col_title:
+        st.markdown(f"### 🏀 Welkom, {scheids['naam']}")
+    with col_logo_right:
+        if bob_logo_path.exists():
+            st.image(str(bob_logo_path), width=90)
     
-    if logo_path.exists():
-        with open(logo_path, "rb") as f:
-            logo_b64 = base64.b64encode(f.read()).decode()
-    
-    if bob_logo_path.exists():
-        with open(bob_logo_path, "rb") as f:
-            bob_logo_b64 = base64.b64encode(f.read()).decode()
-    
-    # Responsive header met CSS
-    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="header-logo" alt="Logo">' if logo_b64 else ""
-    bob_html = f'<img src="data:image/svg+xml;base64,{bob_logo_b64}" class="header-logo" alt="BOB Logo">' if bob_logo_b64 else ""
-    
-    st.markdown(f"""
-    <style>
-        /* Desktop header: logo - titel - logo */
-        .desktop-header {{
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            margin-bottom: 0.5rem;
-        }}
-        .header-logo {{
-            width: 80px;
-            height: auto;
-        }}
-        .header-title {{
-            flex: 1;
-            text-align: center;
-            font-size: 1.3rem;
-            font-weight: bold;
-            margin: 0;
-        }}
-        
-        /* Mobiele header: logo's naast elkaar, titel eronder */
-        .mobile-header {{
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }}
-        .mobile-logos {{
-            display: flex;
-            gap: 2rem;
-            justify-content: center;
-            margin-bottom: 0.3rem;
-        }}
-        .mobile-header .header-logo {{
-            width: 60px;
-        }}
-        .mobile-title {{
-            font-size: 1.1rem;
-            font-weight: bold;
-            text-align: center;
-            margin: 0;
-        }}
-        
-        /* Switch tussen desktop en mobiel */
-        @media (max-width: 768px) {{
-            .desktop-header {{
-                display: none !important;
-            }}
-            .mobile-header {{
-                display: flex !important;
-            }}
-        }}
-    </style>
-    
-    <!-- Desktop header -->
-    <div class="desktop-header">
-        {logo_html}
-        <p class="header-title">🏀 Welkom, {scheids['naam']}</p>
-        {bob_html}
-    </div>
-    
-    <!-- Mobiele header -->
-    <div class="mobile-header">
-        <div class="mobile-logos">
-            {logo_html}
-            {bob_html}
-        </div>
-        <p class="mobile-title">🏀 Welkom, {scheids['naam']}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Status metrics in compacte rij - korte labels voor mobiel
+    # Status metrics in compacte rij
     niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb_nummer)
     huidig_aantal = niveau_stats["totaal"]
     op_niveau = niveau_stats["op_niveau"]
@@ -2512,72 +2088,22 @@ def toon_speler_view(nbb_nummer: str):
     beloningsinst = laad_beloningsinstellingen()
     strikes = speler_stats["strikes"]
     
-    # Custom CSS voor responsive layout
-    st.markdown("""
-    <style>
-        /* ============================================ */
-        /* METRICS: altijd naast elkaar, ook op mobiel */
-        /* ============================================ */
-        @media (max-width: 768px) {
-            /* Target alleen rijen die metrics bevatten */
-            [data-testid="stHorizontalBlock"]:has([data-testid="stMetricValue"]) {
-                flex-wrap: nowrap !important;
-                gap: 0.2rem !important;
-            }
-            
-            [data-testid="stHorizontalBlock"]:has([data-testid="stMetricValue"]) > div {
-                flex: 1 1 0 !important;
-                min-width: 0 !important;
-                width: auto !important;
-            }
-            
-            /* Metric waarde kleiner */
-            [data-testid="stMetricValue"] {
-                font-size: 1.1rem !important;
-            }
-            
-            /* Metric label kleiner */
-            [data-testid="stMetricLabel"] {
-                font-size: 0.6rem !important;
-            }
-            
-            /* Metric delta kleiner */
-            [data-testid="stMetricDelta"] {
-                font-size: 0.55rem !important;
-            }
-            
-            /* ============================================ */
-            /* FILTERS: onder elkaar op mobiel             */
-            /* ============================================ */
-            /* Target rijen die toggles bevatten */
-            [data-testid="stHorizontalBlock"]:has([data-testid="stToggle"]) {
-                flex-wrap: wrap !important;
-            }
-            
-            [data-testid="stHorizontalBlock"]:has([data-testid="stToggle"]) > div {
-                flex: 0 0 100% !important;
-                max-width: 100% !important;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Totaal", huidig_aantal)
     with col2:
-        st.metric(f"Niv{eigen_niveau}+", op_niveau)
+        st.metric(f"Niveau {eigen_niveau}+", op_niveau)
     with col3:
-        st.metric("Min", min_wed)
+        st.metric("Minimum", min_wed)
     with col4:
-        st.metric("🏆", speler_stats["punten"])
+        st.metric("🏆 Punten", speler_stats["punten"])
     with col5:
         if strikes >= beloningsinst["strikes_gesprek_bij"]:
-            st.metric("⚠️", strikes, delta="!", delta_color="inverse")
+            st.metric("⚠️ Strikes", strikes, delta="Gesprek", delta_color="inverse")
         elif strikes >= beloningsinst["strikes_waarschuwing_bij"]:
-            st.metric("⚠️", strikes, delta="!", delta_color="inverse")
+            st.metric("⚠️ Strikes", strikes, delta="Let op", delta_color="inverse")
         else:
-            st.metric("⚠️", strikes)
+            st.metric("Strikes", strikes)
     
     # Gebogen oranje lijn onder metrics (zelfde styling als blauwe border-top, 180° geroteerd)
     st.markdown("""
@@ -2590,87 +2116,91 @@ def toon_speler_view(nbb_nummer: str):
     "></div>
     """, unsafe_allow_html=True)
     
-    # Mobiele info sectie (compacte versie van sidebar content)
-    # Deze expanders zijn handig op mobiel waar de sidebar verborgen is
-    with st.expander("🏆 Klassement & Info", expanded=False):
-        col_klas1, col_klas2 = st.columns(2)
-        
-        with col_klas1:
-            st.markdown("**🏆 Punten**")
-            punten_klas = get_punten_klassement_met_positie(nbb_nummer)
-            if punten_klas["top3"]:
-                medailles = ["🥇", "🥈", "🥉"]
-                for i, s in enumerate(punten_klas["top3"]):
-                    marker = " 👈" if s["nbb"] == nbb_nummer else ""
-                    st.caption(f"{medailles[i]} {s['naam']} - {s['punten']}pt{marker}")
-                
-                if punten_klas["eigen"] and punten_klas["eigen"]["nbb"] != nbb_nummer:
-                    eigen = punten_klas["eigen"]
-                    in_top3 = any(s["nbb"] == nbb_nummer for s in punten_klas["top3"])
-                    if not in_top3:
-                        st.caption(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']}pt 👈")
-            else:
-                st.caption("*Nog geen punten*")
-        
-        with col_klas2:
-            st.markdown("**🎓 Begeleiders**")
-            beg_klas = get_begeleiders_klassement_met_positie(nbb_nummer)
-            if beg_klas["top3"]:
-                medailles = ["🥇", "🥈", "🥉"]
-                for i, b in enumerate(beg_klas["top3"]):
-                    marker = " 👈" if b["nbb"] == nbb_nummer else ""
-                    st.caption(f"{medailles[i]} {b['naam']} - {b['begeleidingen']}x{marker}")
-                
-                if beg_klas["eigen"] and beg_klas["eigen"]["nbb"] != nbb_nummer:
-                    eigen = beg_klas["eigen"]
-                    in_top3 = any(b["nbb"] == nbb_nummer for b in beg_klas["top3"])
-                    if not in_top3:
-                        st.caption(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['begeleidingen']}x 👈")
-            else:
-                st.caption("*Nog geen begeleidingen*")
-        
-        st.divider()
-        
-        # Jouw gegevens compact
-        col_info1, col_info2 = st.columns(2)
-        with col_info1:
-            st.markdown("**👤 Jouw gegevens**")
-            st.caption(f"1e scheids: niveau {eigen_niveau}")
-            st.caption(f"2e scheids: niveau {min(eigen_niveau + 1, 5)}")
-            if scheids.get("bs2_diploma"):
-                st.caption("✅ BS2 diploma")
-        with col_info2:
-            st.markdown("**📐 Regels**")
-            st.caption(f"Max 1e: niveau {eigen_niveau}")
-            st.caption(f"Max 2e: niveau {min(eigen_niveau + 1, 5)}")
-            st.caption("Met MSE: geen limiet 🎓")
-        
-        st.divider()
-        
-        # Punten systeem compact
-        st.markdown("**🏆 Punten verdienen**")
-        beloningsinst_mob = laad_beloningsinstellingen()
-        st.caption(f"Wedstrijd: {beloningsinst_mob['punten_per_wedstrijd']}pt | Lastig tijdstip: +{beloningsinst_mob['punten_lastig_tijdstip']}pt")
-        st.caption(f"Invallen <48u: +{beloningsinst_mob['punten_inval_48u']}pt | <24u: +{beloningsinst_mob['punten_inval_24u']}pt")
-        st.caption(f"**{beloningsinst_mob['punten_voor_voucher']} punten = voucher Clinic!**")
-        
-        st.divider()
-        
-        # Symbolen legenda
-        st.markdown("**📋 Symbolen**")
-        st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
+    # ============================================================
+    # KLASSEMENT (compact, altijd zichtbaar)
+    # ============================================================
+    top_scheids = get_top_scheidsrechters(3)
+    top_begeleiders = get_top_begeleiders(3)
+    mijn_ranking = get_speler_ranking(nbb_nummer)
+    
+    # Klassement in compacte horizontale weergave
+    st.markdown("""
+    <style>
+    .klassement-container {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        margin: 0.3rem 0;
+    }
+    .klassement-header {
+        font-size: 0.85rem;
+        font-weight: bold;
+        color: #003082;
+        margin-bottom: 0.3rem;
+    }
+    .klassement-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.8rem;
+    }
+    .klassement-item {
+        white-space: nowrap;
+    }
+    .mijn-positie {
+        background: #FF6600;
+        color: white;
+        padding: 0.1rem 0.4rem;
+        border-radius: 0.3rem;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    col_klas1, col_klas2 = st.columns(2)
+    
+    with col_klas1:
+        st.markdown("**🏆 Punten**")
+        if top_scheids:
+            medailles = ["🥇", "🥈", "🥉"]
+            items = []
+            for i, s in enumerate(top_scheids):
+                if s["nbb"] == nbb_nummer:
+                    items.append(f'{medailles[i]} <span class="mijn-positie">{s["naam"]}</span> ({s["punten"]})')
+                else:
+                    items.append(f'{medailles[i]} {s["naam"]} ({s["punten"]})')
+            
+            # Als ik niet in top 3 zit, toon mijn positie
+            if mijn_ranking["positie"] and mijn_ranking["positie"] > 3:
+                items.append(f'··· <span class="mijn-positie">#{mijn_ranking["positie"]} Jij ({mijn_ranking["punten"]})</span>')
+            
+            st.markdown(" · ".join(items), unsafe_allow_html=True)
+        else:
+            st.caption("*Nog geen punten*")
+    
+    with col_klas2:
+        st.markdown("**🎓 Begeleiders**")
+        if top_begeleiders:
+            medailles = ["🥇", "🥈", "🥉"]
+            items = []
+            for i, b in enumerate(top_begeleiders):
+                if b["nbb"] == nbb_nummer:
+                    items.append(f'{medailles[i]} <span class="mijn-positie">{b["naam"]}</span> ({b["begeleidingen"]}x)')
+                else:
+                    items.append(f'{medailles[i]} {b["naam"]} ({b["begeleidingen"]}x)')
+            st.markdown(" · ".join(items), unsafe_allow_html=True)
+        else:
+            st.caption("*Nog geen begeleidingen*")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     dagen_over = (deadline - datetime.now()).days
-    maand_namen_vol = ["", "januari", "februari", "maart", "april", "mei", "juni", 
-                       "juli", "augustus", "september", "oktober", "november", "december"]
-    # Bepaal voor welke maand de inschrijving is (originele logica)
+    maand_namen = ["", "jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
     if deadline.day <= 15:
-        inschrijf_maand = maand_namen_vol[deadline.month]
+        info_maand = maand_namen[deadline.month]
     else:
-        inschrijf_maand = maand_namen_vol[1 if deadline.month == 12 else deadline.month + 1]
+        info_maand = maand_namen[1 if deadline.month == 12 else deadline.month + 1]
     
     col_status, col_deadline = st.columns(2)
     with col_status:
@@ -2683,7 +2213,7 @@ def toon_speler_view(nbb_nummer: str):
             st.info(f"📅 Inschrijfperiode gesloten")
             kan_inschrijven = False
         else:
-            st.info(f"📅 Deadline **{dagen_over}** dagen voor inschrijving {inschrijf_maand}")
+            st.info(f"📅 Nog **{dagen_over}** dagen voor {info_maand} (tot {deadline.strftime('%d-%m')})")
             kan_inschrijven = True
     
     # Begeleiding status (compact)
@@ -3069,10 +2599,11 @@ def toon_speler_view(nbb_nummer: str):
     maand_namen_lang = ["", "januari", "februari", "maart", "april", "mei", "juni", 
                         "juli", "augustus", "september", "oktober", "november", "december"]
     
-    # Tel ingeschreven wedstrijden (alle, inclusief verleden)
+    # Tel ingeschreven wedstrijden (toekomstige)
     nu = datetime.now()
     aantal_ingeschreven = sum(1 for wed in wedstrijden.values() 
-                              if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer))
+                              if (wed.get("scheids_1") == nbb_nummer or wed.get("scheids_2") == nbb_nummer)
+                              and datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M") > nu)
     
     # Tel eigen wedstrijden (thuis + uit) in doelmaand
     eigen_teams = scheids.get("eigen_teams", [])
@@ -3163,7 +2694,7 @@ def toon_speler_view(nbb_nummer: str):
         else:
             aantal_buiten_maand += 1
     
-    # Filter toggles (op mobiel onder elkaar via CSS :has selector)
+    # Filter toggles in compacte rij
     st.markdown("**Filters:**")
     col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
     
@@ -3217,8 +2748,8 @@ def toon_speler_view(nbb_nummer: str):
                 
                     if heeft_openstaand_verzoek:
                         st.warning("⏳ Wacht op bevestiging van vervanger...")
-                    elif kan_inschrijven and wed_datum > datetime.now():
-                        # Afmelden met expander voor opties (alleen voor toekomstige wedstrijden)
+                    elif kan_inschrijven:
+                        # Afmelden met expander voor opties
                         with st.expander("❌ Afmelden"):
                             st.write("**Hoe wil je afmelden?**")
                         
@@ -3540,8 +3071,7 @@ def toon_speler_view(nbb_nummer: str):
                             with col_1e:
                                 if status_1e["ingeschreven_zelf"]:
                                     st.markdown(f"🙋 **1e scheids:** Jij")
-                                    # Alleen afmelden tonen voor toekomstige wedstrijden
-                                    if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                    if st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_1"] = None
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
@@ -3648,8 +3178,7 @@ def toon_speler_view(nbb_nummer: str):
                             with col_2e:
                                 if status_2e["ingeschreven_zelf"]:
                                     st.markdown(f"🙋 **2e scheids:** Jij")
-                                    # Alleen afmelden tonen voor toekomstige wedstrijden
-                                    if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                    if st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_2"] = None
                                         sla_wedstrijden_op(wedstrijden)
                                         st.rerun()
@@ -3769,8 +3298,7 @@ def toon_speler_view(nbb_nummer: str):
                                         with col_beg_info:
                                             st.markdown(f"🎓 **Begeleider:** Jij")
                                         with col_beg_afmeld:
-                                            # Alleen afmelden tonen voor toekomstige wedstrijden
-                                            if item_datum > datetime.now() and st.button("❌", key=f"afmeld_beg_{wed['id']}", help="Afmelden als begeleider"):
+                                            if st.button("❌", key=f"afmeld_beg_{wed['id']}", help="Afmelden als begeleider"):
                                                 wedstrijden[wed["id"]]["begeleider"] = None
                                                 sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                                 st.rerun()
@@ -3827,19 +3355,6 @@ def toon_speler_view(nbb_nummer: str):
 
 def toon_beheerder_view():
     """Toon het beheerderspaneel."""
-    # IP info in sidebar
-    with st.sidebar:
-        st.markdown("### 🔧 Beheerder")
-        ip_info = db.get_ip_info()
-        with st.expander("🌍 Netwerk info"):
-            st.write(f"**Publiek IP:** {ip_info['ip']}")
-            st.write(f"**Land:** {ip_info['country']}")
-            st.write(f"**Header:** {ip_info.get('used_header', '?')}")
-            if ip_info['allowed']:
-                st.success("✅ Toegang OK")
-            else:
-                st.error("❌ Geblokkeerd")
-    
     # Header met logo en refresh knop
     logo_path = Path(__file__).parent / "logo.png"
     if logo_path.exists():
@@ -3906,31 +3421,16 @@ def toon_beheerder_view():
         else:
             st.metric("Compleet", "-")
     
-    # Beheerder opties in sidebar
-    with st.sidebar:
-        st.divider()
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔓 Uitloggen", use_container_width=True):
-                st.session_state.beheerder_ingelogd = False
-                st.rerun()
-        with col2:
-            if st.button("🔑 Wachtwoord", use_container_width=True, help="Wachtwoord wijzigen"):
-                st.session_state.moet_wachtwoord_wijzigen = True
-                st.rerun()
-    
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
         "📈 Capaciteit",
         "🏆 Beloningen",
-        "📊 Analyse",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
-        "📊 Import/Export",
-        "🔐 Apparaten"
+        "📊 Import/Export"
     ])
     
     with tab1:
@@ -3946,381 +3446,13 @@ def toon_beheerder_view():
         toon_beloningen_beheer()
     
     with tab5:
-        toon_analyse_dashboard()
-    
-    with tab6:
         toon_weekend_overzicht()
     
-    with tab7:
+    with tab6:
         toon_instellingen_beheer()
     
-    with tab8:
+    with tab7:
         toon_import_export()
-    
-    with tab9:
-        toon_apparaten_beheer()
-
-def toon_analyse_dashboard():
-    """Dashboard voor analyse van fluitgedrag en minimum bepaling."""
-    st.subheader("📊 Analyse Dashboard")
-    st.caption("Inzicht in fluitgedrag voor het bepalen van minimums")
-    
-    scheidsrechters = laad_scheidsrechters()
-    wedstrijden = laad_wedstrijden()
-    beloningen = laad_beloningen()
-    nu = datetime.now()
-    
-    # Tel gefloten wedstrijden per scheidsrechter
-    gefloten_data = {}
-    for nbb in scheidsrechters.keys():
-        gefloten_data[nbb] = {
-            "totaal": 0,
-            "als_1e": 0,
-            "als_2e": 0,
-            "op_niveau": 0,
-            "onder_niveau": 0,
-            "boven_niveau": 0
-        }
-    
-    for wed_id, wed in wedstrijden.items():
-        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-        if wed_datum > nu:
-            continue  # Alleen gespeelde wedstrijden
-        
-        wed_niveau = wed.get("niveau", 1)
-        
-        scheids_1 = wed.get("scheids_1")
-        scheids_2 = wed.get("scheids_2")
-        
-        if scheids_1 and scheids_1 in gefloten_data:
-            gefloten_data[scheids_1]["totaal"] += 1
-            gefloten_data[scheids_1]["als_1e"] += 1
-            eigen_niveau = scheidsrechters.get(scheids_1, {}).get("niveau_1e_scheids", 1)
-            if wed_niveau == eigen_niveau:
-                gefloten_data[scheids_1]["op_niveau"] += 1
-            elif wed_niveau < eigen_niveau:
-                gefloten_data[scheids_1]["onder_niveau"] += 1
-            else:
-                gefloten_data[scheids_1]["boven_niveau"] += 1
-        
-        if scheids_2 and scheids_2 in gefloten_data:
-            gefloten_data[scheids_2]["totaal"] += 1
-            gefloten_data[scheids_2]["als_2e"] += 1
-            eigen_niveau = scheidsrechters.get(scheids_2, {}).get("niveau_1e_scheids", 1)
-            max_2e_niveau = min(eigen_niveau + 1, 5)
-            if wed_niveau <= eigen_niveau:
-                gefloten_data[scheids_2]["op_niveau"] += 1
-            elif wed_niveau <= max_2e_niveau:
-                gefloten_data[scheids_2]["onder_niveau"] += 1
-            else:
-                gefloten_data[scheids_2]["boven_niveau"] += 1
-    
-    # Maak analyse lijst
-    analyse_lijst = []
-    for nbb, scheids in scheidsrechters.items():
-        min_wed = scheids.get("min_wedstrijden", 0)
-        gefloten = gefloten_data.get(nbb, {}).get("totaal", 0)
-        verschil = gefloten - min_wed
-        
-        bel_data = beloningen.get("spelers", {}).get(nbb, {})
-        
-        analyse_lijst.append({
-            "nbb": nbb,
-            "naam": scheids.get("naam", ""),
-            "niveau": scheids.get("niveau_1e_scheids", 1),
-            "min_wedstrijden": min_wed,
-            "gefloten": gefloten,
-            "verschil": verschil,
-            "als_1e": gefloten_data.get(nbb, {}).get("als_1e", 0),
-            "als_2e": gefloten_data.get(nbb, {}).get("als_2e", 0),
-            "op_niveau": gefloten_data.get(nbb, {}).get("op_niveau", 0),
-            "punten": bel_data.get("punten", 0),
-            "strikes": bel_data.get("strikes", 0)
-        })
-    
-    # Metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    veel_fluiten = [s for s in analyse_lijst if s["verschil"] >= 3]
-    weinig_fluiten = [s for s in analyse_lijst if s["verschil"] < 0]
-    precies_goed = [s for s in analyse_lijst if 0 <= s["verschil"] < 3]
-    niet_gefloten = [s for s in analyse_lijst if s["gefloten"] == 0 and s["min_wedstrijden"] > 0]
-    
-    with col1:
-        st.metric("🌟 Veel fluiten (+3)", len(veel_fluiten), help="Kandidaten voor lager minimum")
-    with col2:
-        st.metric("✅ Op schema", len(precies_goed))
-    with col3:
-        st.metric("⚠️ Achter op schema", len(weinig_fluiten), help="Nog niet aan minimum")
-    with col4:
-        st.metric("❌ Niet gefloten", len(niet_gefloten), help="Spelers die nog niet gefloten hebben")
-    
-    st.divider()
-    
-    # Tabs voor verschillende views
-    tab_veel, tab_weinig, tab_allemaal = st.tabs(["🌟 Veel fluiten", "⚠️ Weinig fluiten", "📋 Alle scheidsrechters"])
-    
-    with tab_veel:
-        st.markdown("### Kandidaten voor lager minimum")
-        st.caption("Spelers die minstens 3 wedstrijden boven hun minimum fluiten")
-        
-        if veel_fluiten:
-            veel_sorted = sorted(veel_fluiten, key=lambda x: x["verschil"], reverse=True)
-            
-            for speler in veel_sorted[:20]:
-                with st.expander(f"🌟 **{speler['naam']}** — Gefloten: {speler['gefloten']} | Min: {speler['min_wedstrijden']} | +{speler['verschil']}"):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write(f"**Niveau:** {speler['niveau']}")
-                        st.write(f"**Als 1e scheids:** {speler['als_1e']}")
-                        st.write(f"**Als 2e scheids:** {speler['als_2e']}")
-                    with col_b:
-                        st.write(f"**Punten:** {speler['punten']}")
-                        st.write(f"**Strikes:** {speler['strikes']}")
-                        st.write(f"**Op eigen niveau:** {speler['op_niveau']}")
-                    
-                    # Suggestie voor nieuw minimum
-                    nieuw_min = max(0, speler["min_wedstrijden"] - 1)
-                    if speler["verschil"] >= 5:
-                        nieuw_min = max(0, speler["min_wedstrijden"] - 2)
-                    
-                    if nieuw_min < speler["min_wedstrijden"]:
-                        st.info(f"💡 Suggestie: Verlaag minimum naar **{nieuw_min}**")
-                        
-                        if st.button(f"📝 Pas minimum aan naar {nieuw_min}", key=f"adj_min_{speler['nbb']}"):
-                            scheids = scheidsrechters[speler["nbb"]]
-                            scheids["min_wedstrijden"] = nieuw_min
-                            sla_scheidsrechter_op(speler["nbb"], scheids)
-                            st.success(f"Minimum aangepast naar {nieuw_min}")
-                            st.rerun()
-        else:
-            st.info("Geen spelers met +3 boven minimum")
-    
-    with tab_weinig:
-        st.markdown("### Spelers die weinig fluiten")
-        st.caption("Spelers die hun minimum nog niet gehaald hebben")
-        
-        if weinig_fluiten:
-            weinig_sorted = sorted(weinig_fluiten, key=lambda x: x["verschil"])
-            
-            for speler in weinig_sorted[:20]:
-                status_icon = "❌" if speler["gefloten"] == 0 else "⚠️"
-                with st.expander(f"{status_icon} **{speler['naam']}** — Gefloten: {speler['gefloten']} | Min: {speler['min_wedstrijden']} | {speler['verschil']}"):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write(f"**Niveau:** {speler['niveau']}")
-                        st.write(f"**Nog nodig:** {abs(speler['verschil'])}")
-                    with col_b:
-                        st.write(f"**Punten:** {speler['punten']}")
-                        st.write(f"**Strikes:** {speler['strikes']}")
-                    
-                    if speler["gefloten"] == 0:
-                        st.warning("⚠️ Heeft dit seizoen nog niet gefloten!")
-        else:
-            st.success("Iedereen heeft het minimum gehaald! 🎉")
-    
-    with tab_allemaal:
-        st.markdown("### Alle scheidsrechters")
-        
-        # Sorteer opties
-        sorteer = st.selectbox(
-            "Sorteer op",
-            ["Naam", "Gefloten (hoog-laag)", "Gefloten (laag-hoog)", "Verschil (hoog-laag)", "Verschil (laag-hoog)", "Niveau"],
-            key="sorteer_analyse"
-        )
-        
-        if sorteer == "Naam":
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["naam"])
-        elif sorteer == "Gefloten (hoog-laag)":
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["gefloten"], reverse=True)
-        elif sorteer == "Gefloten (laag-hoog)":
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["gefloten"])
-        elif sorteer == "Verschil (hoog-laag)":
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["verschil"], reverse=True)
-        elif sorteer == "Verschil (laag-hoog)":
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: x["verschil"])
-        else:  # Niveau
-            analyse_sorted = sorted(analyse_lijst, key=lambda x: (x["niveau"], x["naam"]))
-        
-        # Tabel weergave
-        st.markdown("| Naam | Niv | Min | Gefloten | Verschil | 1e | 2e | Punten |")
-        st.markdown("|------|-----|-----|----------|----------|-----|-----|--------|")
-        
-        for speler in analyse_sorted:
-            verschil_str = f"+{speler['verschil']}" if speler['verschil'] >= 0 else str(speler['verschil'])
-            if speler['verschil'] >= 3:
-                verschil_str = f"🌟 {verschil_str}"
-            elif speler['verschil'] < 0:
-                verschil_str = f"⚠️ {verschil_str}"
-            
-            st.markdown(f"| {speler['naam']} | {speler['niveau']} | {speler['min_wedstrijden']} | {speler['gefloten']} | {verschil_str} | {speler['als_1e']} | {speler['als_2e']} | {speler['punten']} |")
-    
-    st.divider()
-    
-    # Bulk minimum aanpassen
-    st.markdown("### 🔧 Bulk minimum aanpassen")
-    st.caption("Pas minimums aan voor meerdere spelers tegelijk")
-    
-    with st.expander("Bulk aanpassingen"):
-        col_bulk1, col_bulk2 = st.columns(2)
-        
-        with col_bulk1:
-            st.markdown("**Verlaag minimum voor veel fluiters:**")
-            st.caption(f"{len(veel_fluiten)} spelers met +3 boven minimum")
-            
-            if veel_fluiten and st.button("📉 Verlaag minimum (-1) voor alle veel fluiters", key="bulk_verlaag"):
-                count = 0
-                for speler in veel_fluiten:
-                    if speler["min_wedstrijden"] > 0:
-                        scheids = scheidsrechters[speler["nbb"]]
-                        scheids["min_wedstrijden"] = max(0, scheids.get("min_wedstrijden", 0) - 1)
-                        sla_scheidsrechter_op(speler["nbb"], scheids)
-                        count += 1
-                st.success(f"Minimum verlaagd voor {count} spelers")
-                st.rerun()
-        
-        with col_bulk2:
-            st.markdown("**Verhoog minimum voor weinig fluiters:**")
-            actieve_weinig = [s for s in weinig_fluiten if s["gefloten"] > 0]
-            st.caption(f"{len(actieve_weinig)} spelers die wel gefloten hebben maar onder minimum")
-            
-            if actieve_weinig and st.button("📈 Verhoog minimum (+1) voor weinig fluiters", key="bulk_verhoog"):
-                count = 0
-                for speler in actieve_weinig:
-                    scheids = scheidsrechters[speler["nbb"]]
-                    scheids["min_wedstrijden"] = scheids.get("min_wedstrijden", 0) + 1
-                    sla_scheidsrechter_op(speler["nbb"], scheids)
-                    count += 1
-                st.success(f"Minimum verhoogd voor {count} spelers")
-                st.rerun()
-
-def toon_apparaten_beheer():
-    """Beheer van gekoppelde apparaten per speler."""
-    st.subheader("🔐 Apparaatbeheer")
-    
-    # Statistieken
-    stats = db.get_device_stats()
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Totaal apparaten", stats["total_devices"])
-    with col2:
-        st.metric("Spelers met apparaat", stats["unique_spelers"])
-    with col3:
-        st.metric("Spelers met verificatie", stats["spelers_met_geboortedatum"], 
-                  help="Spelers met geboortedatum in systeem")
-    with col4:
-        st.metric("Wachtend op goedkeuring", stats["pending_approvals"])
-    
-    st.divider()
-    
-    # Alle devices ophalen
-    all_devices = db.get_all_devices()
-    scheidsrechters = laad_scheidsrechters()
-    
-    if not all_devices:
-        st.info("Nog geen apparaten gekoppeld.")
-        return
-    
-    # Groepeer per speler
-    devices_per_speler = {}
-    for device in all_devices:
-        speler_id = device["speler_id"]
-        if speler_id not in devices_per_speler:
-            devices_per_speler[speler_id] = []
-        devices_per_speler[speler_id].append(device)
-    
-    # Zoekfunctie
-    zoek = st.text_input("🔍 Zoek speler (naam of NBB-nummer)", key="zoek_apparaat")
-    
-    # Filter opties
-    col_filter1, col_filter2 = st.columns(2)
-    with col_filter1:
-        toon_pending = st.checkbox("Alleen wachtend op goedkeuring", key="filter_pending")
-    
-    # Filter op zoekterm
-    gefilterde_spelers = list(devices_per_speler.keys())
-    if zoek:
-        zoek_lower = zoek.lower()
-        gefilterde_spelers = [
-            speler_id for speler_id in devices_per_speler.keys()
-            if zoek_lower in speler_id.lower() or 
-               zoek_lower in scheidsrechters.get(speler_id, {}).get("naam", "").lower()
-        ]
-    
-    # Filter op pending
-    if toon_pending:
-        gefilterde_spelers = [
-            speler_id for speler_id in gefilterde_spelers
-            if any(not d.get("approved", True) for d in devices_per_speler[speler_id])
-        ]
-    
-    # Toon per speler
-    for speler_id in sorted(gefilterde_spelers, key=lambda x: scheidsrechters.get(x, {}).get("naam", x)):
-        devices = devices_per_speler[speler_id]
-        speler_naam = scheidsrechters.get(speler_id, {}).get("naam", "Onbekend")
-        pending_count = sum(1 for d in devices if not d.get("approved", True))
-        
-        label = f"**{speler_naam}** ({speler_id}) - {len(devices)} apparaat{'en' if len(devices) != 1 else ''}"
-        if pending_count > 0:
-            label += f" ⏳ {pending_count} wachtend"
-        
-        with st.expander(label):
-            for device in devices:
-                col_info, col_status, col_delete = st.columns([3, 1, 1])
-                
-                with col_info:
-                    device_name = device.get("device_name", "Onbekend apparaat")
-                    fingerprint = device.get("fingerprint", "")[:8] if device.get("fingerprint") else ""
-                    created = db.format_datetime(device.get("created_at", ""))
-                    last_used = db.format_datetime(device.get("last_used", ""))
-                    
-                    st.markdown(f"📱 **{device_name}**")
-                    if fingerprint:
-                        st.caption(f"ID: {fingerprint} · Gekoppeld: {created}")
-                    else:
-                        st.caption(f"Gekoppeld: {created}")
-                    st.caption(f"Laatst gebruikt: {last_used}")
-                
-                with col_status:
-                    if device.get("approved", True):
-                        st.success("✅ Actief")
-                    else:
-                        st.warning("⏳ Wachtend")
-                
-                with col_delete:
-                    if st.button("🗑️", key=f"admin_del_{device['id']}", help="Verwijder apparaat"):
-                        if db.remove_device_admin(device["id"]):
-                            st.success(f"Apparaat verwijderd!")
-                            st.rerun()
-                        else:
-                            st.error("Fout bij verwijderen")
-                
-                st.divider()
-    
-    # Bulk acties
-    st.divider()
-    st.markdown("### ⚠️ Bulk acties")
-    
-    with st.expander("Alle apparaten van een speler verwijderen"):
-        speler_opties = {
-            f"{scheidsrechters.get(sid, {}).get('naam', 'Onbekend')} ({sid})": sid 
-            for sid in devices_per_speler.keys()
-        }
-        
-        if speler_opties:
-            geselecteerde = st.selectbox("Selecteer speler", options=list(speler_opties.keys()))
-            
-            if geselecteerde:
-                speler_id = speler_opties[geselecteerde]
-                aantal = len(devices_per_speler[speler_id])
-                
-                st.warning(f"Dit verwijdert {aantal} apparaat{'en' if aantal != 1 else ''} van {geselecteerde}")
-                
-                if st.button(f"🗑️ Verwijder alle {aantal} apparaten", type="primary"):
-                    for device in devices_per_speler[speler_id]:
-                        db.remove_device_admin(device["id"])
-                    st.success(f"Alle apparaten van {geselecteerde} verwijderd!")
-                    st.rerun()
 
 def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, scheidsrechters: dict) -> bytes:
     """Genereer een PNG afbeelding van het scheidsrechteroverzicht."""
@@ -6402,7 +5534,7 @@ def toon_instellingen_beheer():
     beloningsinst = laad_beloningsinstellingen()
     
     # Tabs voor verschillende instellingen categorieën
-    tab_alg, tab_bel, tab_seizoen, tab_reset, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "📅 Seizoen", "🗑️ Data Reset", "ℹ️ Over"])
+    tab_alg, tab_bel, tab_versie = st.tabs(["⚙️ Algemeen", "🏆 Beloningssysteem", "ℹ️ Over"])
     
     with tab_alg:
         st.subheader("Algemene Instellingen")
@@ -6611,336 +5743,6 @@ def toon_instellingen_beheer():
                 st.success("Instellingen gereset naar defaults!")
                 st.rerun()
     
-    with tab_seizoen:
-        st.subheader("📅 Seizoen Beheer")
-        
-        # Huidig seizoen
-        huidig_seizoen = db.get_huidig_seizoen()
-        st.info(f"**Huidig seizoen:** {huidig_seizoen}")
-        
-        st.divider()
-        
-        # Seizoen afsluiten
-        st.markdown("### 🔒 Seizoen afsluiten")
-        st.caption("Archiveer statistieken en start een nieuw seizoen")
-        
-        with st.expander("⚠️ Seizoen afsluiten", expanded=False):
-            st.warning("""
-            **Dit doet het volgende:**
-            1. Archiveert alle statistieken van dit seizoen (punten, strikes, gefloten wedstrijden, minimums)
-            2. Reset alle beloningen (punten, strikes, logs) naar 0
-            3. Wedstrijden en scheidsrechter gegevens blijven behouden
-            
-            **Let op:** Dit kan niet ongedaan worden gemaakt!
-            """)
-            
-            # Voorvertoning statistieken
-            scheidsrechters = laad_scheidsrechters()
-            beloningen = laad_beloningen()
-            wedstrijden = laad_wedstrijden()
-            
-            preview_stats = db.verzamel_seizoen_statistieken(scheidsrechters, beloningen, wedstrijden)
-            totalen = preview_stats.get("totalen", {})
-            
-            col_prev1, col_prev2, col_prev3, col_prev4 = st.columns(4)
-            with col_prev1:
-                st.metric("Scheidsrechters", totalen.get("aantal_scheidsrechters", 0))
-            with col_prev2:
-                st.metric("Gespeelde wedstrijden", totalen.get("totaal_wedstrijden", 0))
-            with col_prev3:
-                st.metric("Totaal punten", totalen.get("totaal_punten_uitgedeeld", 0))
-            with col_prev4:
-                st.metric("Totaal strikes", totalen.get("totaal_strikes_uitgedeeld", 0))
-            
-            st.divider()
-            
-            # Bevestiging
-            bevestig_seizoen = st.text_input(
-                f"Type '{huidig_seizoen}' om te bevestigen",
-                key="bevestig_seizoen_afsluiten"
-            )
-            
-            if st.button("🔒 Sluit seizoen af en archiveer", type="primary", key="btn_sluit_seizoen"):
-                if bevestig_seizoen == huidig_seizoen:
-                    # Archiveer
-                    if db.archiveer_seizoen(huidig_seizoen, preview_stats):
-                        # Reset beloningen
-                        success, aantal = db.reset_alle_beloningen()
-                        if success:
-                            st.success(f"✅ Seizoen {huidig_seizoen} gearchiveerd!")
-                            st.success(f"✅ Beloningen gereset voor {aantal} spelers")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("Fout bij resetten beloningen")
-                    else:
-                        st.error("Fout bij archiveren seizoen")
-                else:
-                    st.warning(f"Type '{huidig_seizoen}' om te bevestigen")
-        
-        st.divider()
-        
-        # Archief bekijken
-        st.markdown("### 📚 Seizoen Archief")
-        
-        archieven = db.laad_seizoen_archieven()
-        
-        if archieven:
-            # Selecteer seizoen
-            seizoen_opties = [a["seizoen"] for a in archieven]
-            geselecteerd_seizoen = st.selectbox(
-                "Selecteer seizoen",
-                options=seizoen_opties,
-                key="select_archief_seizoen"
-            )
-            
-            if geselecteerd_seizoen:
-                archief = db.laad_seizoen_archief(geselecteerd_seizoen)
-                
-                if archief:
-                    afgesloten = archief.get("afgesloten_op", "")
-                    if afgesloten:
-                        try:
-                            afgesloten_dt = datetime.fromisoformat(afgesloten.replace("Z", "+00:00"))
-                            st.caption(f"Afgesloten op: {afgesloten_dt.strftime('%d-%m-%Y %H:%M')}")
-                        except:
-                            st.caption(f"Afgesloten op: {afgesloten}")
-                    
-                    stats = archief.get("statistieken", {})
-                    totalen = stats.get("totalen", {})
-                    spelers = stats.get("spelers", {})
-                    
-                    # Totalen
-                    col_t1, col_t2, col_t3, col_t4 = st.columns(4)
-                    with col_t1:
-                        st.metric("Scheidsrechters", totalen.get("aantal_scheidsrechters", 0))
-                    with col_t2:
-                        st.metric("Wedstrijden", totalen.get("totaal_wedstrijden", 0))
-                    with col_t3:
-                        st.metric("Punten uitgedeeld", totalen.get("totaal_punten_uitgedeeld", 0))
-                    with col_t4:
-                        st.metric("Strikes uitgedeeld", totalen.get("totaal_strikes_uitgedeeld", 0))
-                    
-                    st.divider()
-                    
-                    # Detail per speler
-                    st.markdown("**Statistieken per speler:**")
-                    
-                    # Sorteer opties
-                    sorteer_archief = st.selectbox(
-                        "Sorteer op",
-                        ["Naam", "Gefloten (hoog-laag)", "Punten (hoog-laag)", "Minimum"],
-                        key="sorteer_archief"
-                    )
-                    
-                    speler_lijst = [{"nbb": nbb, **data} for nbb, data in spelers.items()]
-                    
-                    if sorteer_archief == "Naam":
-                        speler_lijst.sort(key=lambda x: x.get("naam", ""))
-                    elif sorteer_archief == "Gefloten (hoog-laag)":
-                        speler_lijst.sort(key=lambda x: x.get("gefloten_totaal", 0), reverse=True)
-                    elif sorteer_archief == "Punten (hoog-laag)":
-                        speler_lijst.sort(key=lambda x: x.get("punten", 0), reverse=True)
-                    else:
-                        speler_lijst.sort(key=lambda x: (x.get("min_wedstrijden", 0), x.get("naam", "")))
-                    
-                    # Tabel header
-                    st.markdown("| Naam | Niv | Min | Gefloten | 1e | 2e | Punten | Strikes |")
-                    st.markdown("|------|-----|-----|----------|-----|-----|--------|---------|")
-                    
-                    for speler in speler_lijst:
-                        st.markdown(
-                            f"| {speler.get('naam', '?')} | "
-                            f"{speler.get('niveau', '?')} | "
-                            f"{speler.get('min_wedstrijden', 0)} | "
-                            f"{speler.get('gefloten_totaal', 0)} | "
-                            f"{speler.get('gefloten_als_1e', 0)} | "
-                            f"{speler.get('gefloten_als_2e', 0)} | "
-                            f"{speler.get('punten', 0)} | "
-                            f"{speler.get('strikes', 0)} |"
-                        )
-                    
-                    # Export archief
-                    st.divider()
-                    if st.button(f"📥 Export {geselecteerd_seizoen} naar CSV", key="export_archief"):
-                        output = "nbb_nummer,naam,niveau,min_wedstrijden,gefloten_totaal,gefloten_als_1e,gefloten_als_2e,punten,strikes\n"
-                        for speler in speler_lijst:
-                            output += f"{speler.get('nbb', '')},\"{speler.get('naam', '')}\","
-                            output += f"{speler.get('niveau', 1)},{speler.get('min_wedstrijden', 0)},"
-                            output += f"{speler.get('gefloten_totaal', 0)},{speler.get('gefloten_als_1e', 0)},"
-                            output += f"{speler.get('gefloten_als_2e', 0)},{speler.get('punten', 0)},"
-                            output += f"{speler.get('strikes', 0)}\n"
-                        
-                        st.download_button(
-                            "📥 Download CSV",
-                            output,
-                            file_name=f"seizoen_{geselecteerd_seizoen}_archief.csv",
-                            mime="text/csv",
-                            key="dl_archief"
-                        )
-        else:
-            st.info("Nog geen gearchiveerde seizoenen")
-    
-    with tab_reset:
-        st.subheader("🗑️ Data Reset")
-        st.warning("**Let op:** Deze acties zijn onomkeerbaar! Gebruik dit alleen om testdata te wissen.")
-        
-        # Statistieken ophalen
-        reset_stats = db.get_reset_statistics()
-        
-        # Overzicht metrics
-        st.markdown("### 📊 Overzicht")
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-        with col_s1:
-            bel = reset_stats.get("beloningen", {})
-            st.metric("Spelers met punten/strikes", bel.get("spelers", 0), 
-                     help=f"Totaal: {bel.get('punten', 0)} punten, {bel.get('strikes', 0)} strikes")
-        with col_s2:
-            st.metric("MSE data", 
-                     reset_stats.get("uitnodigingen", 0) + reset_stats.get("feedback", 0) + reset_stats.get("wedstrijden_met_begeleider", 0),
-                     help=f"{reset_stats.get('uitnodigingen', 0)} uitnodigingen, {reset_stats.get('feedback', 0)} feedback, {reset_stats.get('wedstrijden_met_begeleider', 0)} wedstrijden")
-        with col_s3:
-            st.metric("Apparaten", reset_stats.get("devices", 0))
-        with col_s4:
-            st.metric("Speler instellingen", reset_stats.get("speler_settings", 0))
-        
-        st.divider()
-        
-        # Beloningen resetten
-        st.markdown("### 💰 Beloningen (Punten & Strikes)")
-        
-        col_bel1, col_bel2 = st.columns(2)
-        
-        with col_bel1:
-            st.markdown("**Per speler:**")
-            scheidsrechters = laad_scheidsrechters()
-            beloningen = laad_beloningen()
-            
-            # Filter spelers met punten of strikes
-            spelers_met_data = []
-            for nbb, data in beloningen.get("spelers", {}).items():
-                if data.get("punten", 0) > 0 or data.get("strikes", 0) > 0:
-                    naam = scheidsrechters.get(nbb, {}).get("naam", nbb)
-                    spelers_met_data.append({
-                        "nbb": nbb, 
-                        "naam": naam, 
-                        "punten": data.get("punten", 0),
-                        "strikes": data.get("strikes", 0)
-                    })
-            
-            if spelers_met_data:
-                speler_opties = {f"{s['naam']} ({s['punten']}p, {s['strikes']}s)": s['nbb'] for s in spelers_met_data}
-                geselecteerde_speler = st.selectbox(
-                    "Selecteer speler",
-                    options=list(speler_opties.keys()),
-                    key="reset_speler_select"
-                )
-                
-                if st.button("🗑️ Reset deze speler", key="reset_speler_btn"):
-                    nbb = speler_opties[geselecteerde_speler]
-                    if db.reset_speler_beloningen(nbb):
-                        st.success(f"Beloningen gereset voor {geselecteerde_speler.split(' (')[0]}")
-                        st.rerun()
-            else:
-                st.success("✅ Geen spelers met punten of strikes")
-        
-        with col_bel2:
-            st.markdown("**Alle spelers:**")
-            bel_stats = reset_stats.get("beloningen", {})
-            if bel_stats.get("spelers", 0) > 0:
-                st.caption(f"Reset {bel_stats.get('spelers', 0)} spelers ({bel_stats.get('punten', 0)} punten, {bel_stats.get('strikes', 0)} strikes)")
-                with st.expander("⚠️ Reset alle beloningen"):
-                    st.error("Dit wist ALLE punten, strikes en logs!")
-                    bevestig_bel = st.text_input("Type 'RESET' ter bevestiging", key="bevestig_alle_bel")
-                    if st.button("🗑️ Reset ALLE beloningen", type="primary", key="reset_alle_bel_btn"):
-                        if bevestig_bel == "RESET":
-                            success, aantal = db.reset_alle_beloningen()
-                            if success:
-                                st.success(f"Beloningen gereset voor {aantal} spelers")
-                                st.rerun()
-                        else:
-                            st.warning("Type 'RESET' om te bevestigen")
-            else:
-                st.success("✅ Geen beloningen om te resetten")
-        
-        st.divider()
-        
-        # MSE Begeleiding resetten
-        st.markdown("### 👥 MSE Begeleiding")
-        
-        col_mse1, col_mse2, col_mse3 = st.columns(3)
-        
-        with col_mse1:
-            uitn_count = reset_stats.get("uitnodigingen", 0)
-            st.markdown(f"**Uitnodigingen:** {uitn_count}")
-            if uitn_count > 0:
-                if st.button("🗑️ Reset uitnodigingen", key="reset_uitnodigingen_btn"):
-                    success, aantal = db.reset_alle_begeleidingsuitnodigingen()
-                    if success:
-                        st.success(f"{aantal} verwijderd")
-                        st.rerun()
-            else:
-                st.success("✅ Geen data")
-        
-        with col_mse2:
-            fb_count = reset_stats.get("feedback", 0)
-            st.markdown(f"**Feedback:** {fb_count}")
-            if fb_count > 0:
-                if st.button("🗑️ Reset feedback", key="reset_feedback_btn"):
-                    success, aantal = db.reset_alle_begeleiding_feedback()
-                    if success:
-                        st.success(f"{aantal} verwijderd")
-                        st.rerun()
-            else:
-                st.success("✅ Geen data")
-        
-        with col_mse3:
-            beg_count = reset_stats.get("wedstrijden_met_begeleider", 0)
-            st.markdown(f"**Begeleiders in wedstrijden:** {beg_count}")
-            if beg_count > 0:
-                if st.button("🗑️ Reset begeleiders", key="reset_begeleiders_btn"):
-                    success, aantal = db.reset_begeleiders_uit_wedstrijden()
-                    if success:
-                        st.success(f"{aantal} wedstrijden bijgewerkt")
-                        st.rerun()
-            else:
-                st.success("✅ Geen data")
-        
-        st.divider()
-        
-        # Apparaten resetten
-        st.markdown("### 📱 Apparaten")
-        
-        col_app1, col_app2 = st.columns(2)
-        
-        with col_app1:
-            dev_count = reset_stats.get("devices", 0)
-            st.markdown(f"**Device tokens:** {dev_count}")
-            if dev_count > 0:
-                with st.expander("⚠️ Reset alle apparaten"):
-                    st.caption("Iedereen moet opnieuw verifiëren")
-                    if st.button("🗑️ Reset apparaten", key="reset_devices_btn"):
-                        success, aantal = db.reset_alle_device_tokens()
-                        if success:
-                            st.success(f"{aantal} apparaten verwijderd")
-                            st.rerun()
-            else:
-                st.success("✅ Geen apparaten")
-        
-        with col_app2:
-            set_count = reset_stats.get("speler_settings", 0)
-            st.markdown(f"**Speler instellingen:** {set_count}")
-            if set_count > 0:
-                with st.expander("⚠️ Reset apparaat instellingen"):
-                    st.caption("Reset max apparaten en goedkeurings-instellingen")
-                    if st.button("🗑️ Reset instellingen", key="reset_speler_settings_btn"):
-                        success, aantal = db.reset_speler_settings()
-                        if success:
-                            st.success(f"{aantal} instellingen gereset")
-                            st.rerun()
-            else:
-                st.success("✅ Geen instellingen")
-    
     with tab_versie:
         st.subheader("ℹ️ Over Ref Planner")
         st.write(f"**Versie:** {APP_VERSIE}")
@@ -7046,7 +5848,7 @@ def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
     
     with tab1:
         st.write("**Import wedstrijden uit NBB export**")
@@ -7358,50 +6160,6 @@ def toon_import_export():
                 st.code(traceback.format_exc())
     
     with tab3:
-        st.write("**Import ledengegevens (geboortedatum & teams)**")
-        st.write("Upload een NBB/FOYS ledenexport om geboortedatum en teams bij te werken bij bestaande scheidsrechters.")
-        st.write("**Verwachte kolommen:** Lidnummer, Geboortedatum, Team")
-        
-        st.info("""
-        **Team parsing:** Alleen teams met '(Teamspeler)' worden overgenomen.
-        
-        Voorbeeld: `V12-2 (Technische staf), V16-1 (Teamspeler)` → alleen `V16-1` wordt opgeslagen.
-        """)
-        
-        uploaded_leden = st.file_uploader("Upload Excel of CSV", type=["xlsx", "xls", "csv"], key="import_leden")
-        
-        if uploaded_leden:
-            try:
-                import pandas as pd
-                if uploaded_leden.name.endswith('.csv'):
-                    df = pd.read_csv(uploaded_leden, sep=None, engine='python')
-                else:
-                    df = pd.read_excel(uploaded_leden)
-                
-                st.write(f"**{len(df)} rijen gevonden**")
-                st.write("Kolommen:", ", ".join(df.columns.tolist()))
-                
-                # Preview
-                preview_cols = [c for c in df.columns if any(x in c.lower() for x in ['lidnummer', 'geboortedatum', 'team'])]
-                if preview_cols:
-                    st.dataframe(df[preview_cols].head(10))
-                
-                if st.button("🔄 Importeer ledengegevens", key="btn_import_leden"):
-                    bijgewerkt, niet_gevonden, errors = db.import_ledengegevens(df)
-                    
-                    if bijgewerkt > 0:
-                        st.success(f"✅ {bijgewerkt} scheidsrechters bijgewerkt")
-                    if niet_gevonden > 0:
-                        st.warning(f"⚠️ {niet_gevonden} lidnummers niet gevonden in scheidsrechterslijst (importeer eerst scheidsrechters)")
-                    if errors > 0:
-                        st.error(f"❌ {errors} fouten")
-                    
-                    if bijgewerkt > 0:
-                        st.rerun()
-            except Exception as e:
-                st.error(f"Fout bij lezen bestand: {e}")
-    
-    with tab4:
         st.write("**Import scheidsrechters (CSV)**")
         st.write("Verwacht formaat:")
         st.code("nbb_nummer,naam,bs2_diploma,niveau_1e,niveau_2e,min,max,niet_zondag,eigen_teams")
@@ -7441,7 +6199,7 @@ def toon_import_export():
                 st.success(f"✅ {count} scheidsrechters geïmporteerd!")
                 st.rerun()
     
-    with tab5:
+    with tab4:
         st.write("**Import wedstrijden (CSV)**")
         st.write("Verwacht formaat:")
         st.code("datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten")
@@ -7493,40 +6251,37 @@ def toon_import_export():
                 st.success(f"✅ {count} wedstrijden geïmporteerd!")
                 st.rerun()
     
-    with tab6:
-        st.write("**📤 Exporteer data**")
+    with tab5:
+        st.write("**Export planning (CSV)**")
         
-        col_exp1, col_exp2 = st.columns(2)
+        col1, col2 = st.columns(2)
         
-        with col_exp1:
-            st.markdown("**Wedstrijden:**")
-            
-            if st.button("📥 Thuiswedstrijden + planning", use_container_width=True):
+        with col1:
+            if st.button("📥 Download thuiswedstrijden + planning"):
                 wedstrijden = laad_wedstrijden()
                 scheidsrechters = laad_scheidsrechters()
                 
-                output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2,begeleider\n"
+                output = "datum,tijd,thuisteam,uitteam,niveau,scheids_1,scheids_2\n"
                 for wed_id, wed in sorted(wedstrijden.items(), key=lambda x: x[1]["datum"]):
                     if wed.get("type", "thuis") != "thuis":
                         continue
                     datum_obj = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
                     scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
                     scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
-                    begeleider_naam = scheidsrechters.get(wed.get("begeleider", ""), {}).get("naam", "")
                     
                     output += f"{datum_obj.strftime('%Y-%m-%d')},{datum_obj.strftime('%H:%M')},"
                     output += f"{wed['thuisteam']},{wed['uitteam']},{wed['niveau']},"
-                    output += f"{scheids_1_naam},{scheids_2_naam},{begeleider_naam}\n"
+                    output += f"{scheids_1_naam},{scheids_2_naam}\n"
                 
                 st.download_button(
                     "📥 Download CSV",
                     output,
                     file_name="scheidsrechter_planning.csv",
-                    mime="text/csv",
-                    key="dl_thuiswed"
+                    mime="text/csv"
                 )
-            
-            if st.button("📥 Alle wedstrijden", use_container_width=True):
+        
+        with col2:
+            if st.button("📥 Download alle wedstrijden"):
                 wedstrijden = laad_wedstrijden()
                 
                 output = "datum,tijd,thuisteam,uitteam,niveau,type,vereist_bs2,reistijd_minuten\n"
@@ -7543,249 +6298,8 @@ def toon_import_export():
                     "📥 Download CSV",
                     output,
                     file_name="alle_wedstrijden.csv",
-                    mime="text/csv",
-                    key="dl_allewed"
+                    mime="text/csv"
                 )
-        
-        with col_exp2:
-            st.markdown("**Scheidsrechters:**")
-            
-            if st.button("📥 Scheidsrechters + statistieken", use_container_width=True):
-                scheidsrechters = laad_scheidsrechters()
-                beloningen = laad_beloningen()
-                wedstrijden = laad_wedstrijden()
-                
-                # Tel gefloten wedstrijden per scheidsrechter (uit wedstrijden data)
-                gefloten_count = {}
-                for wed_id, wed in wedstrijden.items():
-                    for scheids_key in ["scheids_1", "scheids_2"]:
-                        nbb = wed.get(scheids_key)
-                        if nbb:
-                            gefloten_count[nbb] = gefloten_count.get(nbb, 0) + 1
-                
-                output = "nbb_nummer,naam,niveau_1e_scheids,min_wedstrijden,eigen_teams,bs2_diploma,open_voor_begeleiding,punten,strikes,gefloten_wedstrijden\n"
-                for nbb, scheids in sorted(scheidsrechters.items(), key=lambda x: x[1].get("naam", "")):
-                    eigen_teams = ";".join(scheids.get("eigen_teams", []))
-                    bel_data = beloningen.get("spelers", {}).get(nbb, {})
-                    
-                    output += f"{nbb},"
-                    output += f"\"{scheids.get('naam', '')}\","
-                    output += f"{scheids.get('niveau_1e_scheids', 1)},"
-                    output += f"{scheids.get('min_wedstrijden', 0)},"
-                    output += f"\"{eigen_teams}\","
-                    output += f"{'ja' if scheids.get('bs2_diploma') else 'nee'},"
-                    output += f"{'ja' if scheids.get('open_voor_begeleiding') else 'nee'},"
-                    output += f"{bel_data.get('punten', 0)},"
-                    output += f"{bel_data.get('strikes', 0)},"
-                    output += f"{gefloten_count.get(nbb, 0)}\n"
-                
-                st.download_button(
-                    "📥 Download CSV",
-                    output,
-                    file_name="scheidsrechters_export.csv",
-                    mime="text/csv",
-                    key="dl_scheids"
-                )
-            
-            if st.button("📥 Beloningen detail", use_container_width=True):
-                scheidsrechters = laad_scheidsrechters()
-                beloningen = laad_beloningen()
-                
-                output = "nbb_nummer,naam,punten,strikes,aantal_registraties\n"
-                for nbb, data in beloningen.get("spelers", {}).items():
-                    naam = scheidsrechters.get(nbb, {}).get("naam", nbb)
-                    aantal_reg = len(data.get("gefloten_wedstrijden", []))
-                    
-                    output += f"{nbb},\"{naam}\","
-                    output += f"{data.get('punten', 0)},"
-                    output += f"{data.get('strikes', 0)},"
-                    output += f"{aantal_reg}\n"
-                
-                st.download_button(
-                    "📥 Download CSV",
-                    output,
-                    file_name="beloningen_export.csv",
-                    mime="text/csv",
-                    key="dl_beloningen"
-                )
-
-# ============================================================
-# BEHEERDER AUTHENTICATIE
-# ============================================================
-
-def _toon_beheerder_login():
-    """Toon beheerder login formulier"""
-    st.title("🔐 Beheerder Login")
-    
-    # Check of force reset actief is
-    try:
-        if st.secrets.get("FORCE_RESET", False):
-            st.warning("⚠️ Wachtwoord reset modus actief. Log in met het standaard wachtwoord.")
-    except:
-        pass
-    
-    with st.form("login_form"):
-        wachtwoord = st.text_input("Wachtwoord", type="password")
-        submitted = st.form_submit_button("Inloggen", use_container_width=True)
-        
-        if submitted:
-            if not wachtwoord:
-                st.error("Voer een wachtwoord in")
-                return
-            
-            if db.verify_admin_password(wachtwoord):
-                st.session_state.beheerder_ingelogd = True
-                # Check of wachtwoord gewijzigd moet worden
-                if db.needs_password_change():
-                    st.session_state.moet_wachtwoord_wijzigen = True
-                    st.success("✅ Ingelogd. Je moet nu een nieuw wachtwoord instellen.")
-                st.rerun()
-            else:
-                st.error("❌ Onjuist wachtwoord")
-
-
-def _toon_wachtwoord_wijzigen():
-    """Toon wachtwoord wijzigen formulier"""
-    st.title("🔑 Nieuw Wachtwoord Instellen")
-    
-    try:
-        if st.secrets.get("FORCE_RESET", False):
-            st.info("💡 Na het instellen van je nieuwe wachtwoord, verwijder `FORCE_RESET` uit je Streamlit Cloud Secrets.")
-    except:
-        pass
-    
-    with st.form("change_password_form"):
-        nieuw_wachtwoord = st.text_input("Nieuw wachtwoord", type="password")
-        bevestig_wachtwoord = st.text_input("Bevestig wachtwoord", type="password")
-        submitted = st.form_submit_button("Wachtwoord opslaan", use_container_width=True)
-        
-        if submitted:
-            if not nieuw_wachtwoord or not bevestig_wachtwoord:
-                st.error("Vul beide velden in")
-                return
-            
-            if nieuw_wachtwoord != bevestig_wachtwoord:
-                st.error("Wachtwoorden komen niet overeen")
-                return
-            
-            if len(nieuw_wachtwoord) < 8:
-                st.error("Wachtwoord moet minimaal 8 tekens zijn")
-                return
-            
-            if nieuw_wachtwoord == db.get_default_admin_password():
-                st.error("Kies een ander wachtwoord dan het standaard wachtwoord")
-                return
-            
-            # Opslaan
-            if db.save_admin_password_hash(nieuw_wachtwoord):
-                st.session_state.moet_wachtwoord_wijzigen = False
-                st.success("✅ Wachtwoord gewijzigd!")
-                st.rerun()
-            else:
-                st.error("Fout bij opslaan wachtwoord")
-
-
-def _check_device_verificatie(nbb_nummer: str) -> bool:
-    """
-    Check of device geverifieerd is. Toont verificatie scherm indien nodig.
-    Returns True als geverifieerd, False als verificatie scherm getoond wordt.
-    """
-    session_key = f"device_token_{nbb_nummer}"
-    verified_key = f"device_verified_{nbb_nummer}"
-    
-    # Check of we net geverifieerd zijn (flag gezet in vorige run)
-    if st.session_state.get(verified_key, False):
-        token = st.session_state.get(session_key)
-        if token and db.token_exists_in_database(nbb_nummer, token):
-            if db.verify_device_token(nbb_nummer, token):
-                del st.session_state[verified_key]
-                return True
-    
-    # Check of speler geboortedatum heeft
-    geboortedatum = db.get_speler_geboortedatum(nbb_nummer)
-    
-    if not geboortedatum:
-        return True
-    
-    # Check of er al een device is met deze fingerprint
-    device_exists, existing_token = db.device_exists_for_fingerprint(nbb_nummer)
-    
-    if device_exists and existing_token:
-        # Device al geregistreerd - check of token geldig is
-        if db.verify_device_token(nbb_nummer, existing_token):
-            st.session_state[session_key] = existing_token
-            return True
-        
-        # Token bestaat maar is pending
-        if db.is_device_pending(nbb_nummer, existing_token):
-            st.title("⏳ Wachten op goedkeuring")
-            st.info("Dit apparaat wacht op goedkeuring.")
-            if st.button("🔄 Ververs"):
-                st.rerun()
-            return False
-    
-    # Check bestaande token uit session (fallback)
-    token = db.get_device_token_from_cookie(nbb_nummer)
-    
-    if token:
-        token_exists = db.token_exists_in_database(nbb_nummer, token)
-        
-        if not token_exists:
-            db.clear_device_token_cookie(nbb_nummer)
-            st.info("Je apparaat is uitgelogd. Verifieer opnieuw.")
-            st.rerun()
-        else:
-            if db.verify_device_token(nbb_nummer, token):
-                return True
-    
-    # Check of we een nieuw device kunnen toevoegen
-    can_add, reason = db.can_add_device(nbb_nummer)
-    
-    if not can_add:
-        st.title("🚫 Apparaat limiet bereikt")
-        st.error(reason)
-        st.info("Verwijder eerst een ander apparaat.")
-        return False
-    
-    # Nieuw device - verificatie nodig
-    device_name = db._get_device_name_from_ua()
-    
-    st.title("🔐 Verificatie")
-    st.write(f"Nieuw apparaat: **{device_name}**")
-    st.write("Bevestig je identiteit met je geboortedatum.")
-    
-    with st.form("verificatie_form"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            dag = st.number_input("Dag", min_value=1, max_value=31, value=1)
-        with col2:
-            maand = st.number_input("Maand", min_value=1, max_value=12, value=1)
-        with col3:
-            jaar = st.number_input("Jaar", min_value=1950, max_value=2020, value=2005)
-        
-        submitted = st.form_submit_button("Verifiëren", use_container_width=True)
-        
-        if submitted:
-            if db.verify_geboortedatum(nbb_nummer, dag, maand, jaar):
-                new_token = db._generate_device_token()
-                success, needs_approval = db.register_device_with_approval(nbb_nummer, new_token)
-                
-                if success:
-                    st.session_state[session_key] = new_token
-                    st.session_state[verified_key] = True
-                    
-                    if needs_approval:
-                        st.warning("✅ Geverifieerd! Wacht op goedkeuring.")
-                    else:
-                        st.success("✅ Geverifieerd!")
-                    st.rerun()
-                else:
-                    st.error("❌ Fout bij registreren.")
-            else:
-                st.error("❌ Geboortedatum klopt niet")
-    
-    return False
-
 
 # ============================================================
 # MAIN ROUTING
@@ -7822,30 +6336,24 @@ def main():
     # Route: /inschrijven/{nbb_nummer}
     if "nbb" in query_params:
         nbb_nummer = query_params["nbb"]
-        
-        # Device verificatie
-        if not _check_device_verificatie(nbb_nummer):
-            return
-        
         toon_speler_view(nbb_nummer)
         return
     
     # Route: /beheer
     if "beheer" in query_params:
-        # Initialiseer session state
+        # Simpele wachtwoord check via session state
         if "beheerder_ingelogd" not in st.session_state:
             st.session_state.beheerder_ingelogd = False
-        if "moet_wachtwoord_wijzigen" not in st.session_state:
-            st.session_state.moet_wachtwoord_wijzigen = False
         
-        # Wachtwoord wijzigen scherm
-        if st.session_state.moet_wachtwoord_wijzigen:
-            _toon_wachtwoord_wijzigen()
-            return
-        
-        # Login scherm
         if not st.session_state.beheerder_ingelogd:
-            _toon_beheerder_login()
+            st.title("🔐 Beheerder Login")
+            wachtwoord = st.text_input("Wachtwoord", type="password")
+            if st.button("Inloggen"):
+                if wachtwoord == BEHEERDER_WACHTWOORD:
+                    st.session_state.beheerder_ingelogd = True
+                    st.rerun()
+                else:
+                    st.error("Onjuist wachtwoord")
             return
         
         toon_beheerder_view()
