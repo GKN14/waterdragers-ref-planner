@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.7"
+APP_VERSIE = "1.16.8"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.8 (2025-12-30)
+**Mobiele styling fix:**
+- 📱 Alle content nu in witte container (ook filters)
+
 ### v1.16.7 (2025-12-30)
 **Mobiele styling fix:**
 - 📱 Grijze achtergrond is nu één egaal vlak
@@ -2541,20 +2545,17 @@ def toon_speler_view(nbb_nummer: str):
         /* MOBIEL: Achtergrond vs Container            */
         /* ============================================ */
         @media (max-width: 768px) {
-            /* Grijze achtergrond - egaal, geen styling */
-            html, body, 
+            /* Grijze achtergrond - egaal */
             [data-testid="stAppViewContainer"],
-            .stApp,
-            section[data-testid="stMain"] {
+            .stApp {
                 background-color: #e8eaed !important;
             }
             
-            /* Alleen de content container is wit met ronde hoeken */
-            .block-container {
+            /* Main section zelf is de witte container */
+            section[data-testid="stMain"] {
                 background-color: #ffffff !important;
                 border-radius: 1rem !important;
                 margin: 0.5rem !important;
-                padding: 1rem !important;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
             }
             
