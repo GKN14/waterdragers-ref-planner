@@ -24,49 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.15"
+APP_VERSIE = "1.17.0"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.15 (2025-12-30)
-**Responsive container:**
-- 🖥️ Desktop: scrollbare container (600px)
-- 📱 Mobiel: CSS override poging
-
-### v1.16.14 (2025-12-30)
-**Test container styling:**
-- 📱 CSS voor zichtbare scrollbar op iOS
-- 📱 Container met border=True
-
-### v1.17.2 (2025-12-30)
-**Test:**
-- 📱 Container zonder border=True parameter
-
-### v1.17.1 (2025-12-30)
-**Versienummer op mobiel:**
-- 📱 Versienummer toegevoegd aan Begeleiders & Info expander
-
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
 - 📱 Blauwe lijn boven wedstrijden container
-- 📱 Container met rand (border=True) voor visuele afbakening
+- 📱 Container met rand voor visuele afbakening
+- 📱 Versienummer in Begeleiders & Info expander
 - 🏆 Punten klassement permanent zichtbaar
-- 🎓 Begeleiders & Info in opvouwbare expander
-
-### v1.16.4 (2025-12-30)
-**Klassement & Feedback:**
-- 🖥️ Desktop: klassement + begeleiders info alleen in sidebar
-- 📱 Mobiel: klassement + begeleiders info in hoofdscherm
-
-### v1.17.0 (2025-12-30)
-**Mobiele UX verbeteringen:**
-- 🖥️ Desktop: klassement alleen in sidebar
-- 📱 Mobiel: klassement in hoofdscherm
-
-### v1.17.0 (2025-12-30)
-**Mobiele UX verbeteringen:**
-- 📱 Blauwe lijn boven wedstrijden container
-- 📱 Container met rand voor visuele afbakening scroll-zone
-- 🏆 Punten klassement permanent zichtbaar (ook op mobiel)
 - 🎓 Begeleiders & Info in opvouwbare expander
 
 ### v1.16.4 (2025-12-30)
@@ -3240,24 +3206,6 @@ def toon_speler_view(nbb_nummer: str):
     
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
-    <style>
-        /* Op mobiel: geen vaste hoogte, alles op één pagina */
-        @media (max-width: 768px) {
-            /* Override de height van scrollbare containers */
-            [data-testid="stVerticalBlockBorderWrapper"] > div[style*="height"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-            
-            /* Alternatieve selector */
-            [style*="height: 600px"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-        }
-    </style>
     <div style="
         border-top: 3px solid #003082;
         border-radius: 0.5rem;
