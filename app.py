@@ -24,12 +24,12 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.8"
+APP_VERSIE = "1.16.9"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.8 (2025-12-30)
-**Container styling:**
-- 📱 Containers met border=True parameter
+### v1.16.9 (2025-12-30)
+**Test:**
+- 🧪 CSS selector test met rode rand
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -2604,10 +2604,16 @@ def toon_speler_view(nbb_nummer: str):
     # PUNTEN KLASSEMENT (altijd zichtbaar, ook op mobiel)
     # ============================================================
     
-    # TEST: Visuele banner om te bevestigen dat nieuwe code geladen is
+    # Pagina styling - test met zichtbare indicator
     st.markdown("""
-    <div style="background-color: #003082; color: white; padding: 0.5rem; border-radius: 0.5rem; margin-bottom: 0.5rem; text-align: center;">
-        📱 v1.16.8 - Container test
+    <style>
+        /* Test: rode rand om de app container */
+        .stApp > div:first-child {
+            border: 3px solid red !important;
+        }
+    </style>
+    <div style="background: #003082; color: white; padding: 0.3rem; text-align: center; border-radius: 0.3rem; margin-bottom: 0.5rem;">
+        v1.16.9 - CSS Test
     </div>
     """, unsafe_allow_html=True)
     
@@ -3201,8 +3207,8 @@ def toon_speler_view(nbb_nummer: str):
     with col_f5:
         filter_hele_overzicht = st.toggle(f"Hele overzicht (+{aantal_buiten_maand})", value=False, key="filter_hele_overzicht")
     
-    # Scrollbare container voor wedstrijden (met rand voor visueel onderscheid)
-    with st.container(height=600, border=True):
+    # Scrollbare container voor wedstrijden
+    with st.container(height=600):
         
         # Toon huidige inschrijvingen (indien filter aan)
         if filter_ingeschreven:
@@ -3229,7 +3235,7 @@ def toon_speler_view(nbb_nummer: str):
                     for v in verzoeken.values()
                 )
             
-                with st.container(border=True):
+                with st.container():
                     col1, col2, col3 = st.columns([2, 3, 2])
                     with col1:
                         st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
