@@ -24,12 +24,12 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.5"
+APP_VERSIE = "1.16.8"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.5 (2025-12-30)
-**Mobiele styling:**
-- 📱 Containers met rand voor visueel onderscheid
+### v1.16.8 (2025-12-30)
+**Container styling:**
+- 📱 Containers met border=True parameter
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -2603,6 +2603,14 @@ def toon_speler_view(nbb_nummer: str):
     # ============================================================
     # PUNTEN KLASSEMENT (altijd zichtbaar, ook op mobiel)
     # ============================================================
+    
+    # TEST: Visuele banner om te bevestigen dat nieuwe code geladen is
+    st.markdown("""
+    <div style="background-color: #003082; color: white; padding: 0.5rem; border-radius: 0.5rem; margin-bottom: 0.5rem; text-align: center;">
+        📱 v1.16.8 - Container test
+    </div>
+    """, unsafe_allow_html=True)
+    
     punten_klas = get_punten_klassement_met_positie(nbb_nummer)
     
     # Bouw klassement regel
