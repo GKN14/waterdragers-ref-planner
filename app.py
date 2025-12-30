@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.0"
+APP_VERSIE = "1.17.1"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.1 (2025-12-30)
+**Versienummer op mobiel:**
+- 📱 Versienummer toegevoegd aan Begeleiders & Info expander
+
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
 - 📱 Blauwe lijn boven wedstrijden container
@@ -2696,6 +2700,11 @@ def toon_speler_view(nbb_nummer: str):
         # Symbolen legenda
         st.markdown("**📋 Symbolen**")
         st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
+        
+        st.divider()
+        
+        # Versienummer
+        st.caption(f"Ref Planner v{APP_VERSIE}")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
