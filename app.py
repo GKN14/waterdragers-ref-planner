@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.8"
+APP_VERSIE = "1.16.9"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.9 (2025-12-30)
+**Mobiele styling fix:**
+- 📱 Alle nested containers nu wit
+
 ### v1.16.8 (2025-12-30)
 **Mobiele styling fix:**
 - 📱 Alle content nu in witte container (ook filters)
@@ -2545,18 +2549,30 @@ def toon_speler_view(nbb_nummer: str):
         /* MOBIEL: Achtergrond vs Container            */
         /* ============================================ */
         @media (max-width: 768px) {
-            /* Grijze achtergrond - egaal */
-            [data-testid="stAppViewContainer"],
-            .stApp {
+            /* Grijze achtergrond op root niveau */
+            [data-testid="stAppViewContainer"] {
                 background-color: #e8eaed !important;
             }
             
-            /* Main section zelf is de witte container */
+            /* Witte container - alles binnen stMain */
             section[data-testid="stMain"] {
+                background-color: #e8eaed !important;
+            }
+            
+            section[data-testid="stMain"] > div,
+            section[data-testid="stMain"] > div > div,
+            section[data-testid="stMain"] [data-testid="stVerticalBlock"],
+            section[data-testid="stMain"] .block-container,
+            section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
                 background-color: #ffffff !important;
+            }
+            
+            /* Alleen de buitenste container krijgt ronde hoeken */
+            section[data-testid="stMain"] > div:first-child {
                 border-radius: 1rem !important;
                 margin: 0.5rem !important;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+                overflow: hidden !important;
             }
             
             /* Sidebar ook wit */
