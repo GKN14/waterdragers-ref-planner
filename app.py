@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.5"
+APP_VERSIE = "1.16.6"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.6 (2025-12-30)
+**Mobiele styling fix:**
+- 📱 Grijze achtergrond nu op alle elementen
+- 📱 Witte container via stMainBlockContainer
+
 ### v1.16.5 (2025-12-30)
 **Mobiele styling:**
 - 📱 Grijze achtergrond met witte content container
@@ -2531,20 +2536,35 @@ def toon_speler_view(nbb_nummer: str):
         /* MOBIEL: Achtergrond vs Container            */
         /* ============================================ */
         @media (max-width: 768px) {
-            /* Grijze achtergrond voor ALLES */
+            /* Grijze achtergrond voor ALLES - meerdere selectors */
+            html, body, 
             [data-testid="stAppViewContainer"],
+            [data-testid="stApp"],
             [data-testid="stHeader"],
-            .stApp {
+            .stApp,
+            .main,
+            section[data-testid="stMain"] {
                 background-color: #e8eaed !important;
             }
             
-            /* Witte container rond main content block */
-            [data-testid="stMainBlockContainer"] {
+            /* Witte container rond content */
+            [data-testid="stMainBlockContainer"],
+            [data-testid="stVerticalBlock"],
+            .block-container {
                 background-color: #ffffff !important;
                 border-radius: 1rem !important;
                 margin: 0.5rem !important;
                 padding: 0.75rem !important;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+            }
+            
+            /* Nested blocks niet dubbel stylen */
+            [data-testid="stVerticalBlock"] [data-testid="stVerticalBlock"] {
+                background-color: transparent !important;
+                border-radius: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
             }
             
             /* Sidebar ook wit */
