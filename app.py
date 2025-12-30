@@ -24,32 +24,12 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.9"
+APP_VERSIE = "1.16.5"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.9 (2025-12-30)
-**Mobiele styling fix:**
-- 📱 Alle nested containers nu wit
-
-### v1.16.8 (2025-12-30)
-**Mobiele styling fix:**
-- 📱 Alle content nu in witte container (ook filters)
-
-### v1.16.7 (2025-12-30)
-**Mobiele styling fix:**
-- 📱 Grijze achtergrond is nu één egaal vlak
-- 📱 Alleen content container heeft ronde hoeken/schaduw
-
-### v1.16.6 (2025-12-30)
-**Mobiele styling fix:**
-- 📱 Grijze achtergrond nu op alle elementen
-- 📱 Witte container via stMainBlockContainer
-
 ### v1.16.5 (2025-12-30)
 **Mobiele styling:**
-- 📱 Grijze achtergrond met witte content container
-- 📱 Subtiele schaduw voor diepte-effect
-- 📱 Afgeronde hoeken op container
+- 📱 Expanders en containers krijgen lichtgrijze achtergrond
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -2546,38 +2526,14 @@ def toon_speler_view(nbb_nummer: str):
     st.markdown("""
     <style>
         /* ============================================ */
-        /* MOBIEL: Achtergrond vs Container            */
+        /* MOBIEL: Container styling                   */
         /* ============================================ */
         @media (max-width: 768px) {
-            /* Grijze achtergrond op root niveau */
-            [data-testid="stAppViewContainer"] {
-                background-color: #e8eaed !important;
-            }
-            
-            /* Witte container - alles binnen stMain */
-            section[data-testid="stMain"] {
-                background-color: #e8eaed !important;
-            }
-            
-            section[data-testid="stMain"] > div,
-            section[data-testid="stMain"] > div > div,
-            section[data-testid="stMain"] [data-testid="stVerticalBlock"],
-            section[data-testid="stMain"] .block-container,
-            section[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: #ffffff !important;
-            }
-            
-            /* Alleen de buitenste container krijgt ronde hoeken */
-            section[data-testid="stMain"] > div:first-child {
-                border-radius: 1rem !important;
-                margin: 0.5rem !important;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-                overflow: hidden !important;
-            }
-            
-            /* Sidebar ook wit */
-            [data-testid="stSidebar"] > div:first-child {
-                background-color: #ffffff !important;
+            /* Content containers krijgen lichte achtergrond */
+            [data-testid="stExpander"],
+            [data-testid="stVerticalBlockBorderWrapper"] {
+                background-color: #f8f9fa !important;
+                border-radius: 0.5rem !important;
             }
         }
         
