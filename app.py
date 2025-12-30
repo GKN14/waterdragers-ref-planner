@@ -24,13 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.10"
+APP_VERSIE = "1.16.11"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.10 (2025-12-30)
-**Mobiele styling:**
-- 📱 Grijze achtergrond met witte content container
-- 📱 Ronde hoeken en subtiele schaduw
+### v1.16.11 (2025-12-30)
+**Visuele scheiding:**
+- 📱 Gradient lijn (blauw→oranje) boven wedstrijden container
+- 📱 Duidelijke scheiding tussen filters en scroll-gebied
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -2605,26 +2605,6 @@ def toon_speler_view(nbb_nummer: str):
     # PUNTEN KLASSEMENT (altijd zichtbaar, ook op mobiel)
     # ============================================================
     
-    # Mobiele styling - grijze achtergrond, witte container
-    st.markdown("""
-    <style>
-        @media (max-width: 768px) {
-            /* Grijze achtergrond voor hele app */
-            .stApp {
-                background-color: #e9ecef !important;
-            }
-            
-            /* Witte container met ronde hoeken */
-            .stApp > div:first-child {
-                background-color: #ffffff !important;
-                border-radius: 1rem !important;
-                margin: 0.5rem !important;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
-            }
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
     punten_klas = get_punten_klassement_met_positie(nbb_nummer)
     
     # Bouw klassement regel
@@ -3214,6 +3194,24 @@ def toon_speler_view(nbb_nummer: str):
         filter_eigen_wedstrijd = st.toggle(f"Mijn wed ({aantal_eigen_wed})", value=True, key="filter_eigen_wedstrijd")
     with col_f5:
         filter_hele_overzicht = st.toggle(f"Hele overzicht (+{aantal_buiten_maand})", value=False, key="filter_hele_overzicht")
+    
+    # Visuele scheiding - header voor wedstrijden sectie + container styling
+    st.markdown("""
+    <style>
+        /* Style de scrollbare container (heeft height attribuut) */
+        [data-testid="stVerticalBlockBorderWrapper"]:has([style*="height"]) {
+            background-color: #f8f9fa !important;
+            border: 2px solid #dee2e6 !important;
+            border-radius: 0.75rem !important;
+        }
+    </style>
+    <div style="
+        background: linear-gradient(90deg, #003082 0%, #FF6600 100%);
+        height: 4px;
+        border-radius: 2px;
+        margin: 0.5rem 0;
+    "></div>
+    """, unsafe_allow_html=True)
     
     # Scrollbare container voor wedstrijden
     with st.container(height=600):
