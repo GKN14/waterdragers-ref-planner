@@ -24,15 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.2"
+APP_VERSIE = "1.17.3"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.17.2 (2025-12-30)
-**Test:**
-- 🧪 Test CSS marker voor expander
-
-### v1.17.1 (2025-12-30)
+### v1.17.3 (2025-12-30)
 **Desktop/Mobiel scheiding:**
+- 🖥️ Desktop: klassement + begeleiders info alleen in sidebar
+- 📱 Mobiel: klassement + begeleiders info in hoofdscherm
+
+### v1.17.0 (2025-12-30)
+**Mobiele UX verbeteringen:**
 - 🖥️ Desktop: klassement alleen in sidebar
 - 📱 Mobiel: klassement in hoofdscherm
 
@@ -2622,22 +2623,17 @@ def toon_speler_view(nbb_nummer: str):
         .mobiel-klassement {
             display: block;
         }
-        .mobiel-info-start {
+        .mobiel-info-start, .mobiel-info-end {
             height: 0;
             overflow: hidden;
-        }
-        .mobiel-info-end {
-            display: none;
         }
         @media (min-width: 769px) {
             .mobiel-klassement {
                 display: none !important;
             }
-            /* Test: maak alles na de marker rood */
-            .mobiel-info-start {
-                height: 5px !important;
-                background: red !important;
-                overflow: visible !important;
+            /* Verberg expander: het element direct na de marker */
+            .mobiel-info-start + div {
+                display: none !important;
             }
         }
     </style>
