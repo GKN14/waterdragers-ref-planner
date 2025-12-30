@@ -24,12 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.9"
+APP_VERSIE = "1.16.10"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.16.9 (2025-12-30)
-**Test:**
-- 🧪 CSS selector test met rode rand
+### v1.16.10 (2025-12-30)
+**Mobiele styling:**
+- 📱 Grijze achtergrond met witte content container
+- 📱 Ronde hoeken en subtiele schaduw
 
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
@@ -2604,17 +2605,24 @@ def toon_speler_view(nbb_nummer: str):
     # PUNTEN KLASSEMENT (altijd zichtbaar, ook op mobiel)
     # ============================================================
     
-    # Pagina styling - test met zichtbare indicator
+    # Mobiele styling - grijze achtergrond, witte container
     st.markdown("""
     <style>
-        /* Test: rode rand om de app container */
-        .stApp > div:first-child {
-            border: 3px solid red !important;
+        @media (max-width: 768px) {
+            /* Grijze achtergrond voor hele app */
+            .stApp {
+                background-color: #e9ecef !important;
+            }
+            
+            /* Witte container met ronde hoeken */
+            .stApp > div:first-child {
+                background-color: #ffffff !important;
+                border-radius: 1rem !important;
+                margin: 0.5rem !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+            }
         }
     </style>
-    <div style="background: #003082; color: white; padding: 0.3rem; text-align: center; border-radius: 0.3rem; margin-bottom: 0.5rem;">
-        v1.16.9 - CSS Test
-    </div>
     """, unsafe_allow_html=True)
     
     punten_klas = get_punten_klassement_met_positie(nbb_nummer)
