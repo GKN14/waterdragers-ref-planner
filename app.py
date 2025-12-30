@@ -2531,13 +2531,15 @@ def toon_speler_view(nbb_nummer: str):
         /* MOBIEL: Achtergrond vs Container            */
         /* ============================================ */
         @media (max-width: 768px) {
-            /* Achtergrond van de hele app */
-            [data-testid="stAppViewContainer"] {
+            /* Grijze achtergrond voor ALLES */
+            [data-testid="stAppViewContainer"],
+            [data-testid="stHeader"],
+            .stApp {
                 background-color: #e8eaed !important;
             }
             
-            /* Main content container */
-            [data-testid="stMain"] > div:first-child {
+            /* Witte container rond main content block */
+            [data-testid="stMainBlockContainer"] {
                 background-color: #ffffff !important;
                 border-radius: 1rem !important;
                 margin: 0.5rem !important;
