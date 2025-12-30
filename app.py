@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.4"
+APP_VERSIE = "1.16.5"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.5 (2025-12-30)
+**Mobiele styling:**
+- 📱 Grijze achtergrond met witte content container
+- 📱 Subtiele schaduw voor diepte-effect
+- 📱 Afgeronde hoeken op container
+
 ### v1.16.4 (2025-12-30)
 **Klassement & Feedback:**
 - 🏆 Punten klassement nu permanent zichtbaar (ook op mobiel)
@@ -2521,6 +2527,30 @@ def toon_speler_view(nbb_nummer: str):
     # Custom CSS voor responsive layout
     st.markdown("""
     <style>
+        /* ============================================ */
+        /* MOBIEL: Achtergrond vs Container            */
+        /* ============================================ */
+        @media (max-width: 768px) {
+            /* Achtergrond van de hele app */
+            [data-testid="stAppViewContainer"] {
+                background-color: #e8eaed !important;
+            }
+            
+            /* Main content container */
+            [data-testid="stMain"] > div:first-child {
+                background-color: #ffffff !important;
+                border-radius: 1rem !important;
+                margin: 0.5rem !important;
+                padding: 0.75rem !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+            }
+            
+            /* Sidebar ook wit */
+            [data-testid="stSidebar"] > div:first-child {
+                background-color: #ffffff !important;
+            }
+        }
+        
         /* ============================================ */
         /* METRICS: altijd naast elkaar, ook op mobiel */
         /* ============================================ */
