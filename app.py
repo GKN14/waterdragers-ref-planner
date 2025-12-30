@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.0"
+APP_VERSIE = "1.17.1"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.1 (2025-12-30)
+**Desktop/Mobiel scheiding:**
+- 🖥️ Desktop: klassement alleen in sidebar
+- 📱 Mobiel: klassement in hoofdscherm
+
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
 - 📱 Blauwe lijn boven wedstrijden container
@@ -2604,8 +2609,22 @@ def toon_speler_view(nbb_nummer: str):
     """, unsafe_allow_html=True)
     
     # ============================================================
-    # PUNTEN KLASSEMENT (altijd zichtbaar, ook op mobiel)
+    # PUNTEN KLASSEMENT (alleen op mobiel zichtbaar)
     # ============================================================
+    
+    # CSS om klassement te verbergen op desktop
+    st.markdown("""
+    <style>
+        .mobiel-klassement {
+            display: block;
+        }
+        @media (min-width: 769px) {
+            .mobiel-klassement {
+                display: none !important;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
     
     punten_klas = get_punten_klassement_met_positie(nbb_nummer)
     
@@ -2625,10 +2644,11 @@ def toon_speler_view(nbb_nummer: str):
             eigen = punten_klas["eigen"]
             klassement_items.append(f'··· **#{eigen["positie"]} Jij** ({eigen["punten"]})')
     
+    # Wrap in div die alleen op mobiel zichtbaar is
     if klassement_items:
-        st.markdown(f"🏆 **Klassement:** {' · '.join(klassement_items)}")
+        st.markdown(f'<div class="mobiel-klassement">🏆 <strong>Klassement:</strong> {" · ".join(klassement_items)}</div>', unsafe_allow_html=True)
     else:
-        st.caption("🏆 *Klassement: nog geen punten verdiend*")
+        st.markdown('<div class="mobiel-klassement"><em>🏆 Klassement: nog geen punten verdiend</em></div>', unsafe_allow_html=True)
     
     # Mobiele info sectie (begeleiders + info - kan opvouwen)
     with st.expander("🎓 Begeleiders & Info", expanded=False):
