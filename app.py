@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.3"
+APP_VERSIE = "1.17.4"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.4 (2025-12-30)
+**Test expander verbergen:**
+- 🧪 Probeer :has() selector
+
 ### v1.17.3 (2025-12-30)
 **Desktop/Mobiel scheiding:**
 - 🖥️ Desktop: klassement + begeleiders info alleen in sidebar
@@ -2631,8 +2635,8 @@ def toon_speler_view(nbb_nummer: str):
             .mobiel-klassement {
                 display: none !important;
             }
-            /* Verberg expander: het element direct na de marker */
-            .mobiel-info-start + div {
+            /* Verberg expander: alle volgende siblings tot end marker */
+            .mobiel-info-start ~ div:has([data-testid="stExpander"]) {
                 display: none !important;
             }
         }
