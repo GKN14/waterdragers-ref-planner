@@ -24,15 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.14"
+APP_VERSIE = "1.16.15"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.15 (2025-12-30)
+**Responsive container:**
+- 🖥️ Desktop: scrollbare container (600px)
+- 📱 Mobiel: CSS override poging
+
 ### v1.16.14 (2025-12-30)
 **Test container styling:**
-- 🧪 Test verschillende CSS selectors met kleuren
-
-### v1.16.13 (2025-12-30)
-**Scroll zone styling:**
 - 📱 CSS voor zichtbare scrollbar op iOS
 - 📱 Container met border=True
 
@@ -3240,19 +3241,21 @@ def toon_speler_view(nbb_nummer: str):
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
     <style>
-        /* Test: alle mogelijke selectors voor scrollbare container */
-        [data-testid="stVerticalBlockBorderWrapper"] {
-            background-color: #ffe0e0 !important;
-        }
-        
-        /* Container met border */
-        [data-testid="stVerticalBlockBorderWrapper"][data-testid-container="true"] {
-            background-color: #e0ffe0 !important;
-        }
-        
-        /* Overflow container */
-        [style*="overflow"] {
-            background-color: #e0e0ff !important;
+        /* Op mobiel: geen vaste hoogte, alles op één pagina */
+        @media (max-width: 768px) {
+            /* Override de height van scrollbare containers */
+            [data-testid="stVerticalBlockBorderWrapper"] > div[style*="height"] {
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
+            
+            /* Alternatieve selector */
+            [style*="height: 600px"] {
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+            }
         }
     </style>
     <div style="
