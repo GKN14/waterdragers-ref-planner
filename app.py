@@ -24,9 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.5"
+APP_VERSIE = "1.16.7"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.7 (2025-12-30)
+**Test container styling:**
+- 🧪 Blauwe rand op containers (test zonder media query)
+
+### v1.16.6 (2025-12-30)
+**Mobiele styling:**
+- 📱 Wedstrijd containers met grijze achtergrond en rand
+
 ### v1.16.5 (2025-12-30)
 **Mobiele styling:**
 - 📱 Expanders en containers krijgen lichtgrijze achtergrond
@@ -2526,15 +2534,14 @@ def toon_speler_view(nbb_nummer: str):
     st.markdown("""
     <style>
         /* ============================================ */
-        /* MOBIEL: Container styling                   */
+        /* CONTAINER STYLING (altijd actief voor test) */
         /* ============================================ */
-        @media (max-width: 768px) {
-            /* Content containers krijgen lichte achtergrond */
-            [data-testid="stExpander"],
-            [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: #f8f9fa !important;
-                border-radius: 0.5rem !important;
-            }
+        /* Wedstrijd containers */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background-color: #f0f0f0 !important;
+            border: 2px solid #003082 !important;
+            border-radius: 1rem !important;
+            margin: 0.5rem 0 !important;
         }
         
         /* ============================================ */
