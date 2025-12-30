@@ -24,15 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.4"
+APP_VERSIE = "1.17.5"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
-### v1.17.4 (2025-12-30)
-**Test expander verbergen:**
-- 🧪 Probeer :has() selector
+### v1.17.5 (2025-12-30)
+**Desktop/Mobiel:**
+- 🖥️ Desktop: klassement verborgen in hoofdscherm (staat in sidebar)
+- 📱 Mobiel: klassement + begeleiders info zichtbaar
+- 📱 Scrollbar fix
 
-### v1.17.3 (2025-12-30)
-**Desktop/Mobiel scheiding:**
+### v1.17.0 (2025-12-30)
+**Mobiele UX verbeteringen:**
 - 🖥️ Desktop: klassement + begeleiders info alleen in sidebar
 - 📱 Mobiel: klassement + begeleiders info in hoofdscherm
 
@@ -2621,22 +2623,14 @@ def toon_speler_view(nbb_nummer: str):
     # PUNTEN KLASSEMENT (alleen op mobiel zichtbaar)
     # ============================================================
     
-    # CSS om klassement en info te verbergen op desktop
+    # CSS om klassement te verbergen op desktop (expander blijft, is niet storend)
     st.markdown("""
     <style>
         .mobiel-klassement {
             display: block;
         }
-        .mobiel-info-start, .mobiel-info-end {
-            height: 0;
-            overflow: hidden;
-        }
         @media (min-width: 769px) {
             .mobiel-klassement {
-                display: none !important;
-            }
-            /* Verberg expander: alle volgende siblings tot end marker */
-            .mobiel-info-start ~ div:has([data-testid="stExpander"]) {
                 display: none !important;
             }
         }
@@ -2667,10 +2661,8 @@ def toon_speler_view(nbb_nummer: str):
     else:
         st.markdown('<div class="mobiel-klassement"><em>🏆 Klassement: nog geen punten verdiend</em></div>', unsafe_allow_html=True)
     
-    # Marker voor CSS targeting van de expander
-    st.markdown('<div class="mobiel-info-start"></div>', unsafe_allow_html=True)
-    
     # Mobiele info sectie (begeleiders + info - kan opvouwen)
+    # Op desktop is dit overbodig maar niet storend
     with st.expander("🎓 Begeleiders & Info", expanded=False):
         # Begeleiders klassement
         st.markdown("**🎓 Top Begeleiders**")
@@ -2718,8 +2710,6 @@ def toon_speler_view(nbb_nummer: str):
         # Symbolen legenda
         st.markdown("**📋 Symbolen**")
         st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
-    
-    st.markdown('<div class="mobiel-info-end"></div>', unsafe_allow_html=True)
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
