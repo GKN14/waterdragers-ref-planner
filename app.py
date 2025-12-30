@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.16.13"
+APP_VERSIE = "1.16.14"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.16.14 (2025-12-30)
+**Test container styling:**
+- 🧪 Test verschillende CSS selectors met kleuren
+
 ### v1.16.13 (2025-12-30)
 **Scroll zone styling:**
 - 📱 Blauwe lijn boven wedstrijden container
@@ -3197,6 +3201,22 @@ def toon_speler_view(nbb_nummer: str):
     
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
+    <style>
+        /* Test: alle mogelijke selectors voor scrollbare container */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background-color: #ffe0e0 !important;
+        }
+        
+        /* Container met border */
+        [data-testid="stVerticalBlockBorderWrapper"][data-testid-container="true"] {
+            background-color: #e0ffe0 !important;
+        }
+        
+        /* Overflow container */
+        [style*="overflow"] {
+            background-color: #e0e0ff !important;
+        }
+    </style>
     <div style="
         border-top: 3px solid #003082;
         border-radius: 0.5rem;
