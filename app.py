@@ -24,16 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.5"
+APP_VERSIE = "1.17.6"
 APP_VERSIE_DATUM = "2025-12-30"
 APP_CHANGELOG = """
+### v1.17.6 (2025-12-30)
+**Test:**
+- 🧪 CSS selector test met kleuren (rood/groen/blauw)
+
 ### v1.17.5 (2025-12-30)
 **Mobiel scroll fix:**
-- 📱 Bredere CSS selectors voor container override
-- 📱 Doel: geen nested scrolling op mobiel
-
-### v1.17.4 (2025-12-30)
-**Scrollbar fix:**
 - 📱 CSS voor zichtbare scrollbar op iOS
 - 📱 Container met border=True
 
@@ -3241,25 +3240,21 @@ def toon_speler_view(nbb_nummer: str):
     # Blauwe lijn boven wedstrijden container (visuele scheiding)
     st.markdown("""
     <style>
-        /* Op mobiel: geen vaste container hoogte, alles op één pagina scrollt */
+        /* TEST: welke selector werkt voor de scrollbare container? */
         @media (max-width: 768px) {
-            /* Target de scrollbare container div */
-            [data-testid="stVerticalBlockBorderWrapper"] [style*="overflow: auto"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
+            /* Test 1: rode rand */
+            [data-testid="stVerticalBlockBorderWrapper"] {
+                border: 3px solid red !important;
             }
             
-            [data-testid="stVerticalBlockBorderWrapper"] [style*="height: 600px"] {
-                height: auto !important;
-                max-height: none !important;
-                overflow: visible !important;
+            /* Test 2: groene achtergrond op overflow elementen */
+            [style*="overflow"] {
+                background-color: lightgreen !important;
             }
             
-            /* Alle elementen met vaste hoogte binnen containers */
-            .stVerticalBlock [style*="height"] {
-                height: auto !important;
-                max-height: none !important;
+            /* Test 3: blauwe rand op height elementen */
+            [style*="height: 600"] {
+                border: 3px solid blue !important;
             }
         }
     </style>
