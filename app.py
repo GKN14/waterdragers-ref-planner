@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.0"
-APP_VERSIE_DATUM = "2025-12-30"
+APP_VERSIE = "1.17.1"
+APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
+### v1.17.1 (2025-12-31)
+**Bugfix beloningsinstellingen:**
+- 🐛 Fix: Beloningsinstellingen (zoals punten voor voucher) worden nu direct doorgevoerd
+- 🔄 Sessie-cache verwijderd zodat wijzigingen in beheer meteen zichtbaar zijn voor spelers
+
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
 - 📱 Blauwe lijn boven wedstrijden container
