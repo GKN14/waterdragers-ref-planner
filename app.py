@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.1"
+APP_VERSIE = "1.17.2-debug"
 APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
+### v1.17.2-debug (2025-12-31)
+**Debug versie voor beloningsinstellingen:**
+- 🔍 Debug output bij opslaan punten instellingen
+- 🔍 Verificatie van database waarde na opslaan
+
 ### v1.17.1 (2025-12-31)
 **Bugfix beloningsinstellingen:**
 - 🐛 Fix: Beloningsinstellingen (zoals punten voor voucher) worden nu direct doorgevoerd
@@ -6538,9 +6543,20 @@ def toon_instellingen_beheer():
                 beloningsinst["punten_inval_48u"] = punten_inval_48
                 beloningsinst["punten_inval_24u"] = punten_inval_24
                 beloningsinst["punten_voor_voucher"] = punten_voucher
-                sla_beloningsinstellingen_op(beloningsinst)
-                st.success("Punten instellingen opgeslagen!")
-                st.rerun()
+                
+                # Debug: toon wat we gaan opslaan
+                st.info(f"DEBUG: Opslaan punten_voor_voucher = {punten_voucher}")
+                
+                success = sla_beloningsinstellingen_op(beloningsinst)
+                
+                if success:
+                    st.success("Punten instellingen opgeslagen!")
+                    # Debug: direct opnieuw laden om te verifiëren
+                    verificatie = db.laad_beloningsinstellingen_direct()
+                    st.info(f"DEBUG: Na opslaan in DB = {verificatie.get('punten_voor_voucher', 'NIET GEVONDEN')}")
+                    st.warning("DEBUG MODUS: Klik nogmaals op opslaan of ververs de pagina om door te gaan")
+                else:
+                    st.error("Opslaan mislukt!")
         
         st.divider()
         

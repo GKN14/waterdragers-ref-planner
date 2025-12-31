@@ -1143,11 +1143,22 @@ def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
             **instellingen,
             "updated_at": datetime.now().isoformat()
         }
-        supabase.table("beloningsinstellingen").upsert(record).execute()
+        response = supabase.table("beloningsinstellingen").upsert(record).execute()
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan beloningsinstellingen: {e}")
         return False
+
+def laad_beloningsinstellingen_direct() -> dict:
+    """Laad beloningsinstellingen direct uit Supabase (zonder cache, voor verificatie)"""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("beloningsinstellingen").select("*").eq("id", 1).execute()
+        if response.data:
+            return response.data[0]
+        return {"error": "Geen data gevonden"}
+    except Exception as e:
+        return {"error": str(e)}
 
 # ============================================================
 # BESCHIKBARE KLUSJES
