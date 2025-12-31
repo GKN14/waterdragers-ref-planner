@@ -29,7 +29,7 @@ APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
 ### v1.19.0 (2025-12-31)
 **Help-functie:**
-- ❓ Nieuwe Help-sectie in sidebar voor spelers
+- ❓ Nieuwe Help-sectie in Begeleiders & Info expander
 - 📚 Uitleg over: Aan de slag, Beschikbaarheid, Ontwikkelen, Belonen
 - 🎓 MSE-sectie alleen zichtbaar voor MSE-scheidsrechters
 - 📱 Korte, bondige teksten voor jeugdspelers
@@ -2748,33 +2748,6 @@ def toon_speler_view(nbb_nummer: str):
                                 st.rerun()
         
         # ============================================================
-        # HELP (SAMENGEVOUWEN)
-        # ============================================================
-        with st.expander("❓ Help"):
-            # Maak tabs voor elke categorie
-            help_categorieen = list(HELP_TEKSTEN.keys())
-            
-            # Filter MSE sectie voor niet-MSE gebruikers
-            if not is_mse:
-                help_categorieen = [c for c in help_categorieen if c != "Voor MSE"]
-            
-            help_keuze = st.radio(
-                "Onderwerp",
-                options=help_categorieen,
-                format_func=lambda x: f"{HELP_TEKSTEN[x]['icon']} {x}",
-                label_visibility="collapsed",
-                horizontal=True
-            )
-            
-            st.divider()
-            
-            # Toon onderwerpen voor geselecteerde categorie
-            for onderwerp, tekst in HELP_TEKSTEN[help_keuze]["onderwerpen"].items():
-                st.markdown(f"**{onderwerp}**")
-                st.caption(tekst)
-                st.markdown("")  # Extra ruimte
-        
-        # ============================================================
         # APPARATEN (SAMENGEVOUWEN)
         # ============================================================
         device_count = db.get_device_count(nbb_nummer)
@@ -3133,6 +3106,30 @@ def toon_speler_view(nbb_nummer: str):
         # Symbolen legenda
         st.markdown("**📋 Symbolen**")
         st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
+        
+        st.divider()
+        
+        # Help sectie
+        st.markdown("**❓ Help**")
+        
+        # Filter MSE sectie voor niet-MSE gebruikers
+        help_categorieen = list(HELP_TEKSTEN.keys())
+        if not is_mse:
+            help_categorieen = [c for c in help_categorieen if c != "Voor MSE"]
+        
+        help_keuze = st.radio(
+            "Help onderwerp",
+            options=help_categorieen,
+            format_func=lambda x: f"{HELP_TEKSTEN[x]['icon']} {x}",
+            label_visibility="collapsed",
+            horizontal=True,
+            key="help_radio_main"
+        )
+        
+        # Toon onderwerpen voor geselecteerde categorie
+        for onderwerp, tekst in HELP_TEKSTEN[help_keuze]["onderwerpen"].items():
+            st.markdown(f"**{onderwerp}**")
+            st.caption(tekst)
         
         st.divider()
         
