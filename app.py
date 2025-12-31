@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.18.1"
+APP_VERSIE = "1.19.0"
 APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
+### v1.19.0 (2025-12-31)
+**Help-functie:**
+- ❓ Nieuwe Help-sectie in sidebar voor spelers
+- 📚 Uitleg over: Aan de slag, Beschikbaarheid, Ontwikkelen, Belonen
+- 🎓 MSE-sectie alleen zichtbaar voor MSE-scheidsrechters
+- 📱 Korte, bondige teksten voor jeugdspelers
+
 ### v1.18.1 (2025-12-31)
 **No-show met invaller:**
 - 🔄 Nieuwe optie: No-show met invaller (strikes + punten in één actie)
@@ -509,6 +516,53 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
+
+# ============================================================
+# HELP-TEKSTEN
+# ============================================================
+HELP_TEKSTEN = {
+    "Aan de slag": {
+        "icon": "🚀",
+        "onderwerpen": {
+            "Wat is BOB?": "BOB staat voor **Beschikbaarheid, Ontwikkelen, Belonen**. Je schrijft je in om wedstrijden te fluiten, krijgt begeleiding als je dat wilt, en verdient punten voor beloningen.",
+            "Inloggen": "Je ontvangt een persoonlijke link met jouw NBB-nummer erin. De eerste keer op een nieuw apparaat vragen we je geboortedatum ter verificatie. Daarna onthouden we dat apparaat.",
+            "Je profiel": "In de sidebar zie je: je niveau als 1e en 2e scheidsrechter, je minimum aantal wedstrijden, je eigen team(s), en je punten en strikes."
+        }
+    },
+    "Beschikbaarheid": {
+        "icon": "📅",
+        "onderwerpen": {
+            "Inschrijven": "In de kalender zie je alle wedstrijden. Klik op een wedstrijd om je in te schrijven. Je kunt alleen wedstrijden kiezen die bij je niveau passen.",
+            "Afmelden": "Moet je afmelden? Probeer altijd zelf vervanging te regelen. Afmelden zonder vervanging kort voor de wedstrijd levert strikes op.",
+            "Vervanging regelen": "Vraag een andere scheidsrechter om jouw wedstrijd over te nemen. Accepteert diegene? Dan ben je afgemeld zonder strikes."
+        }
+    },
+    "Ontwikkelen": {
+        "icon": "📈",
+        "onderwerpen": {
+            "Begeleiding aanvragen": "Vind je fluiten spannend of wil je beter worden? Zet in je profiel dat je open staat voor begeleiding. Een MSE-scheidsrechter kan dan met je meekijken.",
+            "Motivatie aangeven": "Geef aan waarom je begeleiding wilt: 'Ik vind het spannend', 'Ik wil naar BS2', of 'Ik wil beter worden'.",
+            "Fluiten met een MSE'er": "Fluit je samen met een MSE-scheidsrechter? Dan mag je ook wedstrijden doen boven je eigen niveau. Zo leer je sneller!"
+        }
+    },
+    "Belonen": {
+        "icon": "🏆",
+        "onderwerpen": {
+            "Punten verdienen": "Je verdient punten door extra wedstrijden te fluiten (boven je minimum). Bonus voor lastige tijdstippen en last-minute invallen!",
+            "Strikes": "Strikes krijg je bij afmelden zonder vervanging: binnen 48u = 1 strike, binnen 24u = 2 strikes, no-show = 5 strikes. Met vervanging = 0 strikes!",
+            "Strikes wegwerken": "Klusje doen (-1), extra wedstrijd fluiten (-1), of invallen binnen 48u (-2 strikes).",
+            "Beloningen": "Top 3 zichtbaar in de app. Bij voldoende punten: clinic naar keuze. Einde seizoen: financiële beloning voor top 3!"
+        }
+    },
+    "Voor MSE": {
+        "icon": "🎓",
+        "onderwerpen": {
+            "Spelers begeleiden": "Je ziet in de app welke spelers open staan voor begeleiding en waarom. Zo kun je gericht helpen.",
+            "Ik kom kijken": "Geef aan dat je komt kijken bij een wedstrijd. De speler krijgt hiervan een melding.",
+            "Uitnodigen als 2e": "Nodig een speler uit om samen te fluiten. Jij bent 1e, zij leren als 2e. Ze mogen dan ook wedstrijden boven hun niveau doen."
+        }
+    }
+}
 
 # Custom CSS voor afwisselende dag-achtergronden
 def inject_custom_css():
@@ -2692,6 +2746,33 @@ def toon_speler_view(nbb_nummer: str):
                             if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
                                 verwijder_begeleiding_feedback(fb.get("feedback_id"))
                                 st.rerun()
+        
+        # ============================================================
+        # HELP (SAMENGEVOUWEN)
+        # ============================================================
+        with st.expander("❓ Help"):
+            # Maak tabs voor elke categorie
+            help_categorieen = list(HELP_TEKSTEN.keys())
+            
+            # Filter MSE sectie voor niet-MSE gebruikers
+            if not is_mse:
+                help_categorieen = [c for c in help_categorieen if c != "Voor MSE"]
+            
+            help_keuze = st.radio(
+                "Onderwerp",
+                options=help_categorieen,
+                format_func=lambda x: f"{HELP_TEKSTEN[x]['icon']} {x}",
+                label_visibility="collapsed",
+                horizontal=True
+            )
+            
+            st.divider()
+            
+            # Toon onderwerpen voor geselecteerde categorie
+            for onderwerp, tekst in HELP_TEKSTEN[help_keuze]["onderwerpen"].items():
+                st.markdown(f"**{onderwerp}**")
+                st.caption(tekst)
+                st.markdown("")  # Extra ruimte
         
         # ============================================================
         # APPARATEN (SAMENGEVOUWEN)
