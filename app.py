@@ -24,18 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.17.1"
+APP_VERSIE = "1.18.0"
 APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
-### v1.17.1 (2025-12-31)
-**Bugfix beloningsinstellingen:**
-- 🐛 Fix: Beloningsinstellingen (zoals punten voor voucher) worden nu direct doorgevoerd
-- 🔄 Sessie-cache verwijderd zodat wijzigingen in beheer meteen zichtbaar zijn voor spelers
-
-### v1.17.0 (2025-12-30)
-**Mobiele UX verbeteringen:**
-- 🐛 Fix: Beloningsinstellingen (zoals punten voor voucher) worden nu direct doorgevoerd
-- 🔄 Sessie-cache verwijderd zodat wijzigingen in beheer meteen zichtbaar zijn voor spelers
+### v1.18.0 (2025-12-31)
+**Deadline per maand & Punten na bevestiging:**
+- 📅 Deadline sluit nu alleen de betreffende maand, latere maanden blijven open
+- ✅ Nieuwe tab "Bevestigen" in beheerder view
+- 🏆 Punten worden pas toegekend na bevestiging door TC
+- ❌ No-show optie met automatische strike toekenning
+- 📊 Bulk actie om alle wedstrijden als gefloten te markeren
+- 🔄 Sessie-cache verwijderd voor beloningsinstellingen (direct doorvoeren)
 
 ### v1.17.0 (2025-12-30)
 **Mobiele UX verbeteringen:**
@@ -1230,6 +1229,197 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "berekening": berekening
     }
 
+def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict) -> dict:
+    """
+    Schrijf een scheidsrechter in voor een wedstrijd.
+    
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        wedstrijden: Dict van alle wedstrijden
+        scheidsrechters: Dict van alle scheidsrechters
+    
+    Returns:
+        dict met punten_info of None bij fout
+    
+    De punten worden BEREKEND en OPGESLAGEN bij de wedstrijd, maar NIET toegekend aan de speler.
+    Punten worden pas toegekend wanneer de TC de wedstrijd bevestigt als "gefloten".
+    """
+    # Bereken punten
+    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, wedstrijden, scheidsrechters)
+    
+    # Bepaal punten kolom naam
+    punten_kolom = "scheids_1_punten_berekend" if positie == "scheids_1" else "scheids_2_punten_berekend"
+    details_kolom = "scheids_1_punten_details" if positie == "scheids_1" else "scheids_2_punten_details"
+    
+    # Update wedstrijd met scheidsrechter EN berekende punten
+    wedstrijden[wed_id][positie] = nbb_nummer
+    wedstrijden[wed_id][punten_kolom] = punten_info["totaal"]
+    wedstrijden[wed_id][details_kolom] = punten_info  # Volledige details voor transparantie
+    
+    # Sla op
+    sla_wedstrijden_op(wedstrijden)
+    
+    return punten_info
+
+def bevestig_wedstrijd_gefloten(wed_id: str, positie: str, bevestigd_door: str) -> bool:
+    """
+    Bevestig dat een scheidsrechter de wedstrijd heeft gefloten.
+    Kent de opgeslagen punten toe aan de speler.
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        bevestigd_door: Naam/ID van TC-lid die bevestigt
+    
+    Returns:
+        True bij succes, False bij fout
+    """
+    wedstrijden = laad_wedstrijden()
+    wed = wedstrijden.get(wed_id)
+    
+    if not wed:
+        return False
+    
+    # Bepaal kolom namen
+    scheids_kolom = positie
+    status_kolom = f"{positie}_status"
+    bevestigd_op_kolom = f"{positie}_bevestigd_op"
+    bevestigd_door_kolom = f"{positie}_bevestigd_door"
+    punten_kolom = f"{positie}_punten_berekend"
+    details_kolom = f"{positie}_punten_details"
+    
+    nbb_nummer = wed.get(scheids_kolom)
+    if not nbb_nummer:
+        return False
+    
+    # Haal opgeslagen punten op
+    punten = wed.get(punten_kolom, 0)
+    punten_details = wed.get(details_kolom, {})
+    
+    # Update status
+    wed[status_kolom] = "gefloten"
+    wed[bevestigd_op_kolom] = datetime.now().isoformat()
+    wed[bevestigd_door_kolom] = bevestigd_door
+    
+    # Sla wedstrijd update op
+    sla_wedstrijden_op(wedstrijden)
+    
+    # Ken punten toe aan speler
+    if punten and punten > 0:
+        reden = punten_details.get("details", f"Wedstrijd {wed.get('thuisteam')} vs {wed.get('uitteam')}")
+        voeg_punten_toe(nbb_nummer, punten, reden, wed_id, punten_details.get("berekening"))
+    
+    return True
+
+def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
+    """
+    Markeer een scheidsrechter als no-show.
+    Kent no-show strikes toe.
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        bevestigd_door: Naam/ID van TC-lid die markeert
+    
+    Returns:
+        True bij succes, False bij fout
+    """
+    wedstrijden = laad_wedstrijden()
+    wed = wedstrijden.get(wed_id)
+    
+    if not wed:
+        return False
+    
+    # Bepaal kolom namen
+    scheids_kolom = positie
+    status_kolom = f"{positie}_status"
+    bevestigd_op_kolom = f"{positie}_bevestigd_op"
+    bevestigd_door_kolom = f"{positie}_bevestigd_door"
+    
+    nbb_nummer = wed.get(scheids_kolom)
+    if not nbb_nummer:
+        return False
+    
+    # Update status
+    wed[status_kolom] = "no_show"
+    wed[bevestigd_op_kolom] = datetime.now().isoformat()
+    wed[bevestigd_door_kolom] = bevestigd_door
+    
+    # Sla wedstrijd update op
+    sla_wedstrijden_op(wedstrijden)
+    
+    # Ken no-show strikes toe
+    beloningsinst = laad_beloningsinstellingen()
+    strikes = beloningsinst.get("strikes_no_show", 5)
+    reden = f"No-show: {wed.get('thuisteam')} vs {wed.get('uitteam')}"
+    voeg_strike_toe(nbb_nummer, strikes, reden)
+    
+    return True
+
+def get_te_bevestigen_wedstrijden() -> list:
+    """
+    Haal wedstrijden op die in het verleden liggen en nog niet volledig bevestigd zijn.
+    
+    Returns:
+        Lijst van wedstrijden met openstaande bevestigingen
+    """
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    nu = datetime.now()
+    
+    te_bevestigen = []
+    
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        
+        # Parse datum
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        except:
+            continue
+        
+        # Alleen wedstrijden in het verleden
+        if wed_datum > nu:
+            continue
+        
+        # Check scheids_1
+        scheids_1 = wed.get("scheids_1")
+        scheids_1_status = wed.get("scheids_1_status")
+        
+        # Check scheids_2
+        scheids_2 = wed.get("scheids_2")
+        scheids_2_status = wed.get("scheids_2_status")
+        
+        # Heeft deze wedstrijd openstaande bevestigingen?
+        scheids_1_open = scheids_1 and not scheids_1_status
+        scheids_2_open = scheids_2 and not scheids_2_status
+        
+        if scheids_1_open or scheids_2_open:
+            te_bevestigen.append({
+                "wed_id": wed_id,
+                "datum": wed["datum"],
+                "wed_datum": wed_datum,
+                "thuisteam": wed.get("thuisteam", ""),
+                "uitteam": wed.get("uitteam", ""),
+                "niveau": wed.get("niveau", 1),
+                "scheids_1": scheids_1,
+                "scheids_1_naam": scheidsrechters.get(scheids_1, {}).get("naam", "Onbekend") if scheids_1 else None,
+                "scheids_1_status": scheids_1_status,
+                "scheids_1_punten": wed.get("scheids_1_punten_berekend", 0),
+                "scheids_2": scheids_2,
+                "scheids_2_naam": scheidsrechters.get(scheids_2, {}).get("naam", "Onbekend") if scheids_2 else None,
+                "scheids_2_status": scheids_2_status,
+                "scheids_2_punten": wed.get("scheids_2_punten_berekend", 0),
+                "scheids_1_open": scheids_1_open,
+                "scheids_2_open": scheids_2_open
+            })
+    
+    # Sorteer op datum (oudste eerst)
+    return sorted(te_bevestigen, key=lambda x: x["wed_datum"])
+
 def get_ranglijst() -> list:
     """Haal ranglijst op (gesorteerd op punten, aflopend)."""
     beloningen = laad_beloningen()
@@ -1252,10 +1442,85 @@ def get_ranglijst() -> list:
 # ============================================================
 
 def is_inschrijving_open() -> bool:
-    """Check of inschrijfperiode nog loopt."""
+    """Check of inschrijfperiode nog loopt (backwards compatible)."""
     instellingen = laad_instellingen()
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     return datetime.now() <= deadline
+
+def is_inschrijving_open_voor_wedstrijd(wed_datum: datetime) -> bool:
+    """
+    Check of inschrijving open is voor een specifieke wedstrijd.
+    De deadline sluit alleen de maand waar de deadline voor geldt.
+    Wedstrijden in latere maanden blijven open voor inschrijving.
+    
+    Voorbeeld: Deadline 15 januari
+    - Wedstrijd 20 januari → DICHT (zelfde maand)
+    - Wedstrijd 5 februari → OPEN (latere maand)
+    """
+    instellingen = laad_instellingen()
+    deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    nu = datetime.now()
+    
+    # Bepaal de maand waar de deadline betrekking op heeft
+    # Als deadline <= 15e van de maand → geldt voor die maand
+    # Als deadline > 15e van de maand → geldt voor volgende maand
+    if deadline.day <= 15:
+        deadline_maand = deadline.month
+        deadline_jaar = deadline.year
+    else:
+        if deadline.month == 12:
+            deadline_maand = 1
+            deadline_jaar = deadline.year + 1
+        else:
+            deadline_maand = deadline.month + 1
+            deadline_jaar = deadline.year
+    
+    # Wedstrijd maand en jaar
+    wed_maand = wed_datum.month
+    wed_jaar = wed_datum.year
+    
+    # Als we nog voor de deadline zijn, is alles open
+    if nu <= deadline:
+        return True
+    
+    # Na de deadline: check of wedstrijd in de afgesloten maand valt
+    # De afgesloten maand is de deadline_maand/deadline_jaar
+    if wed_jaar == deadline_jaar and wed_maand == deadline_maand:
+        # Wedstrijd valt in de afgesloten maand
+        return False
+    elif wed_jaar < deadline_jaar or (wed_jaar == deadline_jaar and wed_maand < deadline_maand):
+        # Wedstrijd is in het verleden (voor de afgesloten maand)
+        return False
+    else:
+        # Wedstrijd is in een latere maand - open voor inschrijving
+        return True
+
+def get_deadline_maand_info() -> dict:
+    """
+    Haal informatie op over de huidige deadline en welke maand afgesloten is.
+    Returns: {"deadline": datetime, "gesloten_maand": int, "gesloten_jaar": int, "is_verlopen": bool}
+    """
+    instellingen = laad_instellingen()
+    deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    nu = datetime.now()
+    
+    if deadline.day <= 15:
+        gesloten_maand = deadline.month
+        gesloten_jaar = deadline.year
+    else:
+        if deadline.month == 12:
+            gesloten_maand = 1
+            gesloten_jaar = deadline.year + 1
+        else:
+            gesloten_maand = deadline.month + 1
+            gesloten_jaar = deadline.year
+    
+    return {
+        "deadline": deadline,
+        "gesloten_maand": gesloten_maand,
+        "gesloten_jaar": gesloten_jaar,
+        "is_verlopen": nu > deadline
+    }
 
 def heeft_eigen_wedstrijd(nbb_nummer: str, datum_tijd: datetime, wedstrijden: dict, scheidsrechters: dict) -> bool:
     """
@@ -2698,15 +2963,13 @@ def toon_speler_view(nbb_nummer: str):
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
-    deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
+    deadline_info = get_deadline_maand_info()
+    deadline = deadline_info["deadline"]
     dagen_over = (deadline - datetime.now()).days
     maand_namen_vol = ["", "januari", "februari", "maart", "april", "mei", "juni", 
                        "juli", "augustus", "september", "oktober", "november", "december"]
-    # Bepaal voor welke maand de inschrijving is (originele logica)
-    if deadline.day <= 15:
-        inschrijf_maand = maand_namen_vol[deadline.month]
-    else:
-        inschrijf_maand = maand_namen_vol[1 if deadline.month == 12 else deadline.month + 1]
+    
+    gesloten_maand_naam = maand_namen_vol[deadline_info["gesloten_maand"]]
     
     col_status, col_deadline = st.columns(2)
     with col_status:
@@ -2715,12 +2978,10 @@ def toon_speler_view(nbb_nummer: str):
         else:
             st.success(f"✅ Minimum voldaan ({op_niveau}/{min_wed})")
     with col_deadline:
-        if dagen_over < 0:
-            st.info(f"📅 Inschrijfperiode gesloten")
-            kan_inschrijven = False
+        if deadline_info["is_verlopen"]:
+            st.info(f"📅 **{gesloten_maand_naam}** gesloten, latere maanden open")
         else:
-            st.info(f"📅 Deadline **{dagen_over}** dagen voor inschrijving {inschrijf_maand}")
-            kan_inschrijven = True
+            st.info(f"📅 Deadline **{dagen_over}** dagen voor {gesloten_maand_naam}")
     
     # Begeleiding status (compact)
     open_voor_begeleiding = scheids.get("open_voor_begeleiding", False)
@@ -3013,14 +3274,12 @@ def toon_speler_view(nbb_nummer: str):
                 
                 col_info, col_accept, col_reject = st.columns([3, 1, 1])
                 with col_info:
-                    st.write(f"**{aanvrager}** vraagt vervanging: {dag} {wed_datum.strftime('%d-%m %H:%M')} (+{punten_info['totaal']}🏆)")
+                    st.write(f"**{aanvrager}** vraagt vervanging: {dag} {wed_datum.strftime('%d-%m %H:%M')} (+{punten_info['totaal']}🏆 na bevestiging)")
                 with col_accept:
                     if st.button("✅", key=f"verz_acc_{verzoek['id']}", help="Accepteren"):
-                        punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, verzoek["wed_id"], wedstrijden, scheidsrechters)
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
-                        wedstrijden[verzoek["wed_id"]][positie_key] = nbb_nummer
-                        sla_wedstrijden_op(wedstrijden)
-                        voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], verzoek["wed_id"], punten_definitief['berekening'])
+                        # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
+                        schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters)
                         verzoeken[verzoek["id"]]["status"] = "accepted"
                         verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
                         sla_vervangingsverzoeken_op(verzoeken)
@@ -3187,6 +3446,11 @@ def toon_speler_view(nbb_nummer: str):
                 kan_als_2e = False  # Geen 1e scheids, niveau te hoog
         
         kan_inschrijven = kan_als_1e or kan_als_2e
+        
+        # Check deadline per maand
+        deadline_open = is_inschrijving_open_voor_wedstrijd(wed_datum)
+        if not deadline_open:
+            kan_inschrijven = False
         
         if not kan_inschrijven:
             continue  # Kan niet inschrijven, niet meetellen
@@ -3448,8 +3712,9 @@ def toon_speler_view(nbb_nummer: str):
                         else:
                             kan_als_2e = False
                     
-                    # Combineer alle checks
-                    kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked
+                    # Combineer alle checks inclusief deadline per maand
+                    deadline_open = is_inschrijving_open_voor_wedstrijd(wed_datum)
+                    kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked and deadline_open
                     
                     # MSE's kunnen ook begeleiden (zonder te fluiten)
                     kan_begeleiden = False
@@ -3634,13 +3899,8 @@ def toon_speler_view(nbb_nummer: str):
                                         col_ja, col_nee = st.columns(2)
                                         with col_ja:
                                             if st.button("✅ Toch inschrijven", key=f"bevestig_ja_1e_{wed['id']}", type="secondary"):
-                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                                wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                                sla_wedstrijden_op(wedstrijden)
-                                            
-                                                if punten_definitief:
-                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
+                                                punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
                                             
                                                 del st.session_state[bevestig_key]
                                                 st.rerun()
@@ -3670,22 +3930,16 @@ def toon_speler_view(nbb_nummer: str):
                                                 st.session_state[bevestig_key] = True
                                                 st.rerun()
                                             else:
-                                                # Direct inschrijven
-                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                                wedstrijden[wed["id"]]["scheids_1"] = nbb_nummer
-                                                sla_wedstrijden_op(wedstrijden)
-                                            
-                                                if punten_definitief:
-                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                # Direct inschrijven - punten worden opgeslagen maar niet toegekend
+                                                punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
                                                 
-                                                    if punten_definitief['inval_bonus'] > 0:
-                                                        st.success(f"""
-                                                        ✅ **Ingeschreven!**  
-                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                        🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                        """)
+                                                if punten_definitief and punten_definitief.get('inval_bonus', 0) > 0:
+                                                    st.success(f"""
+                                                    ✅ **Ingeschreven!**  
+                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                    🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
+                                                    """)
                                             
                                                 st.rerun()
                                 else:
@@ -3751,13 +4005,8 @@ def toon_speler_view(nbb_nummer: str):
                                         col_ja, col_nee = st.columns(2)
                                         with col_ja:
                                             if st.button("✅ Toch inschrijven", key=f"bevestig_ja_2e_{wed['id']}", type="secondary"):
-                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                                wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                                sla_wedstrijden_op(wedstrijden)
-                                            
-                                                if punten_definitief:
-                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
+                                                punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
                                             
                                                 del st.session_state[bevestig_key]
                                                 st.rerun()
@@ -3786,21 +4035,16 @@ def toon_speler_view(nbb_nummer: str):
                                                 st.session_state[bevestig_key] = True
                                                 st.rerun()
                                             else:
-                                                punten_definitief = bereken_punten_voor_wedstrijd(nbb_nummer, wed['id'], wedstrijden, scheidsrechters) if punten_info else None
-                                            
-                                                wedstrijden[wed["id"]]["scheids_2"] = nbb_nummer
-                                                sla_wedstrijden_op(wedstrijden)
-                                            
-                                                if punten_definitief:
-                                                    voeg_punten_toe(nbb_nummer, punten_definitief['totaal'], punten_definitief['details'], wed['id'], punten_definitief['berekening'])
+                                                # Direct inschrijven - punten worden opgeslagen maar niet toegekend
+                                                punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
                                                 
-                                                    if punten_definitief['inval_bonus'] > 0:
-                                                        st.success(f"""
-                                                        ✅ **Ingeschreven!**  
-                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                        🏆 **{punten_definitief['totaal']} punten** ({punten_definitief['details']})
-                                                        """)
+                                                if punten_definitief and punten_definitief.get('inval_bonus', 0) > 0:
+                                                    st.success(f"""
+                                                    ✅ **Ingeschreven!**  
+                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                    🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
+                                                    """)
                                             
                                                 st.rerun()
                                 else:
@@ -3967,11 +4211,12 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
         "📈 Capaciteit",
         "🏆 Beloningen",
+        "✅ Bevestigen",
         "📊 Analyse",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
@@ -3992,19 +4237,143 @@ def toon_beheerder_view():
         toon_beloningen_beheer()
     
     with tab5:
-        toon_analyse_dashboard()
+        toon_bevestigen_wedstrijden()
     
     with tab6:
-        toon_weekend_overzicht()
+        toon_analyse_dashboard()
     
     with tab7:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab8:
-        toon_import_export()
+        toon_instellingen_beheer()
     
     with tab9:
+        toon_import_export()
+    
+    with tab10:
         toon_apparaten_beheer()
+
+def toon_bevestigen_wedstrijden():
+    """TC scherm voor het bevestigen van gespeelde wedstrijden."""
+    st.subheader("✅ Wedstrijden Bevestigen")
+    st.caption("Bevestig dat scheidsrechters hebben gefloten om punten toe te kennen")
+    
+    # Uitleg
+    with st.expander("ℹ️ Hoe werkt dit?"):
+        st.markdown("""
+        **Nieuw proces:**
+        1. Spelers schrijven zich in voor wedstrijden
+        2. Punten worden **berekend** maar nog niet toegekend
+        3. Na de wedstrijd bevestigt TC dat de scheidsrechter aanwezig was
+        4. Bij "Gefloten" → punten worden toegekend
+        5. Bij "No-show" → strikes worden toegekend
+        
+        **Waarom?**
+        - Zekerheid dat punten alleen worden gegeven voor daadwerkelijk gefloten wedstrijden
+        - Automatische no-show detectie en strike toekenning
+        """)
+    
+    # Haal wedstrijden op die bevestigd moeten worden
+    te_bevestigen = get_te_bevestigen_wedstrijden()
+    
+    if not te_bevestigen:
+        st.success("🎉 Alle gespeelde wedstrijden zijn bevestigd!")
+        st.info("Zodra er wedstrijden zijn gespeeld met scheidsrechters, verschijnen ze hier voor bevestiging.")
+        return
+    
+    # Statistieken
+    totaal_open = sum(1 for w in te_bevestigen for pos in ["scheids_1_open", "scheids_2_open"] if w.get(pos))
+    st.metric("Te bevestigen posities", totaal_open)
+    
+    st.divider()
+    
+    # Bulk acties
+    col_bulk1, col_bulk2 = st.columns(2)
+    with col_bulk1:
+        if st.button("✅ Alles als 'Gefloten' markeren", type="primary", help="Markeer alle openstaande posities als gefloten"):
+            count = 0
+            for wed in te_bevestigen:
+                if wed["scheids_1_open"]:
+                    bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC (bulk)")
+                    count += 1
+                if wed["scheids_2_open"]:
+                    bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_2", "TC (bulk)")
+                    count += 1
+            st.success(f"✅ {count} posities bevestigd als gefloten!")
+            st.rerun()
+    
+    with col_bulk2:
+        st.caption("Of bevestig individueel hieronder:")
+    
+    st.divider()
+    
+    # Toon wedstrijden per datum
+    huidige_datum = None
+    for wed in te_bevestigen:
+        wed_datum = wed["wed_datum"]
+        datum_str = wed_datum.strftime("%A %d %B %Y")
+        
+        # Nieuwe datum header
+        if datum_str != huidige_datum:
+            if huidige_datum is not None:
+                st.divider()
+            st.markdown(f"### 📅 {datum_str}")
+            huidige_datum = datum_str
+        
+        # Wedstrijd info
+        with st.container():
+            st.markdown(f"**{wed_datum.strftime('%H:%M')}** - {wed['thuisteam']} vs {wed['uitteam']} (niveau {wed['niveau']})")
+            
+            col1, col2 = st.columns(2)
+            
+            # 1e scheids
+            with col1:
+                if wed["scheids_1"]:
+                    status_icon = "⏳" if wed["scheids_1_open"] else "✅" if wed["scheids_1_status"] == "gefloten" else "❌"
+                    st.write(f"**1e scheids:** {wed['scheids_1_naam']} {status_icon}")
+                    
+                    if wed["scheids_1_open"]:
+                        punten = wed.get("scheids_1_punten", 0)
+                        st.caption(f"Berekende punten: {punten}")
+                        
+                        col_gefloten, col_noshow = st.columns(2)
+                        with col_gefloten:
+                            if st.button("✅ Gefloten", key=f"gefloten_1_{wed['wed_id']}", type="primary"):
+                                bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC")
+                                st.success(f"✅ {wed['scheids_1_naam']} bevestigd - {punten} punten toegekend")
+                                st.rerun()
+                        with col_noshow:
+                            if st.button("❌ No-show", key=f"noshow_1_{wed['wed_id']}", type="secondary"):
+                                markeer_no_show(wed["wed_id"], "scheids_1", "TC")
+                                beloningsinst = laad_beloningsinstellingen()
+                                strikes = beloningsinst.get("strikes_no_show", 5)
+                                st.error(f"❌ {wed['scheids_1_naam']} no-show - {strikes} strikes toegekend")
+                                st.rerun()
+            
+            # 2e scheids
+            with col2:
+                if wed["scheids_2"]:
+                    status_icon = "⏳" if wed["scheids_2_open"] else "✅" if wed["scheids_2_status"] == "gefloten" else "❌"
+                    st.write(f"**2e scheids:** {wed['scheids_2_naam']} {status_icon}")
+                    
+                    if wed["scheids_2_open"]:
+                        punten = wed.get("scheids_2_punten", 0)
+                        st.caption(f"Berekende punten: {punten}")
+                        
+                        col_gefloten, col_noshow = st.columns(2)
+                        with col_gefloten:
+                            if st.button("✅ Gefloten", key=f"gefloten_2_{wed['wed_id']}", type="primary"):
+                                bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_2", "TC")
+                                st.success(f"✅ {wed['scheids_2_naam']} bevestigd - {punten} punten toegekend")
+                                st.rerun()
+                        with col_noshow:
+                            if st.button("❌ No-show", key=f"noshow_2_{wed['wed_id']}", type="secondary"):
+                                markeer_no_show(wed["wed_id"], "scheids_2", "TC")
+                                beloningsinst = laad_beloningsinstellingen()
+                                strikes = beloningsinst.get("strikes_no_show", 5)
+                                st.error(f"❌ {wed['scheids_2_naam']} no-show - {strikes} strikes toegekend")
+                                st.rerun()
 
 def toon_analyse_dashboard():
     """Dashboard voor analyse van fluitgedrag en minimum bepaling."""
