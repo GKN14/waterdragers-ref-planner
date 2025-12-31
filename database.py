@@ -1091,9 +1091,7 @@ def sla_beloningen_op(beloningen: dict) -> bool:
 # ============================================================
 
 def laad_beloningsinstellingen() -> dict:
-    """Laad beloningsinstellingen uit Supabase (met caching)"""
-    cache_key = "_db_cache_beloningsinstellingen"
-    
+    """Laad beloningsinstellingen uit Supabase (zonder sessie-cache voor snelle doorwerking)"""
     # Default waarden
     defaults = {
         "punten_per_wedstrijd": 1,
@@ -1116,10 +1114,7 @@ def laad_beloningsinstellingen() -> dict:
         "strikes_vervallen_einde_seizoen": False
     }
     
-    # Return cached versie als beschikbaar
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
-    
+    # Geen sessie-cache - altijd vers laden zodat beheerder wijzigingen direct doorwerken
     try:
         supabase = get_supabase_client()
         response = supabase.table("beloningsinstellingen").select("*").eq("id", 1).execute()
@@ -1132,15 +1127,12 @@ def laad_beloningsinstellingen() -> dict:
             for key, val in defaults.items():
                 if key not in row:
                     row[key] = val
-            result = row
+            return row
         else:
-            result = defaults.copy()
-        
-        st.session_state[cache_key] = result
-        return result
+            return defaults.copy()
     except Exception as e:
         st.error(f"Fout bij laden beloningsinstellingen: {e}")
-        return st.session_state.get(cache_key, defaults.copy())
+        return defaults.copy()
 
 def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
     """Sla beloningsinstellingen op naar Supabase"""
@@ -1152,11 +1144,6 @@ def sla_beloningsinstellingen_op(instellingen: dict) -> bool:
             "updated_at": datetime.now().isoformat()
         }
         supabase.table("beloningsinstellingen").upsert(record).execute()
-        
-        # Update cache
-        if "_db_cache_beloningsinstellingen" in st.session_state:
-            st.session_state["_db_cache_beloningsinstellingen"] = instellingen
-        
         return True
     except Exception as e:
         st.error(f"Fout bij opslaan beloningsinstellingen: {e}")
