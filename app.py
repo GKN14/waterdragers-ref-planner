@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.18.0"
+APP_VERSIE = "1.18.1"
 APP_VERSIE_DATUM = "2025-12-31"
 APP_CHANGELOG = """
+### v1.18.1 (2025-12-31)
+**No-show met invaller:**
+- 🔄 Nieuwe optie: No-show met invaller (strikes + punten in één actie)
+- 📝 Verbeterde uitleg in bevestigingsscherm
+
 ### v1.18.0 (2025-12-31)
 **Deadline per maand & Punten na bevestiging:**
 - 📅 Deadline sluit nu alleen de betreffende maand, latere maanden blijven open
@@ -1357,6 +1362,98 @@ def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
     voeg_strike_toe(nbb_nummer, strikes, reden)
     
     return True
+
+def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, bevestigd_door: str) -> dict:
+    """
+    Markeer een scheidsrechter als no-show en registreer een invaller.
+    De oorspronkelijke scheids krijgt strikes, de invaller krijgt punten.
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        invaller_nbb: NBB nummer van de invaller
+        bevestigd_door: Naam/ID van TC-lid die markeert
+    
+    Returns:
+        dict met resultaat info of None bij fout
+    """
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    wed = wedstrijden.get(wed_id)
+    
+    if not wed:
+        return None
+    
+    # Bepaal kolom namen
+    scheids_kolom = positie
+    status_kolom = f"{positie}_status"
+    bevestigd_op_kolom = f"{positie}_bevestigd_op"
+    bevestigd_door_kolom = f"{positie}_bevestigd_door"
+    punten_kolom = f"{positie}_punten_berekend"
+    details_kolom = f"{positie}_punten_details"
+    
+    oorspronkelijke_nbb = wed.get(scheids_kolom)
+    if not oorspronkelijke_nbb:
+        return None
+    
+    oorspronkelijke_naam = scheidsrechters.get(oorspronkelijke_nbb, {}).get("naam", "Onbekend")
+    invaller_naam = scheidsrechters.get(invaller_nbb, {}).get("naam", "Onbekend")
+    
+    # Bereken punten voor invaller (met inval bonus - wedstrijd is al geweest dus altijd <24u)
+    beloningsinst = laad_beloningsinstellingen()
+    
+    # Basis punten + inval bonus (wedstrijd is al gespeeld, dus maximale bonus)
+    basis_punten = beloningsinst.get("punten_per_wedstrijd", 1)
+    inval_bonus = beloningsinst.get("punten_inval_24u", 5)  # Maximale bonus want last-minute
+    
+    # Check lastig tijdstip voor invaller
+    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    lastig_bonus = beloningsinst.get("punten_lastig_tijdstip", 1) if is_lastig_tijdstip(invaller_nbb, wed_datum, wedstrijden, scheidsrechters) else 0
+    
+    totaal_punten = basis_punten + inval_bonus + lastig_bonus
+    
+    punten_details = {
+        "basis": basis_punten,
+        "lastig_tijdstip": lastig_bonus,
+        "inval_bonus": inval_bonus,
+        "totaal": totaal_punten,
+        "details": f"{basis_punten} basis, +{inval_bonus} inval (no-show vervanging)" + (f", +{lastig_bonus} lastig tijdstip" if lastig_bonus else ""),
+        "berekening": {
+            "type": "no_show_vervanging",
+            "oorspronkelijke_scheids": oorspronkelijke_nbb,
+            "bevestigd_op": datetime.now().isoformat()
+        }
+    }
+    
+    # Update wedstrijd: nieuwe scheids, status gefloten
+    wed[scheids_kolom] = invaller_nbb
+    wed[status_kolom] = "gefloten"
+    wed[bevestigd_op_kolom] = datetime.now().isoformat()
+    wed[bevestigd_door_kolom] = bevestigd_door
+    wed[punten_kolom] = totaal_punten
+    wed[details_kolom] = punten_details
+    
+    # Sla wedstrijd update op
+    sla_wedstrijden_op(wedstrijden)
+    
+    # Ken no-show strikes toe aan oorspronkelijke scheids
+    strikes = beloningsinst.get("strikes_no_show", 5)
+    strike_reden = f"No-show (vervangen door {invaller_naam}): {wed.get('thuisteam')} vs {wed.get('uitteam')}"
+    voeg_strike_toe(oorspronkelijke_nbb, strikes, strike_reden)
+    
+    # Ken punten toe aan invaller
+    punten_reden = f"Inval voor no-show ({oorspronkelijke_naam}): {wed.get('thuisteam')} vs {wed.get('uitteam')}"
+    voeg_punten_toe(invaller_nbb, totaal_punten, punten_reden, wed_id, punten_details.get("berekening"))
+    
+    return {
+        "oorspronkelijke_scheids": oorspronkelijke_naam,
+        "oorspronkelijke_nbb": oorspronkelijke_nbb,
+        "strikes": strikes,
+        "invaller": invaller_naam,
+        "invaller_nbb": invaller_nbb,
+        "punten": totaal_punten,
+        "punten_details": punten_details["details"]
+    }
 
 def get_te_bevestigen_wedstrijden() -> list:
     """
@@ -4262,16 +4359,17 @@ def toon_bevestigen_wedstrijden():
     # Uitleg
     with st.expander("ℹ️ Hoe werkt dit?"):
         st.markdown("""
-        **Nieuw proces:**
-        1. Spelers schrijven zich in voor wedstrijden
-        2. Punten worden **berekend** maar nog niet toegekend
-        3. Na de wedstrijd bevestigt TC dat de scheidsrechter aanwezig was
-        4. Bij "Gefloten" → punten worden toegekend
-        5. Bij "No-show" → strikes worden toegekend
+        **Proces na de wedstrijd:**
+        1. Spelers schrijven zich in → punten worden **berekend** maar nog niet toegekend
+        2. Na de wedstrijd bevestigt TC wie er was
+        3. **Gefloten** → punten worden toegekend
+        4. **No-show (zonder invaller)** → strikes worden toegekend
+        5. **No-show met invaller** → strikes voor no-show + bonuspunten voor invaller
         
-        **Waarom?**
-        - Zekerheid dat punten alleen worden gegeven voor daadwerkelijk gefloten wedstrijden
-        - Automatische no-show detectie en strike toekenning
+        **Scenario's:**
+        - ✅ Scheids was aanwezig → "Gefloten"
+        - ❌ Scheids niet verschenen, wedstrijd niet doorgegaan → "No-show"
+        - 🔄 Scheids niet verschenen, iemand anders heeft ingevallen → "No-show met invaller"
         """)
     
     # Haal wedstrijden op die bevestigd moeten worden
@@ -4327,6 +4425,9 @@ def toon_bevestigen_wedstrijden():
             
             col1, col2 = st.columns(2)
             
+            # Haal alle scheidsrechters op voor invaller selectie
+            scheidsrechters = laad_scheidsrechters()
+            
             # 1e scheids
             with col1:
                 if wed["scheids_1"]:
@@ -4337,19 +4438,48 @@ def toon_bevestigen_wedstrijden():
                         punten = wed.get("scheids_1_punten", 0)
                         st.caption(f"Berekende punten: {punten}")
                         
-                        col_gefloten, col_noshow = st.columns(2)
-                        with col_gefloten:
-                            if st.button("✅ Gefloten", key=f"gefloten_1_{wed['wed_id']}", type="primary"):
-                                bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC")
-                                st.success(f"✅ {wed['scheids_1_naam']} bevestigd - {punten} punten toegekend")
-                                st.rerun()
-                        with col_noshow:
-                            if st.button("❌ No-show", key=f"noshow_1_{wed['wed_id']}", type="secondary"):
-                                markeer_no_show(wed["wed_id"], "scheids_1", "TC")
+                        if st.button("✅ Gefloten", key=f"gefloten_1_{wed['wed_id']}", type="primary", use_container_width=True):
+                            bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC")
+                            st.success(f"✅ {wed['scheids_1_naam']} bevestigd - {punten} punten toegekend")
+                            st.rerun()
+                        
+                        if st.button("❌ No-show (zonder invaller)", key=f"noshow_1_{wed['wed_id']}", type="secondary", use_container_width=True):
+                            markeer_no_show(wed["wed_id"], "scheids_1", "TC")
+                            beloningsinst = laad_beloningsinstellingen()
+                            strikes = beloningsinst.get("strikes_no_show", 5)
+                            st.error(f"❌ {wed['scheids_1_naam']} no-show - {strikes} strikes toegekend")
+                            st.rerun()
+                        
+                        # No-show met invaller
+                        with st.expander("🔄 No-show met invaller"):
+                            # Filter: alle scheidsrechters behalve de huidige
+                            mogelijke_invallers = {
+                                nbb: s.get("naam", "Onbekend") 
+                                for nbb, s in scheidsrechters.items() 
+                                if nbb != wed["scheids_1"] and nbb != wed.get("scheids_2")
+                            }
+                            
+                            if mogelijke_invallers:
+                                invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
+                                geselecteerde_invaller = st.selectbox(
+                                    "Wie heeft ingevallen?",
+                                    options=list(invaller_opties.keys()),
+                                    key=f"invaller_1_{wed['wed_id']}"
+                                )
+                                
                                 beloningsinst = laad_beloningsinstellingen()
-                                strikes = beloningsinst.get("strikes_no_show", 5)
-                                st.error(f"❌ {wed['scheids_1_naam']} no-show - {strikes} strikes toegekend")
-                                st.rerun()
+                                inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
+                                st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                
+                                if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_1_{wed['wed_id']}", type="primary"):
+                                    invaller_nbb = invaller_opties[geselecteerde_invaller]
+                                    resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_1", invaller_nbb, "TC")
+                                    if resultaat:
+                                        st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
+                                        st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                    st.rerun()
+                            else:
+                                st.caption("Geen andere scheidsrechters beschikbaar")
             
             # 2e scheids
             with col2:
@@ -4361,19 +4491,48 @@ def toon_bevestigen_wedstrijden():
                         punten = wed.get("scheids_2_punten", 0)
                         st.caption(f"Berekende punten: {punten}")
                         
-                        col_gefloten, col_noshow = st.columns(2)
-                        with col_gefloten:
-                            if st.button("✅ Gefloten", key=f"gefloten_2_{wed['wed_id']}", type="primary"):
-                                bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_2", "TC")
-                                st.success(f"✅ {wed['scheids_2_naam']} bevestigd - {punten} punten toegekend")
-                                st.rerun()
-                        with col_noshow:
-                            if st.button("❌ No-show", key=f"noshow_2_{wed['wed_id']}", type="secondary"):
-                                markeer_no_show(wed["wed_id"], "scheids_2", "TC")
+                        if st.button("✅ Gefloten", key=f"gefloten_2_{wed['wed_id']}", type="primary", use_container_width=True):
+                            bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_2", "TC")
+                            st.success(f"✅ {wed['scheids_2_naam']} bevestigd - {punten} punten toegekend")
+                            st.rerun()
+                        
+                        if st.button("❌ No-show (zonder invaller)", key=f"noshow_2_{wed['wed_id']}", type="secondary", use_container_width=True):
+                            markeer_no_show(wed["wed_id"], "scheids_2", "TC")
+                            beloningsinst = laad_beloningsinstellingen()
+                            strikes = beloningsinst.get("strikes_no_show", 5)
+                            st.error(f"❌ {wed['scheids_2_naam']} no-show - {strikes} strikes toegekend")
+                            st.rerun()
+                        
+                        # No-show met invaller
+                        with st.expander("🔄 No-show met invaller"):
+                            # Filter: alle scheidsrechters behalve de huidige
+                            mogelijke_invallers = {
+                                nbb: s.get("naam", "Onbekend") 
+                                for nbb, s in scheidsrechters.items() 
+                                if nbb != wed["scheids_2"] and nbb != wed.get("scheids_1")
+                            }
+                            
+                            if mogelijke_invallers:
+                                invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
+                                geselecteerde_invaller = st.selectbox(
+                                    "Wie heeft ingevallen?",
+                                    options=list(invaller_opties.keys()),
+                                    key=f"invaller_2_{wed['wed_id']}"
+                                )
+                                
                                 beloningsinst = laad_beloningsinstellingen()
-                                strikes = beloningsinst.get("strikes_no_show", 5)
-                                st.error(f"❌ {wed['scheids_2_naam']} no-show - {strikes} strikes toegekend")
-                                st.rerun()
+                                inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
+                                st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                
+                                if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_2_{wed['wed_id']}", type="primary"):
+                                    invaller_nbb = invaller_opties[geselecteerde_invaller]
+                                    resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_2", invaller_nbb, "TC")
+                                    if resultaat:
+                                        st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
+                                        st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                    st.rerun()
+                            else:
+                                st.caption("Geen andere scheidsrechters beschikbaar")
 
 def toon_analyse_dashboard():
     """Dashboard voor analyse van fluitgedrag en minimum bepaling."""
