@@ -632,7 +632,7 @@ SCHEIDSRECHTER_TEAMS = [
     "V16-1", "V16-2",
     "M18-1", "M18-2", "M18-3",
     "M20-1",
-    "MSE"
+    "MSE-1"
 ]
 
 # Redenen voor begeleiding (bij fluiten)
@@ -7617,13 +7617,13 @@ def bepaal_niveau_uit_team(teamnaam: str) -> int:
     # Niveau 2: X12-1, V12-1, X14-2, M16-2
     # Niveau 3: X14-1, M16-1, V16-2
     # Niveau 4: V16-1, M18-2, M18-3
-    # Niveau 5: M18-1, M20-1, MSE
+    # Niveau 5: M18-1, M20-1, MSE-1
     
     niveau_1 = ["X10-1", "X10-2", "X12-2", "V12-2"]
     niveau_2 = ["X12-1", "V12-1", "X14-2", "M16-2"]
     niveau_3 = ["X14-1", "M16-1", "V16-2"]
     niveau_4 = ["V16-1", "M18-2", "M18-3"]
-    niveau_5 = ["M18-1", "M20-1", "MSE"]
+    niveau_5 = ["M18-1", "M20-1", "MSE-1"]
     
     if team in niveau_1:
         return 1
