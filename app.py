@@ -24,9 +24,19 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.19.0"
-APP_VERSIE_DATUM = "2025-12-31"
+APP_VERSIE = "1.19.2"
+APP_VERSIE_DATUM = "2026-01-03"
 APP_CHANGELOG = """
+### v1.19.2 (2026-01-03)
+**Bugfix eigen wedstrijd detectie:**
+- 🐛 Fix: Tegenstanders met zelfde teamcode (bijv. M18-1) worden niet meer als eigen wedstrijd gezien
+- ✅ Check nu ook op "Waterdragers" in teamnaam
+
+### v1.19.1 (2026-01-03)
+**Bugfix wedstrijd verwijderen:**
+- 🐛 Fix: Wedstrijden worden nu correct uit database verwijderd
+- ⚠️ Bevestigingsdialoog toegevoegd bij verwijderen wedstrijd
+
 ### v1.19.0 (2025-12-31)
 **Help-functie:**
 - ❓ Nieuwe Help-sectie in Begeleiders & Info expander
@@ -647,6 +657,9 @@ def team_match(volledig_team: str, eigen_team: str) -> bool:
     """
     Check of een volledige teamnaam (bijv. 'Waterdragers - M18-3**') 
     matcht met een eigen team (bijv. 'M18-3').
+    
+    Het moet ZOWEL een Waterdragers team zijn ALS de teamcode matchen.
+    Dit voorkomt dat bijv. 'Simple Dribble - M18-1' matcht met eigen team 'M18-1'.
     """
     if not volledig_team or not eigen_team:
         return False
@@ -654,6 +667,10 @@ def team_match(volledig_team: str, eigen_team: str) -> bool:
     # Normaliseer: uppercase en verwijder sterretjes
     volledig = str(volledig_team).upper().replace("*", "").strip()
     eigen = str(eigen_team).upper().replace("*", "").strip()
+    
+    # Check of het een Waterdragers team is
+    if "WATERDRAGERS" not in volledig:
+        return False
     
     # Check of eigen team in de volledige naam zit
     return eigen in volledig
@@ -5597,10 +5614,26 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 st.session_state[bewerk_key] = not st.session_state[bewerk_key]
                                 st.rerun()
                         with col_del:
-                            if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
-                                del wedstrijden[wed["id"]]
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
+                            confirm_key = f"confirm_del_{wed['id']}"
+                            if confirm_key not in st.session_state:
+                                st.session_state[confirm_key] = False
+                            
+                            if not st.session_state[confirm_key]:
+                                if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                                    st.session_state[confirm_key] = True
+                                    st.rerun()
+                            else:
+                                st.warning("Verwijderen?")
+                                col_yes, col_no = st.columns(2)
+                                with col_yes:
+                                    if st.button("✅ Ja", key=f"confirm_yes_{wed['id']}"):
+                                        db.verwijder_wedstrijd(wed["id"])
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
+                                with col_no:
+                                    if st.button("❌ Nee", key=f"confirm_no_{wed['id']}"):
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
                     
                     # Bewerk formulier voor geannuleerde wedstrijd
                     if st.session_state.get(f"bewerk_{wed['id']}", False):
@@ -5703,10 +5736,26 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 st.session_state[bewerk_key] = not st.session_state[bewerk_key]
                                 st.rerun()
                         with col_del:
-                            if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
-                                del wedstrijden[wed["id"]]
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
+                            confirm_key = f"confirm_del_{wed['id']}"
+                            if confirm_key not in st.session_state:
+                                st.session_state[confirm_key] = False
+                            
+                            if not st.session_state[confirm_key]:
+                                if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                                    st.session_state[confirm_key] = True
+                                    st.rerun()
+                            else:
+                                st.warning("Verwijderen?")
+                                col_yes, col_no = st.columns(2)
+                                with col_yes:
+                                    if st.button("✅ Ja", key=f"confirm_yes_{wed['id']}"):
+                                        db.verwijder_wedstrijd(wed["id"])
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
+                                with col_no:
+                                    if st.button("❌ Nee", key=f"confirm_no_{wed['id']}"):
+                                        st.session_state[confirm_key] = False
+                                        st.rerun()
                 
                 # Bewerk formulier (buiten de columns, volledige breedte)
                 if st.session_state.get(f"bewerk_{wed['id']}", False):
@@ -5728,10 +5777,26 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             st.session_state[bewerk_key] = not st.session_state[bewerk_key]
                             st.rerun()
                     with col_del:
-                        if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
-                            del wedstrijden[wed["id"]]
-                            sla_wedstrijden_op(wedstrijden)
-                            st.rerun()
+                        confirm_key = f"confirm_del_{wed['id']}"
+                        if confirm_key not in st.session_state:
+                            st.session_state[confirm_key] = False
+                        
+                        if not st.session_state[confirm_key]:
+                            if st.button("🗑️", key=f"delwed_{wed['id']}", help="Verwijder wedstrijd"):
+                                st.session_state[confirm_key] = True
+                                st.rerun()
+                        else:
+                            st.warning("Verwijderen?")
+                            col_yes, col_no = st.columns(2)
+                            with col_yes:
+                                if st.button("✅ Ja", key=f"confirm_yes_{wed['id']}"):
+                                    db.verwijder_wedstrijd(wed["id"])
+                                    st.session_state[confirm_key] = False
+                                    st.rerun()
+                            with col_no:
+                                if st.button("❌ Nee", key=f"confirm_no_{wed['id']}"):
+                                    st.session_state[confirm_key] = False
+                                    st.rerun()
                 
                 # Bewerk formulier voor uitwedstrijd
                 if st.session_state.get(f"bewerk_{wed['id']}", False):
