@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.19.2"
+APP_VERSIE = "1.19.3"
 APP_VERSIE_DATUM = "2026-01-03"
 APP_CHANGELOG = """
+### v1.19.3 (2026-01-03)
+**Prioriteit passieve spelers bij handmatig toewijzen:**
+- 😴 Spelers zonder inschrijvingen staan nu bovenaan kandidatenlijst
+- 🔢 Sortering: passief → tekort op niveau → minste wedstrijden
+- 👀 Passieve spelers gemarkeerd met 😴 icoon in dropdown
+
 ### v1.19.2 (2026-01-03)
 **Bugfix eigen wedstrijd detectie:**
 - 🐛 Fix: Tegenstanders met zelfde teamcode (bijv. M18-1) worden niet meer als eigen wedstrijd gezien
@@ -2304,11 +2310,19 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "eigen_niveau": niveau_1e,
             "min_wedstrijden": min_wed,
             "tekort": tekort,
-            "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger
+            "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger,
+            "is_passief": huidig_totaal == 0  # Nog nergens voor ingeschreven
         })
     
-    # Sorteer: eerst wie tekort heeft op eigen niveau, dan op minste wedstrijden
-    return sorted(kandidaten, key=lambda x: (-x["tekort"], x["huidig_aantal"]))
+    # Sorteer: 
+    # 1. Passieve spelers eerst (nog nergens ingeschreven)
+    # 2. Dan wie tekort heeft op eigen niveau
+    # 3. Dan op minste wedstrijden (zodat actieven onderaan staan)
+    return sorted(kandidaten, key=lambda x: (
+        not x["is_passief"],  # False (passief) komt voor True (actief)
+        -x["tekort"],         # Hoogste tekort eerst
+        x["huidig_aantal"]    # Minste wedstrijden eerst
+    ))
 
 # ============================================================
 # SPELER VIEW
@@ -3768,7 +3782,10 @@ def toon_speler_view(nbb_nummer: str):
                                 kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
                             
                                 if kandidaten:
-                                    vervanger_opties = {f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] for k in kandidaten}
+                                    vervanger_opties = {
+                                        ("😴 " if k.get('is_passief') else "") + f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] 
+                                        for k in kandidaten
+                                    }
                                 
                                     geselecteerde = st.selectbox(
                                         "Selecteer vervanger",
@@ -5653,6 +5670,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
+                                    ("😴 " if k.get('is_passief') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" + 
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
                                     for k in kandidaten
@@ -5679,6 +5697,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
+                                    ("😴 " if k.get('is_passief') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" +
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
                                     for k in kandidaten
