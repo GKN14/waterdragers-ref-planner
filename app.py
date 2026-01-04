@@ -24,9 +24,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.19.3"
-APP_VERSIE_DATUM = "2026-01-03"
+APP_VERSIE = "1.20.0"
+APP_VERSIE_DATUM = "2026-01-04"
 APP_CHANGELOG = """
+### v1.20.0 (2026-01-04)
+**Inschrijfgedrag monitoring & verbeterde statistieken:**
+- 📈 Nieuwe tab "Inschrijfgedrag" in Analyse dashboard
+- 📊 Vergelijking top 3 punten vs. probleemgevallen (3+ strikes)
+- 🐦 Early bird indicator (>7 dagen vooruit)
+- ⚠️ Last-minute indicator (<3 dagen vooruit)
+- 🗓️ Verbeterde metrics: Weekend, Rest maand, Hele seizoen
+- 📝 Logging van inschrijf/uitschrijf momenten
+
 ### v1.19.3 (2026-01-03)
 **Prioriteit passieve spelers bij handmatig toewijzen:**
 - 😴 Spelers zonder inschrijvingen staan nu bovenaan kandidatenlijst
@@ -1342,6 +1351,13 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     
     # Sla op
     sla_wedstrijden_op(wedstrijden)
+    
+    # Log de inschrijving voor gedragsanalyse
+    try:
+        wed_datum = datetime.strptime(wedstrijden[wed_id]["datum"], "%Y-%m-%d %H:%M")
+        db.log_registratie(nbb_nummer, wed_id, positie, "inschrijven", wed_datum)
+    except:
+        pass  # Logging failure mag inschrijving niet blokkeren
     
     return punten_info
 
@@ -3762,6 +3778,12 @@ def toon_speler_view(nbb_nummer: str):
                                     wedstrijden[wed["id"]][positie] = None
                                     sla_wedstrijden_op(wedstrijden)
                                 
+                                    # Log de uitschrijving
+                                    try:
+                                        db.log_registratie(nbb_nummer, wed["id"], positie, "uitschrijven", wed_datum)
+                                    except:
+                                        pass
+                                
                                     # Strikes toekennen indien nodig
                                     if uren_tot_wed < 24:
                                         voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
@@ -4374,36 +4396,96 @@ def toon_beheerder_view():
     wedstrijden = laad_wedstrijden()
     nu = datetime.now()
     
-    thuis_nog_te_spelen = 0
-    niet_compleet = 0
+    # Bepaal weekend grenzen (komende za-zo)
+    dagen_tot_zaterdag = (5 - nu.weekday()) % 7
+    if dagen_tot_zaterdag == 0 and nu.weekday() != 5:
+        dagen_tot_zaterdag = 7
+    weekend_start = (nu + timedelta(days=dagen_tot_zaterdag)).replace(hour=0, minute=0, second=0, microsecond=0)
+    weekend_eind = weekend_start + timedelta(days=2)
+    
+    # Bepaal maand grenzen
+    maand_start = nu.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if nu.month == 12:
+        maand_eind = maand_start.replace(year=nu.year + 1, month=1)
+    else:
+        maand_eind = maand_start.replace(month=nu.month + 1)
+    
+    # Tellers initialiseren
+    stats = {
+        "totaal": {"te_spelen": 0, "niet_compleet": 0},
+        "weekend": {"te_spelen": 0, "niet_compleet": 0},
+        "maand": {"te_spelen": 0, "niet_compleet": 0}
+    }
     
     for wed_id, wed in wedstrijden.items():
         # Alleen thuiswedstrijden
         if wed.get("type", "thuis") != "thuis":
+            continue
+        if wed.get("geannuleerd", False):
             continue
         
         wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
         
         # Nog te spelen?
         if wed_datum > nu:
-            thuis_nog_te_spelen += 1
+            is_compleet = wed.get("scheids_1") and wed.get("scheids_2")
             
-            # Niet compleet? (mist 1e of 2e scheids)
-            if not wed.get("scheids_1") or not wed.get("scheids_2"):
-                niet_compleet += 1
+            # Totaal
+            stats["totaal"]["te_spelen"] += 1
+            if not is_compleet:
+                stats["totaal"]["niet_compleet"] += 1
+            
+            # Weekend check
+            if weekend_start <= wed_datum < weekend_eind:
+                stats["weekend"]["te_spelen"] += 1
+                if not is_compleet:
+                    stats["weekend"]["niet_compleet"] += 1
+            
+            # Maand check (rest van deze maand)
+            if nu <= wed_datum < maand_eind:
+                stats["maand"]["te_spelen"] += 1
+                if not is_compleet:
+                    stats["maand"]["niet_compleet"] += 1
     
-    # Toon statistieken
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Thuiswedstrijden te spelen", thuis_nog_te_spelen)
-    with col2:
-        st.metric("Nog in te vullen", niet_compleet)
-    with col3:
-        if thuis_nog_te_spelen > 0:
-            percentage = round((thuis_nog_te_spelen - niet_compleet) / thuis_nog_te_spelen * 100)
-            st.metric("Compleet", f"{percentage}%")
+    # Bereken percentages
+    def calc_pct(te_spelen, niet_compleet):
+        if te_spelen > 0:
+            return round((te_spelen - niet_compleet) / te_spelen * 100)
+        return 100
+    
+    # Toon statistieken in 3 blokken
+    st.markdown("##### 📊 Bezetting")
+    col_weekend, col_maand, col_totaal = st.columns(3)
+    
+    with col_weekend:
+        weekend_pct = calc_pct(stats["weekend"]["te_spelen"], stats["weekend"]["niet_compleet"])
+        weekend_label = f"🗓️ Weekend ({weekend_start.strftime('%d/%m')})"
+        if stats["weekend"]["te_spelen"] == 0:
+            st.metric(weekend_label, "Geen wedstrijden")
+        elif stats["weekend"]["niet_compleet"] == 0:
+            st.metric(weekend_label, f"✅ {stats['weekend']['te_spelen']} wedstrijden", "Compleet!")
         else:
-            st.metric("Compleet", "-")
+            st.metric(weekend_label, f"{stats['weekend']['niet_compleet']} open", 
+                     f"van {stats['weekend']['te_spelen']} ({weekend_pct}% compleet)")
+    
+    with col_maand:
+        maand_pct = calc_pct(stats["maand"]["te_spelen"], stats["maand"]["niet_compleet"])
+        maand_naam = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"][nu.month - 1]
+        if stats["maand"]["te_spelen"] == 0:
+            st.metric(f"📅 Rest {maand_naam}", "Geen wedstrijden")
+        elif stats["maand"]["niet_compleet"] == 0:
+            st.metric(f"📅 Rest {maand_naam}", f"✅ {stats['maand']['te_spelen']} wedstrijden", "Compleet!")
+        else:
+            st.metric(f"📅 Rest {maand_naam}", f"{stats['maand']['niet_compleet']} open",
+                     f"van {stats['maand']['te_spelen']} ({maand_pct}% compleet)")
+    
+    with col_totaal:
+        totaal_pct = calc_pct(stats["totaal"]["te_spelen"], stats["totaal"]["niet_compleet"])
+        if stats["totaal"]["te_spelen"] == 0:
+            st.metric("📆 Hele seizoen", "Geen wedstrijden")
+        else:
+            st.metric("📆 Hele seizoen", f"{totaal_pct}% compleet",
+                     f"{stats['totaal']['niet_compleet']} open van {stats['totaal']['te_spelen']}")
     
     # Beheerder opties in sidebar
     with st.sidebar:
@@ -4744,7 +4826,7 @@ def toon_analyse_dashboard():
     st.divider()
     
     # Tabs voor verschillende views
-    tab_veel, tab_weinig, tab_allemaal = st.tabs(["🌟 Veel fluiten", "⚠️ Weinig fluiten", "📋 Alle scheidsrechters"])
+    tab_veel, tab_weinig, tab_allemaal, tab_gedrag = st.tabs(["🌟 Veel fluiten", "⚠️ Weinig fluiten", "📋 Alle scheidsrechters", "📈 Inschrijfgedrag"])
     
     with tab_veel:
         st.markdown("### Kandidaten voor lager minimum")
@@ -4840,6 +4922,115 @@ def toon_analyse_dashboard():
                 verschil_str = f"⚠️ {verschil_str}"
             
             st.markdown(f"| {speler['naam']} | {speler['niveau']} | {speler['min_wedstrijden']} | {speler['gefloten']} | {verschil_str} | {speler['als_1e']} | {speler['als_2e']} | {speler['punten']} |")
+    
+    with tab_gedrag:
+        st.markdown("### 📈 Inschrijfgedrag Analyse")
+        st.caption("Wanneer schrijven spelers zich in? Vergelijk top performers met probleemgevallen.")
+        
+        # Haal inschrijf statistieken op
+        inschrijf_stats = db.get_inschrijf_statistieken()
+        
+        if not inschrijf_stats:
+            st.info("""
+            📊 **Nog geen data beschikbaar**
+            
+            Inschrijfgedrag wordt bijgehouden vanaf nu. Na enkele weken zie je hier:
+            - Gemiddeld aantal dagen vooruit dat spelers zich inschrijven
+            - Vergelijking tussen top 3 punten vs. spelers met strikes
+            - Patronen: early birds vs. last-minute inschrijvers
+            """)
+        else:
+            # Combineer met beloningen data
+            gedrag_analyse = []
+            for nbb, stats in inschrijf_stats.items():
+                scheids = scheidsrechters.get(nbb, {})
+                bel_data = beloningen.get("spelers", {}).get(nbb, {})
+                
+                gedrag_analyse.append({
+                    "nbb": nbb,
+                    "naam": scheids.get("naam", "Onbekend"),
+                    "punten": bel_data.get("punten", 0),
+                    "strikes": bel_data.get("strikes", 0),
+                    **stats
+                })
+            
+            # Sorteer op punten (top 3) en strikes (probleemgevallen)
+            top_3 = sorted([g for g in gedrag_analyse if g["punten"] > 0], 
+                          key=lambda x: x["punten"], reverse=True)[:3]
+            probleemgevallen = sorted([g for g in gedrag_analyse if g["strikes"] >= 3], 
+                                      key=lambda x: x["strikes"], reverse=True)[:5]
+            
+            # Vergelijking metrics
+            col_top, col_probleem = st.columns(2)
+            
+            with col_top:
+                st.markdown("#### 🏆 Top 3 (meeste punten)")
+                if top_3:
+                    gem_dagen_top = sum(g["gem_dagen_voor_wedstrijd"] for g in top_3) / len(top_3)
+                    gem_early_top = sum(g["early_bird_pct"] for g in top_3) / len(top_3)
+                    
+                    st.metric("Gem. dagen vooruit", f"{gem_dagen_top:.1f} dagen")
+                    st.metric("Early bird %", f"{gem_early_top:.0f}%", 
+                             help="Inschrijvingen >7 dagen van tevoren")
+                    
+                    for speler in top_3:
+                        st.markdown(f"**{speler['naam']}** ({speler['punten']} ptn)")
+                        st.caption(f"↳ {speler['gem_dagen_voor_wedstrijd']} dagen vooruit | "
+                                  f"{speler['early_bird_pct']}% early bird")
+                else:
+                    st.caption("*Nog geen punten uitgedeeld*")
+            
+            with col_probleem:
+                st.markdown("#### ⚠️ Probleemgevallen (3+ strikes)")
+                if probleemgevallen:
+                    gem_dagen_prob = sum(g["gem_dagen_voor_wedstrijd"] for g in probleemgevallen) / len(probleemgevallen)
+                    gem_lastmin_prob = sum(g["last_minute_pct"] for g in probleemgevallen) / len(probleemgevallen)
+                    
+                    st.metric("Gem. dagen vooruit", f"{gem_dagen_prob:.1f} dagen")
+                    st.metric("Last-minute %", f"{gem_lastmin_prob:.0f}%",
+                             help="Inschrijvingen <3 dagen van tevoren")
+                    
+                    for speler in probleemgevallen:
+                        st.markdown(f"**{speler['naam']}** ({speler['strikes']} strikes)")
+                        st.caption(f"↳ {speler['gem_dagen_voor_wedstrijd']} dagen vooruit | "
+                                  f"{speler['last_minute_pct']}% last-minute")
+                else:
+                    st.success("*Geen spelers met 3+ strikes*")
+            
+            st.divider()
+            
+            # Alle spelers tabel
+            st.markdown("#### 📋 Overzicht alle spelers")
+            
+            # Sorteer opties
+            sorteer_gedrag = st.selectbox(
+                "Sorteer op",
+                ["Gem. dagen vooruit (hoog-laag)", "Gem. dagen vooruit (laag-hoog)", 
+                 "Last-minute % (hoog-laag)", "Punten", "Strikes"],
+                key="sorteer_gedrag"
+            )
+            
+            if sorteer_gedrag == "Gem. dagen vooruit (hoog-laag)":
+                gedrag_sorted = sorted(gedrag_analyse, key=lambda x: x["gem_dagen_voor_wedstrijd"], reverse=True)
+            elif sorteer_gedrag == "Gem. dagen vooruit (laag-hoog)":
+                gedrag_sorted = sorted(gedrag_analyse, key=lambda x: x["gem_dagen_voor_wedstrijd"])
+            elif sorteer_gedrag == "Last-minute % (hoog-laag)":
+                gedrag_sorted = sorted(gedrag_analyse, key=lambda x: x["last_minute_pct"], reverse=True)
+            elif sorteer_gedrag == "Punten":
+                gedrag_sorted = sorted(gedrag_analyse, key=lambda x: x["punten"], reverse=True)
+            else:  # Strikes
+                gedrag_sorted = sorted(gedrag_analyse, key=lambda x: x["strikes"], reverse=True)
+            
+            st.markdown("| Naam | Gem. dagen | Inschrijvingen | Early bird | Last-minute | Punten | Strikes |")
+            st.markdown("|------|------------|----------------|------------|-------------|--------|---------|")
+            
+            for speler in gedrag_sorted:
+                eb_indicator = "🐦" if speler["early_bird_pct"] >= 50 else ""
+                lm_indicator = "⚠️" if speler["last_minute_pct"] >= 50 else ""
+                
+                st.markdown(f"| {speler['naam']} | {speler['gem_dagen_voor_wedstrijd']} | "
+                           f"{speler['aantal_inschrijvingen']} | {speler['early_bird_pct']}% {eb_indicator} | "
+                           f"{speler['last_minute_pct']}% {lm_indicator} | {speler['punten']} | {speler['strikes']} |")
     
     st.divider()
     

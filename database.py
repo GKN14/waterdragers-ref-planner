@@ -1874,3 +1874,164 @@ def verzamel_seizoen_statistieken(scheidsrechters: dict, beloningen: dict, wedst
         "spelers": speler_stats,
         "totalen": totalen
     }
+
+# ============================================================
+# REGISTRATIE LOGGING FUNCTIES
+# ============================================================
+
+def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str, 
+                    wed_datum: datetime, deadline: datetime = None) -> bool:
+    """
+    Log een registratie actie voor gedragsanalyse.
+    
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        actie: "inschrijven", "uitschrijven", "vervangen_door", "vervangen_als"
+        wed_datum: Datum/tijd van de wedstrijd
+        deadline: Optioneel - deadline voor inschrijving
+    
+    Returns:
+        True bij succes, False bij fout
+    """
+    try:
+        supabase = get_supabase_client()
+        nu = datetime.now()
+        
+        # Bereken dagen voor wedstrijd
+        dagen_voor_wedstrijd = (wed_datum - nu).days
+        
+        # Bereken dagen voor deadline (indien opgegeven)
+        dagen_voor_deadline = None
+        if deadline:
+            dagen_voor_deadline = (deadline - nu).days
+        
+        record = {
+            "nbb_nummer": nbb_nummer,
+            "wed_id": wed_id,
+            "positie": positie,
+            "actie": actie,
+            "tijdstip": nu.isoformat(),
+            "dagen_voor_wedstrijd": dagen_voor_wedstrijd,
+            "dagen_voor_deadline": dagen_voor_deadline,
+            "wed_datum": wed_datum.isoformat()
+        }
+        
+        supabase.table("registratie_log").insert(record).execute()
+        return True
+    except Exception as e:
+        # Niet kritisch - log failure mag app niet blokkeren
+        print(f"Registratie log fout (niet kritisch): {e}")
+        return False
+
+def laad_registratie_logs(nbb_nummer: str = None, vanaf: datetime = None) -> list:
+    """
+    Laad registratie logs voor analyse.
+    
+    Args:
+        nbb_nummer: Optioneel - filter op specifieke speler
+        vanaf: Optioneel - alleen logs vanaf deze datum
+    
+    Returns:
+        Lijst van registratie logs
+    """
+    try:
+        supabase = get_supabase_client()
+        query = supabase.table("registratie_log").select("*")
+        
+        if nbb_nummer:
+            query = query.eq("nbb_nummer", nbb_nummer)
+        
+        if vanaf:
+            query = query.gte("tijdstip", vanaf.isoformat())
+        
+        response = query.order("tijdstip", desc=True).execute()
+        return response.data or []
+    except Exception as e:
+        print(f"Fout bij laden registratie logs: {e}")
+        return []
+
+def get_inschrijf_statistieken() -> dict:
+    """
+    Bereken inschrijfgedrag statistieken per speler.
+    
+    Returns:
+        Dict met per speler: gem_dagen_voor_wedstrijd, aantal_inschrijvingen, 
+        early_bird_count, last_minute_count
+    """
+    try:
+        logs = laad_registratie_logs()
+        
+        # Filter alleen inschrijvingen
+        inschrijvingen = [l for l in logs if l.get("actie") == "inschrijven"]
+        
+        # Groepeer per speler
+        per_speler = {}
+        for log in inschrijvingen:
+            nbb = log.get("nbb_nummer")
+            if nbb not in per_speler:
+                per_speler[nbb] = {
+                    "dagen_lijst": [],
+                    "early_bird": 0,  # > 7 dagen van tevoren
+                    "normaal": 0,     # 3-7 dagen van tevoren
+                    "last_minute": 0  # < 3 dagen van tevoren
+                }
+            
+            dagen = log.get("dagen_voor_wedstrijd", 0)
+            per_speler[nbb]["dagen_lijst"].append(dagen)
+            
+            if dagen > 7:
+                per_speler[nbb]["early_bird"] += 1
+            elif dagen >= 3:
+                per_speler[nbb]["normaal"] += 1
+            else:
+                per_speler[nbb]["last_minute"] += 1
+        
+        # Bereken gemiddelden
+        resultaat = {}
+        for nbb, data in per_speler.items():
+            if data["dagen_lijst"]:
+                gem = sum(data["dagen_lijst"]) / len(data["dagen_lijst"])
+            else:
+                gem = 0
+            
+            totaal = len(data["dagen_lijst"])
+            resultaat[nbb] = {
+                "gem_dagen_voor_wedstrijd": round(gem, 1),
+                "aantal_inschrijvingen": totaal,
+                "early_bird": data["early_bird"],
+                "normaal": data["normaal"],
+                "last_minute": data["last_minute"],
+                "early_bird_pct": round(data["early_bird"] / totaal * 100) if totaal > 0 else 0,
+                "last_minute_pct": round(data["last_minute"] / totaal * 100) if totaal > 0 else 0
+            }
+        
+        return resultaat
+    except Exception as e:
+        print(f"Fout bij berekenen inschrijf statistieken: {e}")
+        return {}
+
+def get_inschrijf_tijdlijn() -> list:
+    """
+    Haal tijdlijn op van inschrijvingen per dag voor visualisatie.
+    
+    Returns:
+        Lijst van dicts met datum en aantal inschrijvingen
+    """
+    try:
+        logs = laad_registratie_logs()
+        inschrijvingen = [l for l in logs if l.get("actie") == "inschrijven"]
+        
+        # Groepeer per dag
+        per_dag = {}
+        for log in inschrijvingen:
+            tijdstip = log.get("tijdstip", "")
+            if tijdstip:
+                dag = tijdstip[:10]  # YYYY-MM-DD
+                per_dag[dag] = per_dag.get(dag, 0) + 1
+        
+        # Converteer naar lijst
+        return [{"datum": dag, "aantal": aantal} for dag, aantal in sorted(per_dag.items())]
+    except:
+        return []
