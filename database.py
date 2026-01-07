@@ -884,11 +884,23 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "vereist_bs2": data.get("vereist_bs2", False),
                 "scheids_1": data.get("scheids_1"),
                 "scheids_2": data.get("scheids_2"),
+                "begeleider": data.get("begeleider"),
                 "type": data.get("type", "thuis"),
                 "reistijd_minuten": data.get("reistijd_minuten", 45),
                 "geannuleerd": data.get("geannuleerd", False),
                 "veld": data.get("veld", ""),
-                "updated_at": datetime.now().isoformat()
+                "updated_at": datetime.now().isoformat(),
+                # Kolommen voor punten en status
+                "scheids_1_status": data.get("scheids_1_status"),
+                "scheids_2_status": data.get("scheids_2_status"),
+                "scheids_1_bevestigd_op": data.get("scheids_1_bevestigd_op"),
+                "scheids_2_bevestigd_op": data.get("scheids_2_bevestigd_op"),
+                "scheids_1_bevestigd_door": data.get("scheids_1_bevestigd_door"),
+                "scheids_2_bevestigd_door": data.get("scheids_2_bevestigd_door"),
+                "scheids_1_punten_berekend": data.get("scheids_1_punten_berekend"),
+                "scheids_2_punten_berekend": data.get("scheids_2_punten_berekend"),
+                "scheids_1_punten_details": data.get("scheids_1_punten_details"),
+                "scheids_2_punten_details": data.get("scheids_2_punten_details")
             }
             records.append(record)
         

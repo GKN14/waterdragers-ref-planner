@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.21.0"
+APP_VERSIE = "1.21.1"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.21.1 (2026-01-07)
+**Kritieke bugfix inschrijvingen:**
+- 🐛 Fix: Inschrijvingen verdwenen na herladen (race condition opgelost)
+- 🐛 Fix: "Toch inschrijven" op mobiel werkt nu correct
+- ⚡ Inschrijven/afmelden slaat nu alleen de betreffende wedstrijd op (niet alle wedstrijden)
+- 🔄 Bulk save functie uitgebreid met alle velden (punten, status, begeleider)
+
 ### v1.21.0 (2026-01-07)
 **Blessure status & Wedstrijd synchronisatie:**
 - 🤕 Nieuwe blessure status per scheidsrechter (geblesseerd t/m maand)
@@ -1358,8 +1365,8 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     wedstrijden[wed_id][punten_kolom] = punten_info["totaal"]
     wedstrijden[wed_id][details_kolom] = punten_info  # Volledige details voor transparantie
     
-    # Sla op
-    sla_wedstrijden_op(wedstrijden)
+    # Sla ALLEEN deze wedstrijd op (niet alle wedstrijden - voorkomt race conditions)
+    sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
     
     # Log de inschrijving voor gedragsanalyse
     try:
@@ -3499,7 +3506,11 @@ def toon_speler_view(nbb_nummer: str):
                 with col_accept:
                     if st.button("✅", key=f"beg_acc_{uitnodiging['id']}", help="Accepteren"):
                         wedstrijden[uitnodiging["wed_id"]]["scheids_2"] = nbb_nummer
-                        sla_wedstrijden_op(wedstrijden)
+                        # Bereken en sla punten op voor de nieuwe scheidsrechter
+                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, uitnodiging["wed_id"], wedstrijden, scheidsrechters)
+                        wedstrijden[uitnodiging["wed_id"]]["scheids_2_punten_berekend"] = punten_info["totaal"]
+                        wedstrijden[uitnodiging["wed_id"]]["scheids_2_punten_details"] = punten_info
+                        sla_wedstrijd_op(uitnodiging["wed_id"], wedstrijden[uitnodiging["wed_id"]])
                         uitnodigingen[uitnodiging["id"]]["status"] = "accepted"
                         uitnodigingen[uitnodiging["id"]]["bevestigd_op"] = datetime.now().isoformat()
                         sla_begeleidingsuitnodigingen_op(uitnodigingen)
@@ -3803,8 +3814,12 @@ def toon_speler_view(nbb_nummer: str):
                             
                                 if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
                                     positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
+                                    punten_kolom = f"{positie}_punten_berekend"
+                                    details_kolom = f"{positie}_punten_details"
                                     wedstrijden[wed["id"]][positie] = None
-                                    sla_wedstrijden_op(wedstrijden)
+                                    wedstrijden[wed["id"]][punten_kolom] = None
+                                    wedstrijden[wed["id"]][details_kolom] = None
+                                    sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                 
                                     # Log de uitschrijving
                                     try:
@@ -4113,7 +4128,9 @@ def toon_speler_view(nbb_nummer: str):
                                     # Alleen afmelden tonen voor toekomstige wedstrijden
                                     if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_1"] = None
-                                        sla_wedstrijden_op(wedstrijden)
+                                        wedstrijden[wed["id"]]["scheids_1_punten_berekend"] = None
+                                        wedstrijden[wed["id"]]["scheids_1_punten_details"] = None
+                                        sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                         st.rerun()
                                 elif status_1e["bezet"]:
                                     # Toon begeleiding indicator voor MSE's
@@ -4210,7 +4227,9 @@ def toon_speler_view(nbb_nummer: str):
                                     # Alleen afmelden tonen voor toekomstige wedstrijden
                                     if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
                                         wedstrijden[wed["id"]]["scheids_2"] = None
-                                        sla_wedstrijden_op(wedstrijden)
+                                        wedstrijden[wed["id"]]["scheids_2_punten_berekend"] = None
+                                        wedstrijden[wed["id"]]["scheids_2_punten_details"] = None
+                                        sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                         st.rerun()
                                 elif status_2e["bezet"]:
                                     # Toon begeleiding indicator voor MSE's
