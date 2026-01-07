@@ -24,18 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.4"
+APP_VERSIE = "1.22.5"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.5 (2026-01-07)
+**Mobiele layout: terug naar Streamlit defaults:**
+- 📱 Geen sidebar CSS meer op mobiel (width, border)
+- 📱 Header, toolbar, deploy button alleen verborgen op desktop
+- 📱 Mobiel gebruikt nu volledig Streamlit standaard gedrag
+- 🖥️ Desktop: sidebar 320px, lichtgrijs met blauwe border
+
 ### v1.22.4 (2026-01-07)
 **Mobiele sidebar fix:**
 - 🐛 Fix: sidebar toggle was verborgen op mobiel (header werd verborgen)
 - 📱 Header nu alleen verborgen op desktop, niet op mobiel
-
-### v1.22.3 (2026-01-07)
-**Sidebar styling fix:**
-- 🐛 Fix: sidebar achtergrondkleur (lichtgrijs) werkt nu correct
-- 🎨 Robuustere CSS selectors voor compatibiliteit met Streamlit versies
 
 ### v1.22.2 (2026-01-07)
 **Layout fixes:**
@@ -2447,22 +2449,20 @@ def toon_speler_view(nbb_nummer: str):
             }
         }
         
-        /* Op mobiel: header behouden maar minimaliseren */
-        @media (max-width: 768px) {
-            header[data-testid="stHeader"] {
-                background: transparent !important;
-                height: auto !important;
+        /* Op mobiel: header volledig met rust laten - Streamlit default */
+        
+        /* Verberg toolbar alleen op desktop */
+        @media (min-width: 769px) {
+            [data-testid="stToolbar"] {
+                display: none;
             }
         }
         
-        /* Verberg toolbar */
-        [data-testid="stToolbar"] {
-            display: none;
-        }
-        
-        /* Verberg deploy button */
-        .stDeployButton {
-            display: none;
+        /* Verberg deploy button alleen op desktop */
+        @media (min-width: 769px) {
+            .stDeployButton {
+                display: none;
+            }
         }
         
         /* Minimale padding op alle niveaus */
@@ -2497,21 +2497,15 @@ def toon_speler_view(nbb_nummer: str):
         .stSidebar,
         aside {
             background-color: #f8f9fa !important;
-            border-right: 3px solid #003082 !important;
         }
         
-        /* Sidebar inner content ook lichtgrijs */
-        section[data-testid="stSidebar"] > div,
-        [data-testid="stSidebar"] > div,
-        .stSidebar > div {
-            background-color: #f8f9fa !important;
-        }
-        
-        /* Sidebar breder alleen op desktop */
+        /* Blauwe border en breedte alleen op desktop */
         @media (min-width: 769px) {
             section[data-testid="stSidebar"],
             [data-testid="stSidebar"],
-            .stSidebar {
+            .stSidebar,
+            aside {
+                border-right: 3px solid #003082 !important;
                 min-width: 320px !important;
                 width: 320px !important;
             }
@@ -2520,6 +2514,13 @@ def toon_speler_view(nbb_nummer: str):
             [data-testid="stSidebar"] > div:first-child {
                 width: 320px !important;
             }
+        }
+        
+        /* Sidebar inner content ook lichtgrijs */
+        section[data-testid="stSidebar"] > div,
+        [data-testid="stSidebar"] > div,
+        .stSidebar > div {
+            background-color: #f8f9fa !important;
         }
         
         /* ============================================ */
@@ -2541,13 +2542,7 @@ def toon_speler_view(nbb_nummer: str):
                 font-size: 0.9rem !important;
             }
             
-            /* Sidebar op mobiel */
-            section[data-testid="stSidebar"],
-            [data-testid="stSidebar"],
-            .stSidebar {
-                min-width: 280px !important;
-                width: 280px !important;
-            }
+            /* GEEN sidebar width aanpassingen op mobiel - Streamlit default gebruiken */
         }
         
         section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3,
