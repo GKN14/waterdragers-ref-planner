@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.3"
+APP_VERSIE = "1.22.4"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.4 (2026-01-07)
+**Mobiele sidebar fix:**
+- 🐛 Fix: sidebar toggle was verborgen op mobiel (header werd verborgen)
+- 📱 Header nu alleen verborgen op desktop, niet op mobiel
+
 ### v1.22.3 (2026-01-07)
 **Sidebar styling fix:**
 - 🐛 Fix: sidebar achtergrondkleur (lichtgrijs) werkt nu correct
@@ -2435,9 +2440,19 @@ def toon_speler_view(nbb_nummer: str):
             --bob-oranje: #FF6600;
         }
         
-        /* Verberg standaard Streamlit header op alle schermen */
-        header[data-testid="stHeader"] {
-            display: none;
+        /* Verberg standaard Streamlit header alleen op desktop */
+        @media (min-width: 769px) {
+            header[data-testid="stHeader"] {
+                display: none;
+            }
+        }
+        
+        /* Op mobiel: header behouden maar minimaliseren */
+        @media (max-width: 768px) {
+            header[data-testid="stHeader"] {
+                background: transparent !important;
+                height: auto !important;
+            }
         }
         
         /* Verberg toolbar */
