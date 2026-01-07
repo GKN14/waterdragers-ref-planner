@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.21.1"
+APP_VERSIE = "1.22.0"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.0 (2026-01-07)
+**Dagen blokkeren:**
+- 🚫 Spelers kunnen nu wedstrijddagen blokkeren in de sidebar
+- 🚫 Geblokkeerde dagen worden uitgefilterd bij handmatige toewijzing
+- 🚫 Geblokkeerde dagen worden uitgefilterd bij vervangingsverzoeken
+- 🔒 Blokkades voor verleden dagen kunnen niet worden verwijderd
+
 ### v1.21.1 (2026-01-07)
 **Kritieke bugfix inschrijvingen:**
 - 🐛 Fix: Inschrijvingen verdwenen na herladen (race condition opgelost)
@@ -2322,6 +2329,13 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             except:
                 pass  # Bij parse fout gewoon doorgaan
         
+        # Check geblokkeerde dagen (speler heeft zelf aangegeven niet beschikbaar te zijn)
+        geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
+        if geblokkeerde_dagen:
+            wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+            if wed_dag_str in geblokkeerde_dagen:
+                continue  # Speler heeft deze dag geblokkeerd
+        
         # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
         if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
             continue
@@ -2828,6 +2842,93 @@ def toon_speler_view(nbb_nummer: str):
                             if st.button("✏️ Wijzig", key=f"wijzig_fb_{fb.get('feedback_id')}", help="Feedback wijzigen"):
                                 verwijder_begeleiding_feedback(fb.get("feedback_id"))
                                 st.rerun()
+        
+        # ============================================================
+        # NIET BESCHIKBAAR (SAMENGEVOUWEN)
+        # ============================================================
+        with st.expander("🚫 Niet beschikbaar"):
+            st.caption("Vink dagen aan waarop je niet kunt fluiten. Je wordt dan niet gevraagd als vervanger en niet ingedeeld door de TC.")
+            
+            # Haal unieke wedstrijddagen op (alleen toekomst, alleen thuiswedstrijden)
+            nu = datetime.now()
+            vandaag_str = nu.strftime("%Y-%m-%d")
+            wedstrijd_dagen = set()
+            for wed_id, wed in wedstrijden.items():
+                if wed.get("type", "thuis") != "thuis":
+                    continue
+                if wed.get("geannuleerd", False):
+                    continue
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                if wed_datum > nu:
+                    # Alleen de datum (zonder tijd)
+                    wedstrijd_dagen.add(wed_datum.strftime("%Y-%m-%d"))
+            
+            # Huidige blokkades ophalen
+            huidige_blokkades = scheids.get("geblokkeerde_dagen", [])
+            if not isinstance(huidige_blokkades, list):
+                huidige_blokkades = []
+            
+            # Splits blokkades in verleden (vastgezet) en toekomst (aanpasbaar)
+            verleden_blokkades = [d for d in huidige_blokkades if d < vandaag_str]
+            
+            if wedstrijd_dagen or verleden_blokkades:
+                # Sorteer op datum
+                gesorteerde_dagen = sorted(wedstrijd_dagen)
+                
+                # Groepeer per maand voor overzichtelijkheid
+                dagen_per_maand = {}
+                maand_namen = ["jan", "feb", "mrt", "apr", "mei", "jun", 
+                              "jul", "aug", "sep", "okt", "nov", "dec"]
+                dag_namen = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+                
+                for dag_str in gesorteerde_dagen:
+                    dag_dt = datetime.strptime(dag_str, "%Y-%m-%d")
+                    maand_key = f"{maand_namen[dag_dt.month - 1]} {dag_dt.year}"
+                    if maand_key not in dagen_per_maand:
+                        dagen_per_maand[maand_key] = []
+                    dagen_per_maand[maand_key].append(dag_str)
+                
+                nieuwe_blokkades = list(verleden_blokkades)  # Verleden blokkades blijven altijd behouden
+                
+                for maand, dagen in dagen_per_maand.items():
+                    st.caption(f"**{maand}**")
+                    
+                    # Toon dagen in rijen van 4
+                    for i in range(0, len(dagen), 4):
+                        cols = st.columns(4)
+                        for j, col in enumerate(cols):
+                            if i + j < len(dagen):
+                                dag_str = dagen[i + j]
+                                dag_dt = datetime.strptime(dag_str, "%Y-%m-%d")
+                                dag_label = f"{dag_namen[dag_dt.weekday()]} {dag_dt.day}"
+                                
+                                is_geblokkeerd = dag_str in huidige_blokkades
+                                
+                                with col:
+                                    if st.checkbox(dag_label, value=is_geblokkeerd, key=f"blokkade_{dag_str}"):
+                                        nieuwe_blokkades.append(dag_str)
+                
+                # Check of er iets is gewijzigd
+                if set(nieuwe_blokkades) != set(huidige_blokkades):
+                    # Update scheidsrechter data
+                    scheids["geblokkeerde_dagen"] = nieuwe_blokkades
+                    sla_scheidsrechter_op(nbb_nummer, scheids)
+                    st.rerun()
+                
+                # Toon samenvatting
+                actieve_blokkades = [d for d in nieuwe_blokkades if d >= vandaag_str]
+                if actieve_blokkades or verleden_blokkades:
+                    samenvatting = []
+                    if actieve_blokkades:
+                        samenvatting.append(f"{len(actieve_blokkades)} komend")
+                    if verleden_blokkades:
+                        samenvatting.append(f"{len(verleden_blokkades)} verleden")
+                    st.caption(f"*Geblokkeerd: {', '.join(samenvatting)}*")
+                    
+                    if verleden_blokkades:
+                        st.caption("*🔒 Verleden blokkades kunnen niet worden verwijderd*")
+            else:
+                st.caption("*Geen toekomstige wedstrijddagen*")
         
         # ============================================================
         # APPARATEN (SAMENGEVOUWEN)
