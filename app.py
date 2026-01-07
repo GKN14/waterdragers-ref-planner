@@ -24,12 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.2"
+APP_VERSIE = "1.22.3"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.3 (2026-01-07)
+**Sidebar styling fix:**
+- 🐛 Fix: sidebar achtergrondkleur (lichtgrijs) werkt nu correct
+- 🎨 Robuustere CSS selectors voor compatibiliteit met Streamlit versies
+
 ### v1.22.2 (2026-01-07)
 **Layout fixes:**
-- 🐛 Fix: sidebar toggle CSS vereenvoudigd (was te complex)
+- 🐛 Fix: sidebar toggle CSS vereenvoudigd
 - 📱 Mobiel: gebruik "Begeleiders & Info" voor dagen blokkeren
 - 🖥️ Desktop: sidebar 320px breed
 
@@ -2470,19 +2475,34 @@ def toon_speler_view(nbb_nummer: str):
         }
         
         /* Sidebar styling - lichtgrijs met blauwe border */
-        section[data-testid="stSidebar"] {
+        /* Meerdere selectors voor compatibiliteit met verschillende Streamlit versies */
+        section[data-testid="stSidebar"],
+        [data-testid="stSidebar"],
+        .st-emotion-cache-1gv3huu,
+        .stSidebar,
+        aside {
             background-color: #f8f9fa !important;
             border-right: 3px solid #003082 !important;
         }
         
+        /* Sidebar inner content ook lichtgrijs */
+        section[data-testid="stSidebar"] > div,
+        [data-testid="stSidebar"] > div,
+        .stSidebar > div {
+            background-color: #f8f9fa !important;
+        }
+        
         /* Sidebar breder alleen op desktop */
         @media (min-width: 769px) {
-            section[data-testid="stSidebar"] {
+            section[data-testid="stSidebar"],
+            [data-testid="stSidebar"],
+            .stSidebar {
                 min-width: 320px !important;
                 width: 320px !important;
             }
             
-            section[data-testid="stSidebar"] > div:first-child {
+            section[data-testid="stSidebar"] > div:first-child,
+            [data-testid="stSidebar"] > div:first-child {
                 width: 320px !important;
             }
         }
@@ -2507,13 +2527,17 @@ def toon_speler_view(nbb_nummer: str):
             }
             
             /* Sidebar op mobiel */
-            section[data-testid="stSidebar"] {
+            section[data-testid="stSidebar"],
+            [data-testid="stSidebar"],
+            .stSidebar {
                 min-width: 280px !important;
                 width: 280px !important;
             }
         }
         
-        section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3 {
+        section[data-testid="stSidebar"] [data-testid="stMarkdown"] h3,
+        [data-testid="stSidebar"] [data-testid="stMarkdown"] h3,
+        .stSidebar h3 {
             color: #003082 !important;
             border-bottom: 2px solid #FF6600 !important;
             padding-bottom: 5px !important;
