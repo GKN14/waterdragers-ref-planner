@@ -24,20 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.5"
+APP_VERSIE = "1.22.6"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.6 (2026-01-07)
+**Opgeschoond:**
+- 🗑️ "Begeleiders & Info" sectie verwijderd uit hoofdscherm (zit nu in sidebar)
+- 📱 Mobiele sidebar werkt correct met Streamlit defaults
+
 ### v1.22.5 (2026-01-07)
 **Mobiele layout: terug naar Streamlit defaults:**
 - 📱 Geen sidebar CSS meer op mobiel (width, border)
 - 📱 Header, toolbar, deploy button alleen verborgen op desktop
 - 📱 Mobiel gebruikt nu volledig Streamlit standaard gedrag
 - 🖥️ Desktop: sidebar 320px, lichtgrijs met blauwe border
-
-### v1.22.4 (2026-01-07)
-**Mobiele sidebar fix:**
-- 🐛 Fix: sidebar toggle was verborgen op mobiel (header werd verborgen)
-- 📱 Header nu alleen verborgen op desktop, niet op mobiel
 
 ### v1.22.2 (2026-01-07)
 **Layout fixes:**
@@ -3302,159 +3302,6 @@ def toon_speler_view(nbb_nummer: str):
         st.markdown(f"🏆 **Klassement:** {' · '.join(klassement_items)}")
     else:
         st.caption("🏆 *Klassement: nog geen punten verdiend*")
-    
-    # Info sectie (begeleiders + info - kan opvouwen)
-    with st.expander("🎓 Begeleiders & Info", expanded=False):
-        # Begeleiders klassement
-        st.markdown("**🎓 Top Begeleiders**")
-        beg_klas = get_begeleiders_klassement_met_positie(nbb_nummer)
-        if beg_klas["top3"]:
-            medailles = ["🥇", "🥈", "🥉"]
-            for i, b in enumerate(beg_klas["top3"]):
-                marker = " 👈" if b["nbb"] == nbb_nummer else ""
-                st.caption(f"{medailles[i]} {b['naam']} - {b['begeleidingen']}x{marker}")
-            
-            eigen_in_top3 = any(b["nbb"] == nbb_nummer for b in beg_klas["top3"])
-            if not eigen_in_top3 and beg_klas["eigen"]:
-                eigen = beg_klas["eigen"]
-                st.caption(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['begeleidingen']}x 👈")
-        else:
-            st.caption("*Nog geen begeleidingen*")
-        
-        st.divider()
-        
-        # Jouw gegevens compact
-        col_info1, col_info2 = st.columns(2)
-        with col_info1:
-            st.markdown("**👤 Jouw gegevens**")
-            st.caption(f"1e scheids: niveau {eigen_niveau}")
-            st.caption(f"2e scheids: niveau {min(eigen_niveau + 1, 5)}")
-            if scheids.get("bs2_diploma"):
-                st.caption("✅ BS2 diploma")
-        with col_info2:
-            st.markdown("**📐 Regels**")
-            st.caption(f"Max 1e: niveau {eigen_niveau}")
-            st.caption(f"Max 2e: niveau {min(eigen_niveau + 1, 5)}")
-            st.caption("Met MSE: geen limiet 🎓")
-        
-        st.divider()
-        
-        # Punten systeem compact
-        st.markdown("**🏆 Punten verdienen**")
-        beloningsinst_mob = laad_beloningsinstellingen()
-        st.caption(f"Wedstrijd: {beloningsinst_mob['punten_per_wedstrijd']}pt | Lastig tijdstip: +{beloningsinst_mob['punten_lastig_tijdstip']}pt")
-        st.caption(f"Invallen <48u: +{beloningsinst_mob['punten_inval_48u']}pt | <24u: +{beloningsinst_mob['punten_inval_24u']}pt")
-        st.caption(f"**{beloningsinst_mob['punten_voor_voucher']} punten = voucher Clinic!**")
-        
-        st.divider()
-        
-        # Symbolen legenda
-        st.markdown("**📋 Symbolen**")
-        st.caption("🙋 Jij ingeschreven | 👤 Iemand anders | 📋 Beschikbaar | 🎓 MSE")
-        
-        st.divider()
-        
-        # Help sectie
-        st.markdown("**❓ Help**")
-        
-        # Filter MSE sectie voor niet-MSE gebruikers
-        help_categorieen = list(HELP_TEKSTEN.keys())
-        if not is_mse:
-            help_categorieen = [c for c in help_categorieen if c != "Voor MSE"]
-        
-        help_keuze = st.radio(
-            "Help onderwerp",
-            options=help_categorieen,
-            format_func=lambda x: f"{HELP_TEKSTEN[x]['icon']} {x}",
-            label_visibility="collapsed",
-            horizontal=True,
-            key="help_radio_main"
-        )
-        
-        # Toon onderwerpen voor geselecteerde categorie
-        for onderwerp, tekst in HELP_TEKSTEN[help_keuze]["onderwerpen"].items():
-            st.markdown(f"**{onderwerp}**")
-            st.caption(tekst)
-        
-        st.divider()
-        
-        # Niet beschikbaar sectie (mobiel versie)
-        st.markdown("**🚫 Niet beschikbaar**")
-        st.caption("Vink dagen aan waarop je niet kunt fluiten.")
-        
-        # Haal unieke wedstrijddagen op
-        nu_mob = datetime.now()
-        vandaag_str_mob = nu_mob.strftime("%Y-%m-%d")
-        wedstrijd_dagen_mob = set()
-        for wed_id_mob, wed_mob in wedstrijden.items():
-            if wed_mob.get("type", "thuis") != "thuis":
-                continue
-            if wed_mob.get("geannuleerd", False):
-                continue
-            wed_datum_mob = datetime.strptime(wed_mob["datum"], "%Y-%m-%d %H:%M")
-            if wed_datum_mob > nu_mob:
-                wedstrijd_dagen_mob.add(wed_datum_mob.strftime("%Y-%m-%d"))
-        
-        huidige_blokkades_mob = scheids.get("geblokkeerde_dagen", [])
-        if not isinstance(huidige_blokkades_mob, list):
-            huidige_blokkades_mob = []
-        
-        verleden_blokkades_mob = [d for d in huidige_blokkades_mob if d < vandaag_str_mob]
-        
-        if wedstrijd_dagen_mob or verleden_blokkades_mob:
-            gesorteerde_dagen_mob = sorted(wedstrijd_dagen_mob)
-            
-            maand_namen_mob = ["jan", "feb", "mrt", "apr", "mei", "jun", 
-                              "jul", "aug", "sep", "okt", "nov", "dec"]
-            dag_namen_mob = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-            
-            dagen_per_maand_mob = {}
-            for dag_str_mob in gesorteerde_dagen_mob:
-                dag_dt_mob = datetime.strptime(dag_str_mob, "%Y-%m-%d")
-                maand_key_mob = f"{maand_namen_mob[dag_dt_mob.month - 1]} {dag_dt_mob.year}"
-                if maand_key_mob not in dagen_per_maand_mob:
-                    dagen_per_maand_mob[maand_key_mob] = []
-                dagen_per_maand_mob[maand_key_mob].append(dag_str_mob)
-            
-            nieuwe_blokkades_mob = list(verleden_blokkades_mob)
-            
-            for maand_mob, dagen_mob in dagen_per_maand_mob.items():
-                st.caption(f"**{maand_mob}**")
-                
-                for i in range(0, len(dagen_mob), 4):
-                    cols_mob = st.columns(4)
-                    for j, col_mob in enumerate(cols_mob):
-                        if i + j < len(dagen_mob):
-                            dag_str_m = dagen_mob[i + j]
-                            dag_dt_m = datetime.strptime(dag_str_m, "%Y-%m-%d")
-                            dag_label_m = f"{dag_namen_mob[dag_dt_m.weekday()]} {dag_dt_m.day}"
-                            
-                            is_geblokkeerd_m = dag_str_m in huidige_blokkades_mob
-                            
-                            with col_mob:
-                                if st.checkbox(dag_label_m, value=is_geblokkeerd_m, key=f"blokkade_mob_{dag_str_m}"):
-                                    nieuwe_blokkades_mob.append(dag_str_m)
-            
-            if set(nieuwe_blokkades_mob) != set(huidige_blokkades_mob):
-                scheids["geblokkeerde_dagen"] = nieuwe_blokkades_mob
-                sla_scheidsrechter_op(nbb_nummer, scheids)
-                st.rerun()
-            
-            actieve_blokkades_mob = [d for d in nieuwe_blokkades_mob if d >= vandaag_str_mob]
-            if actieve_blokkades_mob or verleden_blokkades_mob:
-                samenvatting_mob = []
-                if actieve_blokkades_mob:
-                    samenvatting_mob.append(f"{len(actieve_blokkades_mob)} komend")
-                if verleden_blokkades_mob:
-                    samenvatting_mob.append(f"{len(verleden_blokkades_mob)} verleden 🔒")
-                st.caption(f"*{', '.join(samenvatting_mob)}*")
-        else:
-            st.caption("*Geen toekomstige wedstrijddagen*")
-        
-        st.divider()
-        
-        # Versienummer
-        st.caption(f"Ref Planner v{APP_VERSIE}")
     
     # Status + Deadline in één rij
     tekort = max(0, min_wed - op_niveau)
