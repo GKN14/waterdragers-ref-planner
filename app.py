@@ -2287,6 +2287,25 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
             continue
         
+        # Check blessure status
+        geblesseerd_tm = scheids.get("geblesseerd_tm", "")
+        if geblesseerd_tm:
+            # Parse de blessure maand (bijv. "januari 2025")
+            try:
+                maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                              "juli", "augustus", "september", "oktober", "november", "december"]
+                delen = geblesseerd_tm.split()
+                if len(delen) == 2:
+                    maand_naam, jaar = delen[0].lower(), int(delen[1])
+                    if maand_naam in maand_namen:
+                        blessure_maand = maand_namen.index(maand_naam) + 1
+                        # Wedstrijd valt in of voor de blessure maand?
+                        if (wed_datum.year < jaar or 
+                            (wed_datum.year == jaar and wed_datum.month <= blessure_maand)):
+                            continue  # Geblesseerd, niet beschikbaar
+            except:
+                pass  # Bij parse fout gewoon doorgaan
+        
         # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
         if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
             continue
@@ -6181,6 +6200,7 @@ def toon_scheidsrechters_beheer():
             "⚠️ Strikes": speler_stats["strikes"],
             "BS2": "✓" if scheids.get("bs2_diploma", False) else "",
             "🎓": "✓" if scheids.get("open_voor_begeleiding", False) else "",
+            "🤕": "✓" if scheids.get("geblesseerd_tm") else "",
         })
     
     if overzicht_data:
@@ -6208,8 +6228,14 @@ def toon_scheidsrechters_beheer():
         
         # Tel spelers open voor begeleiding
         open_voor_begeleiding_count = sum(1 for d in overzicht_data if d["🎓"] == "✓")
+        geblesseerd_count = sum(1 for d in overzicht_data if d["🤕"] == "✓")
+        legenda_items = []
         if open_voor_begeleiding_count > 0:
-            st.caption(f"🎓 = Open voor begeleiding ({open_voor_begeleiding_count} spelers)")
+            legenda_items.append(f"🎓 = Open voor begeleiding ({open_voor_begeleiding_count})")
+        if geblesseerd_count > 0:
+            legenda_items.append(f"🤕 = Geblesseerd ({geblesseerd_count})")
+        if legenda_items:
+            st.caption(" | ".join(legenda_items))
     
     st.divider()
     st.write("### 📝 Details per scheidsrechter")
@@ -6230,7 +6256,10 @@ def toon_scheidsrechters_beheer():
         else:
             status = "⏳"  # Nog niet genoeg, maar deadline nog niet verstreken
         
-        label = f"{status} {scheids['naam']} - {op_niveau}/{min_wed} op niv.{eigen_niveau} (totaal: {huidig})"
+        # Blessure indicator
+        blessure_indicator = " 🤕" if scheids.get("geblesseerd_tm") else ""
+        
+        label = f"{status} {scheids['naam']}{blessure_indicator} - {op_niveau}/{min_wed} op niv.{eigen_niveau} (totaal: {huidig})"
         with st.expander(label):
             # Bewerk modus toggle
             edit_key = f"edit_{nbb}"
@@ -6251,6 +6280,32 @@ def toon_scheidsrechters_beheer():
                         nieuwe_naam = st.text_input("Naam", value=str(scheids.get("naam", "") or ""), key=f"naam_{nbb}")
                         bs2_diploma = st.checkbox("BS2 diploma", value=bool(scheids.get("bs2_diploma", False)), key=f"bs2_{nbb}")
                         niet_op_zondag = st.checkbox("Niet op zondag", value=bool(scheids.get("niet_op_zondag", False)), key=f"zondag_{nbb}")
+                        
+                        # Blessure status
+                        st.markdown("**🤕 Blessure**")
+                        huidige_blessure = scheids.get("geblesseerd_tm", "")
+                        # Maak maand opties (huidige maand + 6 maanden vooruit)
+                        maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                                      "juli", "augustus", "september", "oktober", "november", "december"]
+                        nu = datetime.now()
+                        blessure_opties = ["Niet geblesseerd"]
+                        for i in range(7):  # Huidige maand + 6 maanden
+                            maand_idx = (nu.month - 1 + i) % 12
+                            jaar = nu.year + ((nu.month + i - 1) // 12)
+                            blessure_opties.append(f"{maand_namen[maand_idx]} {jaar}")
+                        
+                        # Bepaal huidige index
+                        blessure_idx = 0
+                        if huidige_blessure and huidige_blessure in blessure_opties:
+                            blessure_idx = blessure_opties.index(huidige_blessure)
+                        
+                        geblesseerd_tm = st.selectbox(
+                            "Geblesseerd t/m",
+                            options=blessure_opties,
+                            index=blessure_idx,
+                            key=f"blessure_{nbb}",
+                            help="Speler wordt niet getoond bij handmatige toewijzing voor wedstrijden in deze maand"
+                        )
                     with col2:
                         # Zorg voor geldige index (0-4)
                         idx_1e = max(0, min(4, scheids.get("niveau_1e_scheids", 1) - 1))
@@ -6299,6 +6354,8 @@ def toon_scheidsrechters_beheer():
                         if st.form_submit_button("💾 Opslaan"):
                             # niveau_2e wordt automatisch berekend
                             niveau_2e = min(niveau_1e + 1, 5)
+                            # Blessure waarde: leeg als "Niet geblesseerd"
+                            blessure_waarde = "" if geblesseerd_tm == "Niet geblesseerd" else geblesseerd_tm
                             scheidsrechters[nbb] = {
                                 "naam": nieuwe_naam,
                                 "bs2_diploma": bs2_diploma,
@@ -6307,6 +6364,7 @@ def toon_scheidsrechters_beheer():
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
                                 "eigen_teams": eigen_teams,
+                                "geblesseerd_tm": blessure_waarde,
                                 "open_voor_begeleiding": open_voor_begeleiding,
                                 "begeleiding_reden": begeleiding_reden if open_voor_begeleiding else "",
                                 "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
@@ -6333,6 +6391,9 @@ def toon_scheidsrechters_beheer():
                     st.write(f"**NBB-nummer:** {nbb}")
                     st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
                     st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
+                    # Blessure indicator
+                    if scheids.get("geblesseerd_tm"):
+                        st.write(f"**🤕 Geblesseerd t/m:** {scheids.get('geblesseerd_tm')}")
                 
                 with col2:
                     st.write(f"**1e scheids t/m niveau:** {niveau_1e}")

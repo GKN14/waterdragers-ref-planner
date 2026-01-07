@@ -887,6 +887,7 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "type": data.get("type", "thuis"),
                 "reistijd_minuten": data.get("reistijd_minuten", 45),
                 "geannuleerd": data.get("geannuleerd", False),
+                "veld": data.get("veld", ""),
                 "updated_at": datetime.now().isoformat()
             }
             records.append(record)
@@ -935,6 +936,7 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "type": data.get("type", "thuis"),
             "reistijd_minuten": data.get("reistijd_minuten", 45),
             "geannuleerd": data.get("geannuleerd", False),
+            "veld": data.get("veld", ""),
             "updated_at": datetime.now().isoformat(),
             # Nieuwe kolommen voor punten en status
             "scheids_1_status": data.get("scheids_1_status"),
