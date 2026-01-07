@@ -24,20 +24,22 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.6"
+APP_VERSIE = "1.22.8"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
-### v1.22.6 (2026-01-07)
-**Opgeschoond:**
-- 🗑️ "Begeleiders & Info" sectie verwijderd uit hoofdscherm (zit nu in sidebar)
-- 📱 Mobiele sidebar werkt correct met Streamlit defaults
+### v1.22.8 (2026-01-07)
+**Begeleiders ranking fix:**
+- 🐛 Fix: alleen echte MSE spelers (MSE in eigen_teams) tellen als begeleider
+- 🐛 Fix: BS2 spelers zonder MSE team worden niet meer meegeteld
+- 🐛 Fix: begeleiding telt alleen bij echte interactie:
+  - Niet-fluitende begeleider: alleen met positieve feedback
+  - Fluitende MSE: alleen als 2e scheids open_voor_begeleiding had + positieve feedback
+- 📊 Handmatig gekoppelde MSE + onervaren speler telt NIET meer automatisch
 
-### v1.22.5 (2026-01-07)
-**Mobiele layout: terug naar Streamlit defaults:**
-- 📱 Geen sidebar CSS meer op mobiel (width, border)
-- 📱 Header, toolbar, deploy button alleen verborgen op desktop
-- 📱 Mobiel gebruikt nu volledig Streamlit standaard gedrag
-- 🖥️ Desktop: sidebar 320px, lichtgrijs met blauwe border
+### v1.22.7 (2026-01-07)
+**Bugfix begeleiders klassement:**
+- 🐛 Fix: begeleiders ranking telde ook toekomstige wedstrijden mee
+- 📊 Nu worden alleen gespeelde wedstrijden geteld
 
 ### v1.22.2 (2026-01-07)
 **Layout fixes:**
@@ -1004,6 +1006,7 @@ def get_top_begeleiders(n: int = 3) -> list:
     """
     Haal top N begeleiders (MSE's) op basis van aantal bevestigde begeleidingen.
     Een begeleiding telt alleen als er positieve feedback is ontvangen.
+    Alleen spelers met "MSE" in hun eigen_teams tellen als MSE (niet alleen niveau 5).
     """
     scheidsrechters = laad_scheidsrechters()
     wedstrijden = laad_wedstrijden()
@@ -1013,29 +1016,44 @@ def get_top_begeleiders(n: int = 3) -> list:
     begeleiding_count = {}
     
     for wed_id, wed in wedstrijden.items():
-        begeleider_nbb = wed.get("begeleider")
+        # Check of wedstrijd al gespeeld is
+        try:
+            wed_datum = datetime.strptime(wed.get("datum", ""), "%Y-%m-%d %H:%M")
+            if wed_datum > datetime.now():
+                continue  # Wedstrijd nog niet gespeeld
+        except:
+            continue
         
         # Tel niet-fluitende begeleider (alleen met positieve feedback)
+        begeleider_nbb = wed.get("begeleider")
         if begeleider_nbb and begeleider_nbb in scheidsrechters:
-            # Check of er positieve feedback is van een van de scheidsrechters
-            scheids_1 = wed.get("scheids_1")
-            scheids_2 = wed.get("scheids_2")
+            # Check of begeleider een echte MSE is
+            begeleider = scheidsrechters.get(begeleider_nbb, {})
+            is_mse_begeleider = any("MSE" in t.upper() for t in begeleider.get("eigen_teams", []))
             
-            heeft_positieve_feedback = False
-            for scheids_nbb in [scheids_1, scheids_2]:
-                if scheids_nbb:
-                    fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
-                    if fb and fb.get("status") == "aanwezig_geholpen":
-                        heeft_positieve_feedback = True
-                        break
-            
-            if heeft_positieve_feedback:
-                if begeleider_nbb not in begeleiding_count:
-                    begeleiding_count[begeleider_nbb] = 0
-                begeleiding_count[begeleider_nbb] += 1
+            if is_mse_begeleider:
+                # Check of er positieve feedback is van een van de scheidsrechters
+                scheids_1 = wed.get("scheids_1")
+                scheids_2 = wed.get("scheids_2")
+                
+                heeft_positieve_feedback = False
+                for scheids_nbb in [scheids_1, scheids_2]:
+                    if scheids_nbb:
+                        fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
+                        if fb and fb.get("status") == "aanwezig_geholpen":
+                            heeft_positieve_feedback = True
+                            break
+                
+                if heeft_positieve_feedback:
+                    if begeleider_nbb not in begeleiding_count:
+                        begeleiding_count[begeleider_nbb] = 0
+                    begeleiding_count[begeleider_nbb] += 1
         
-        # Tel fluitende begeleiding (MSE als 1e met lager niveau 2e)
-        # Dit telt altijd mee want de MSE is zelf aanwezig als scheidsrechter
+        # Tel fluitende begeleiding (MSE als 1e scheids met speler die begeleiding wilde)
+        # Dit telt alleen als:
+        # 1. 1e scheids is een echte MSE (MSE in eigen_teams)
+        # 2. 2e scheids had open_voor_begeleiding aan
+        # 3. Er is positieve feedback gegeven
         scheids_1_nbb = wed.get("scheids_1")
         scheids_2_nbb = wed.get("scheids_2")
         
@@ -1045,20 +1063,19 @@ def get_top_begeleiders(n: int = 3) -> list:
         scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
         scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
         
-        # Check of 1e scheids een MSE is
-        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
-        is_mse = niveau_1e == 5 or any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
+        # Check of 1e scheids een echte MSE is (MSE in eigen_teams, niet alleen niveau 5)
+        is_mse = any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
         
         if not is_mse:
             continue
         
-        # Check of 2e scheids een lager niveau heeft (dan is het begeleiding)
-        niveau_2e_scheids = scheids_2.get("niveau_1e_scheids", 1)
-        wed_niveau = wed.get("niveau", 1)
+        # Check of 2e scheids open stond voor begeleiding
+        if not scheids_2.get("open_voor_begeleiding", False):
+            continue
         
-        # Als wedstrijdniveau hoger is dan wat 2e scheids normaal mag, is het begeleiding
-        max_niveau_2e = min(niveau_2e_scheids + 1, 5)
-        if wed_niveau > max_niveau_2e:
+        # Check of er positieve feedback is van de 2e scheids
+        fb = feedback_data.get(f"fb_{wed_id}_{scheids_2_nbb}")
+        if fb and fb.get("status") == "aanwezig_geholpen":
             if scheids_1_nbb not in begeleiding_count:
                 begeleiding_count[scheids_1_nbb] = 0
             begeleiding_count[scheids_1_nbb] += 1
@@ -1083,30 +1100,45 @@ def get_begeleiders_klassement_met_positie(eigen_nbb: str) -> dict:
     feedback_data = laad_begeleiding_feedback()
     
     # Tel begeleidingen per MSE (zelfde logica als get_top_begeleiders)
+    # Begeleiding telt alleen als:
+    # 1. Begeleider is echte MSE (MSE in eigen_teams)
+    # 2. Er is positieve feedback ontvangen
     begeleiding_count = {}
     
     for wed_id, wed in wedstrijden.items():
-        begeleider_nbb = wed.get("begeleider")
+        # Check of wedstrijd al gespeeld is
+        try:
+            wed_datum = datetime.strptime(wed.get("datum", ""), "%Y-%m-%d %H:%M")
+            if wed_datum > datetime.now():
+                continue  # Wedstrijd nog niet gespeeld
+        except:
+            continue
         
         # Tel niet-fluitende begeleider (alleen met positieve feedback)
+        begeleider_nbb = wed.get("begeleider")
         if begeleider_nbb and begeleider_nbb in scheidsrechters:
-            scheids_1 = wed.get("scheids_1")
-            scheids_2 = wed.get("scheids_2")
+            # Check of begeleider een echte MSE is
+            begeleider = scheidsrechters.get(begeleider_nbb, {})
+            is_mse_begeleider = any("MSE" in t.upper() for t in begeleider.get("eigen_teams", []))
             
-            heeft_positieve_feedback = False
-            for scheids_nbb in [scheids_1, scheids_2]:
-                if scheids_nbb:
-                    fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
-                    if fb and fb.get("status") == "aanwezig_geholpen":
-                        heeft_positieve_feedback = True
-                        break
-            
-            if heeft_positieve_feedback:
-                if begeleider_nbb not in begeleiding_count:
-                    begeleiding_count[begeleider_nbb] = 0
-                begeleiding_count[begeleider_nbb] += 1
+            if is_mse_begeleider:
+                scheids_1 = wed.get("scheids_1")
+                scheids_2 = wed.get("scheids_2")
+                
+                heeft_positieve_feedback = False
+                for scheids_nbb in [scheids_1, scheids_2]:
+                    if scheids_nbb:
+                        fb = feedback_data.get(f"fb_{wed_id}_{scheids_nbb}")
+                        if fb and fb.get("status") == "aanwezig_geholpen":
+                            heeft_positieve_feedback = True
+                            break
+                
+                if heeft_positieve_feedback:
+                    if begeleider_nbb not in begeleiding_count:
+                        begeleiding_count[begeleider_nbb] = 0
+                    begeleiding_count[begeleider_nbb] += 1
         
-        # Tel fluitende begeleiding
+        # Tel fluitende begeleiding (MSE als 1e scheids met speler die begeleiding wilde)
         scheids_1_nbb = wed.get("scheids_1")
         scheids_2_nbb = wed.get("scheids_2")
         
@@ -1116,17 +1148,19 @@ def get_begeleiders_klassement_met_positie(eigen_nbb: str) -> dict:
         scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
         scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
         
-        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
-        is_mse = niveau_1e == 5 or any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
+        # Check of 1e scheids een echte MSE is (MSE in eigen_teams, niet alleen niveau 5)
+        is_mse = any("MSE" in t.upper() for t in scheids_1.get("eigen_teams", []))
         
         if not is_mse:
             continue
         
-        niveau_2e_scheids = scheids_2.get("niveau_1e_scheids", 1)
-        wed_niveau = wed.get("niveau", 1)
+        # Check of 2e scheids open stond voor begeleiding
+        if not scheids_2.get("open_voor_begeleiding", False):
+            continue
         
-        max_niveau_2e = min(niveau_2e_scheids + 1, 5)
-        if wed_niveau > max_niveau_2e:
+        # Check of er positieve feedback is van de 2e scheids
+        fb = feedback_data.get(f"fb_{wed_id}_{scheids_2_nbb}")
+        if fb and fb.get("status") == "aanwezig_geholpen":
             if scheids_1_nbb not in begeleiding_count:
                 begeleiding_count[scheids_1_nbb] = 0
             begeleiding_count[scheids_1_nbb] += 1
