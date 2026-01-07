@@ -29,10 +29,12 @@ APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
 ### v1.22.0 (2026-01-07)
 **Dagen blokkeren:**
-- 🚫 Spelers kunnen nu wedstrijddagen blokkeren in de sidebar
+- 🚫 Spelers kunnen nu wedstrijddagen blokkeren
 - 🚫 Geblokkeerde dagen worden uitgefilterd bij handmatige toewijzing
 - 🚫 Geblokkeerde dagen worden uitgefilterd bij vervangingsverzoeken
 - 🔒 Blokkades voor verleden dagen kunnen niet worden verwijderd
+- 📱 Desktop: blokkeren via sidebar (nu breder: 320px)
+- 📱 Mobiel: blokkeren via "Begeleiders & Info"
 
 ### v1.21.1 (2026-01-07)
 **Kritieke bugfix inschrijvingen:**
@@ -2463,6 +2465,13 @@ def toon_speler_view(nbb_nummer: str):
         section[data-testid="stSidebar"] {
             background-color: #f8f9fa !important;
             border-right: 3px solid #003082 !important;
+            min-width: 320px !important;
+            width: 320px !important;
+        }
+        
+        /* Sidebar content container ook breder */
+        section[data-testid="stSidebar"] > div:first-child {
+            width: 320px !important;
         }
         
         /* ============================================ */
@@ -3313,6 +3322,81 @@ def toon_speler_view(nbb_nummer: str):
         for onderwerp, tekst in HELP_TEKSTEN[help_keuze]["onderwerpen"].items():
             st.markdown(f"**{onderwerp}**")
             st.caption(tekst)
+        
+        st.divider()
+        
+        # Niet beschikbaar sectie (mobiel versie)
+        st.markdown("**🚫 Niet beschikbaar**")
+        st.caption("Vink dagen aan waarop je niet kunt fluiten.")
+        
+        # Haal unieke wedstrijddagen op
+        nu_mob = datetime.now()
+        vandaag_str_mob = nu_mob.strftime("%Y-%m-%d")
+        wedstrijd_dagen_mob = set()
+        for wed_id_mob, wed_mob in wedstrijden.items():
+            if wed_mob.get("type", "thuis") != "thuis":
+                continue
+            if wed_mob.get("geannuleerd", False):
+                continue
+            wed_datum_mob = datetime.strptime(wed_mob["datum"], "%Y-%m-%d %H:%M")
+            if wed_datum_mob > nu_mob:
+                wedstrijd_dagen_mob.add(wed_datum_mob.strftime("%Y-%m-%d"))
+        
+        huidige_blokkades_mob = scheids.get("geblokkeerde_dagen", [])
+        if not isinstance(huidige_blokkades_mob, list):
+            huidige_blokkades_mob = []
+        
+        verleden_blokkades_mob = [d for d in huidige_blokkades_mob if d < vandaag_str_mob]
+        
+        if wedstrijd_dagen_mob or verleden_blokkades_mob:
+            gesorteerde_dagen_mob = sorted(wedstrijd_dagen_mob)
+            
+            maand_namen_mob = ["jan", "feb", "mrt", "apr", "mei", "jun", 
+                              "jul", "aug", "sep", "okt", "nov", "dec"]
+            dag_namen_mob = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+            
+            dagen_per_maand_mob = {}
+            for dag_str_mob in gesorteerde_dagen_mob:
+                dag_dt_mob = datetime.strptime(dag_str_mob, "%Y-%m-%d")
+                maand_key_mob = f"{maand_namen_mob[dag_dt_mob.month - 1]} {dag_dt_mob.year}"
+                if maand_key_mob not in dagen_per_maand_mob:
+                    dagen_per_maand_mob[maand_key_mob] = []
+                dagen_per_maand_mob[maand_key_mob].append(dag_str_mob)
+            
+            nieuwe_blokkades_mob = list(verleden_blokkades_mob)
+            
+            for maand_mob, dagen_mob in dagen_per_maand_mob.items():
+                st.caption(f"**{maand_mob}**")
+                
+                for i in range(0, len(dagen_mob), 4):
+                    cols_mob = st.columns(4)
+                    for j, col_mob in enumerate(cols_mob):
+                        if i + j < len(dagen_mob):
+                            dag_str_m = dagen_mob[i + j]
+                            dag_dt_m = datetime.strptime(dag_str_m, "%Y-%m-%d")
+                            dag_label_m = f"{dag_namen_mob[dag_dt_m.weekday()]} {dag_dt_m.day}"
+                            
+                            is_geblokkeerd_m = dag_str_m in huidige_blokkades_mob
+                            
+                            with col_mob:
+                                if st.checkbox(dag_label_m, value=is_geblokkeerd_m, key=f"blokkade_mob_{dag_str_m}"):
+                                    nieuwe_blokkades_mob.append(dag_str_m)
+            
+            if set(nieuwe_blokkades_mob) != set(huidige_blokkades_mob):
+                scheids["geblokkeerde_dagen"] = nieuwe_blokkades_mob
+                sla_scheidsrechter_op(nbb_nummer, scheids)
+                st.rerun()
+            
+            actieve_blokkades_mob = [d for d in nieuwe_blokkades_mob if d >= vandaag_str_mob]
+            if actieve_blokkades_mob or verleden_blokkades_mob:
+                samenvatting_mob = []
+                if actieve_blokkades_mob:
+                    samenvatting_mob.append(f"{len(actieve_blokkades_mob)} komend")
+                if verleden_blokkades_mob:
+                    samenvatting_mob.append(f"{len(verleden_blokkades_mob)} verleden 🔒")
+                st.caption(f"*{', '.join(samenvatting_mob)}*")
+        else:
+            st.caption("*Geen toekomstige wedstrijddagen*")
         
         st.divider()
         
