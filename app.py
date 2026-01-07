@@ -33,8 +33,8 @@ APP_CHANGELOG = """
 - 🚫 Geblokkeerde dagen worden uitgefilterd bij handmatige toewijzing
 - 🚫 Geblokkeerde dagen worden uitgefilterd bij vervangingsverzoeken
 - 🔒 Blokkades voor verleden dagen kunnen niet worden verwijderd
-- 📱 Desktop: blokkeren via sidebar (nu breder: 320px)
-- 📱 Mobiel: blokkeren via "Begeleiders & Info"
+- 📱 Desktop: sidebar breder (320px)
+- 📱 Mobiel: sidebar openen via blauwe knop links
 
 ### v1.21.1 (2026-01-07)
 **Kritieke bugfix inschrijvingen:**
@@ -2465,13 +2465,18 @@ def toon_speler_view(nbb_nummer: str):
         section[data-testid="stSidebar"] {
             background-color: #f8f9fa !important;
             border-right: 3px solid #003082 !important;
-            min-width: 320px !important;
-            width: 320px !important;
         }
         
-        /* Sidebar content container ook breder */
-        section[data-testid="stSidebar"] > div:first-child {
-            width: 320px !important;
+        /* Sidebar breder alleen op desktop */
+        @media (min-width: 769px) {
+            section[data-testid="stSidebar"] {
+                min-width: 320px !important;
+                width: 320px !important;
+            }
+            
+            section[data-testid="stSidebar"] > div:first-child {
+                width: 320px !important;
+            }
         }
         
         /* ============================================ */
@@ -2491,6 +2496,56 @@ def toon_speler_view(nbb_nummer: str):
             /* Expanders volle breedte */
             .streamlit-expanderHeader {
                 font-size: 0.9rem !important;
+            }
+            
+            /* Sidebar op mobiel niet breder maken dan scherm */
+            section[data-testid="stSidebar"] {
+                min-width: 85vw !important;
+                width: 85vw !important;
+                max-width: 320px !important;
+            }
+            
+            section[data-testid="stSidebar"] > div:first-child {
+                width: 100% !important;
+            }
+            
+            /* Sidebar toggle knop groter en duidelijker op mobiel */
+            button[data-testid="stSidebarCollapseButton"],
+            button[data-testid="baseButton-headerNoPadding"] {
+                width: 44px !important;
+                height: 44px !important;
+                min-width: 44px !important;
+                min-height: 44px !important;
+            }
+            
+            /* Collapsed sidebar indicator - grotere touch area */
+            [data-testid="stSidebarCollapsedControl"],
+            [data-testid="collapsedControl"] {
+                width: 36px !important;
+                min-width: 36px !important;
+                background-color: #003082 !important;
+                border-radius: 0 8px 8px 0 !important;
+                opacity: 1 !important;
+            }
+            
+            [data-testid="stSidebarCollapsedControl"] button,
+            [data-testid="collapsedControl"] button {
+                width: 36px !important;
+                height: 60px !important;
+                min-width: 36px !important;
+                min-height: 60px !important;
+                padding: 0 !important;
+                background-color: #003082 !important;
+                border: none !important;
+                border-radius: 0 8px 8px 0 !important;
+            }
+            
+            [data-testid="stSidebarCollapsedControl"] button svg,
+            [data-testid="collapsedControl"] button svg {
+                color: white !important;
+                fill: white !important;
+                width: 20px !important;
+                height: 20px !important;
             }
         }
         
