@@ -24,9 +24,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.20.0"
-APP_VERSIE_DATUM = "2026-01-04"
+APP_VERSIE = "1.21.0"
+APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.21.0 (2026-01-07)
+**Blessure status & Wedstrijd synchronisatie:**
+- 🤕 Nieuwe blessure status per scheidsrechter (geblesseerd t/m maand)
+- 🤕 Geblesseerde spelers worden uitgefilterd bij handmatige toewijzing
+- 🐛 Fix: Veld wordt nu correct opgeslagen in database
+- 🔄 Nieuwe tab "Synchronisatie" in Import/Export
+- 📥 Completeren: vul ontbrekende velden aan vanuit NBB import
+- ⚖️ Vergelijken: detecteer en los mismatches op tussen BOB en NBB
+
 ### v1.20.0 (2026-01-04)
 **Inschrijfgedrag monitoring & verbeterde statistieken:**
 - 📈 Nieuwe tab "Inschrijfgedrag" in Analyse dashboard
@@ -8030,11 +8039,320 @@ def bepaal_niveau_uit_competitie(competitie: str) -> int:
     return 2  # Default
 
 
+def toon_synchronisatie_tab():
+    """Synchronisatie tab: completeren en vergelijken van wedstrijden met NBB data."""
+    st.write("**🔄 Synchronisatie met NBB**")
+    st.write("Upload een NBB export om bestaande wedstrijden te completeren of verschillen te detecteren.")
+    
+    # Instellingen
+    col1, col2 = st.columns(2)
+    with col1:
+        thuislocatie = st.text_input("Thuislocatie (plaatsnaam)", value="NIEUWERKERK", 
+                                      key="sync_thuisloc",
+                                      help="Wedstrijden op deze locatie worden als thuiswedstrijd gemarkeerd")
+    with col2:
+        club_naam = st.text_input("Clubnaam in teamnamen", value="Waterdragers", key="sync_club")
+    
+    uploaded_sync = st.file_uploader("Upload NBB Excel", type=["xlsx", "xls"], key="sync_nbb")
+    
+    if not uploaded_sync:
+        st.info("📤 Upload een NBB Excel bestand om te beginnen met synchroniseren.")
+        return
+    
+    try:
+        import pandas as pd
+        df = pd.read_excel(uploaded_sync)
+        
+        # Check of dit een NBB bestand is
+        required_cols = ["Datum", "Tijd", "Thuisteam", "Uitteam", "Plaatsnaam"]
+        missing = [c for c in required_cols if c not in df.columns]
+        
+        if missing:
+            st.error(f"Ontbrekende kolommen: {missing}")
+            return
+        
+        # Filter op club en thuiswedstrijden
+        df_club = df[
+            (df["Thuisteam"].str.contains(club_naam, case=False, na=False) |
+             df["Uitteam"].str.contains(club_naam, case=False, na=False))
+        ]
+        
+        # Filter alleen thuiswedstrijden
+        df_thuis = df_club[
+            df_club["Plaatsnaam"].str.upper().str.contains(thuislocatie.upper(), na=False)
+        ].copy()
+        
+        if len(df_thuis) == 0:
+            st.warning(f"Geen thuiswedstrijden gevonden voor '{club_naam}' op locatie '{thuislocatie}'")
+            return
+        
+        st.success(f"📊 {len(df_thuis)} thuiswedstrijden gevonden in NBB bestand")
+        
+        # Laad bestaande wedstrijden
+        wedstrijden = laad_wedstrijden()
+        
+        # Maak lookup van bestaande wedstrijden op basis van datum/tijd/teams
+        def maak_match_key(datum_str, thuisteam, uitteam):
+            """Maak een unieke sleutel voor matching."""
+            # Normaliseer teamnamen (verwijder extra spaties, lowercase)
+            thuis_norm = str(thuisteam).strip().lower()
+            uit_norm = str(uitteam).strip().lower()
+            return f"{datum_str}|{thuis_norm}|{uit_norm}"
+        
+        bestaande_lookup = {}
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type", "thuis") != "thuis":
+                continue
+            key = maak_match_key(wed["datum"], wed["thuisteam"], wed["uitteam"])
+            bestaande_lookup[key] = wed_id
+        
+        # Analyseer NBB data en match met bestaande wedstrijden
+        matches = []
+        nieuwe_wedstrijden = []
+        
+        for idx, row in df_thuis.iterrows():
+            datum = pd.to_datetime(row["Datum"]).strftime("%Y-%m-%d")
+            tijd = str(row["Tijd"])[:5] if pd.notna(row["Tijd"]) else "00:00"
+            datum_tijd = f"{datum} {tijd}"
+            
+            thuisteam = str(row["Thuisteam"]).strip()
+            uitteam = str(row["Uitteam"]).strip()
+            
+            # Veld uit NBB
+            veld_raw = row.get("Veld", "")
+            veld_nbb = ""
+            if pd.notna(veld_raw) and veld_raw != "" and str(veld_raw) != "nan":
+                veld_nbb = str(veld_raw).strip().lower().replace("veld ", "").replace("veld", "").strip()
+            
+            # Bepaal niveau
+            eigen_team = thuisteam if club_naam.lower() in thuisteam.lower() else uitteam
+            niveau_nbb = bepaal_niveau_uit_team(eigen_team)
+            
+            # BS2 vereiste
+            vereist_bs2_nbb = "MSE" in eigen_team.upper()
+            
+            # Match met bestaande wedstrijd
+            key = maak_match_key(datum_tijd, thuisteam, uitteam)
+            
+            nbb_data = {
+                "datum": datum_tijd,
+                "thuisteam": thuisteam,
+                "uitteam": uitteam,
+                "niveau": niveau_nbb,
+                "veld": veld_nbb,
+                "vereist_bs2": vereist_bs2_nbb
+            }
+            
+            if key in bestaande_lookup:
+                wed_id = bestaande_lookup[key]
+                bob_data = wedstrijden[wed_id]
+                matches.append({
+                    "wed_id": wed_id,
+                    "nbb": nbb_data,
+                    "bob": bob_data,
+                    "key": key
+                })
+            else:
+                nieuwe_wedstrijden.append(nbb_data)
+        
+        st.divider()
+        
+        # FASE 1: Completeren
+        st.subheader("📥 Fase 1: Completeren")
+        st.write("Vul ontbrekende velden in BOB aan met data uit NBB.")
+        
+        te_completeren = []
+        for match in matches:
+            bob = match["bob"]
+            nbb = match["nbb"]
+            
+            ontbrekend = []
+            if not bob.get("veld") and nbb.get("veld"):
+                ontbrekend.append(("veld", nbb["veld"]))
+            
+            if ontbrekend:
+                te_completeren.append({
+                    "wed_id": match["wed_id"],
+                    "datum": bob["datum"],
+                    "thuisteam": bob["thuisteam"],
+                    "uitteam": bob["uitteam"],
+                    "ontbrekend": ontbrekend
+                })
+        
+        if te_completeren:
+            st.write(f"**{len(te_completeren)} wedstrijden** kunnen worden aangevuld:")
+            
+            # Preview tabel
+            preview_data = []
+            for item in te_completeren:
+                velden = ", ".join([f"{v[0]}={v[1]}" for v in item["ontbrekend"]])
+                preview_data.append({
+                    "Datum": item["datum"],
+                    "Thuisteam": item["thuisteam"],
+                    "Uitteam": item["uitteam"],
+                    "Aan te vullen": velden
+                })
+            
+            st.dataframe(pd.DataFrame(preview_data), use_container_width=True, hide_index=True)
+            
+            if st.button("✅ Completeer alle wedstrijden", key="btn_completeer"):
+                count = 0
+                for item in te_completeren:
+                    wed_id = item["wed_id"]
+                    for veld_naam, veld_waarde in item["ontbrekend"]:
+                        wedstrijden[wed_id][veld_naam] = veld_waarde
+                    count += 1
+                
+                sla_wedstrijden_op(wedstrijden)
+                st.success(f"✅ {count} wedstrijden aangevuld!")
+                st.rerun()
+        else:
+            st.success("✅ Alle wedstrijden zijn compleet - geen ontbrekende velden.")
+        
+        st.divider()
+        
+        # FASE 2: Vergelijken
+        st.subheader("⚖️ Fase 2: Vergelijken")
+        st.write("Detecteer en los verschillen op tussen BOB en NBB.")
+        
+        # Vergelijk velden die kunnen afwijken
+        vergelijk_velden = ["veld", "niveau"]
+        mismatches = []
+        
+        for match in matches:
+            bob = match["bob"]
+            nbb = match["nbb"]
+            
+            verschillen = []
+            for veld in vergelijk_velden:
+                bob_val = bob.get(veld, "")
+                nbb_val = nbb.get(veld, "")
+                
+                # Normaliseer voor vergelijking
+                bob_val_norm = str(bob_val).strip().lower() if bob_val else ""
+                nbb_val_norm = str(nbb_val).strip().lower() if nbb_val else ""
+                
+                # Alleen verschil als beide een waarde hebben én ze verschillen
+                if bob_val_norm and nbb_val_norm and bob_val_norm != nbb_val_norm:
+                    verschillen.append({
+                        "veld": veld,
+                        "bob": bob_val,
+                        "nbb": nbb_val
+                    })
+            
+            if verschillen:
+                mismatches.append({
+                    "wed_id": match["wed_id"],
+                    "datum": bob["datum"],
+                    "thuisteam": bob["thuisteam"],
+                    "uitteam": bob["uitteam"],
+                    "verschillen": verschillen
+                })
+        
+        if mismatches:
+            st.warning(f"⚠️ **{len(mismatches)} wedstrijden** hebben afwijkingen:")
+            
+            # Session state voor keuzes
+            if "sync_keuzes" not in st.session_state:
+                st.session_state["sync_keuzes"] = {}
+            
+            for i, mismatch in enumerate(mismatches):
+                with st.expander(f"📅 {mismatch['datum']} - {mismatch['thuisteam']} vs {mismatch['uitteam']}"):
+                    for verschil in mismatch["verschillen"]:
+                        veld = verschil["veld"]
+                        bob_val = verschil["bob"]
+                        nbb_val = verschil["nbb"]
+                        
+                        col1, col2, col3 = st.columns([2, 2, 2])
+                        
+                        with col1:
+                            st.write(f"**{veld.capitalize()}**")
+                        
+                        with col2:
+                            keuze_key = f"{mismatch['wed_id']}_{veld}"
+                            
+                            # Default naar huidige BOB waarde
+                            if keuze_key not in st.session_state["sync_keuzes"]:
+                                st.session_state["sync_keuzes"][keuze_key] = "bob"
+                            
+                            keuze = st.radio(
+                                f"Keuze voor {veld}",
+                                options=["bob", "nbb"],
+                                format_func=lambda x: f"BOB: {bob_val}" if x == "bob" else f"NBB: {nbb_val}",
+                                key=f"radio_{keuze_key}",
+                                index=0 if st.session_state["sync_keuzes"].get(keuze_key) == "bob" else 1,
+                                horizontal=True,
+                                label_visibility="collapsed"
+                            )
+                            st.session_state["sync_keuzes"][keuze_key] = keuze
+                        
+                        with col3:
+                            if keuze == "nbb":
+                                st.write(f"→ wordt: **{nbb_val}**")
+                            else:
+                                st.write(f"→ blijft: **{bob_val}**")
+            
+            # Toon samenvatting van wijzigingen
+            wijzigingen = []
+            for mismatch in mismatches:
+                for verschil in mismatch["verschillen"]:
+                    keuze_key = f"{mismatch['wed_id']}_{verschil['veld']}"
+                    if st.session_state["sync_keuzes"].get(keuze_key) == "nbb":
+                        wijzigingen.append({
+                            "wed_id": mismatch["wed_id"],
+                            "veld": verschil["veld"],
+                            "nieuwe_waarde": verschil["nbb"]
+                        })
+            
+            if wijzigingen:
+                st.info(f"📝 **{len(wijzigingen)} wijzigingen** geselecteerd voor NBB waarden.")
+                
+                if st.button("✅ Voer geselecteerde wijzigingen door", key="btn_sync_apply"):
+                    for wijziging in wijzigingen:
+                        wed_id = wijziging["wed_id"]
+                        veld = wijziging["veld"]
+                        waarde = wijziging["nieuwe_waarde"]
+                        wedstrijden[wed_id][veld] = waarde
+                    
+                    sla_wedstrijden_op(wedstrijden)
+                    st.session_state["sync_keuzes"] = {}  # Reset keuzes
+                    st.success(f"✅ {len(wijzigingen)} wijzigingen doorgevoerd!")
+                    st.rerun()
+            else:
+                st.info("Alle afwijkingen worden behouden zoals in BOB.")
+        else:
+            st.success("✅ Geen afwijkingen gevonden - BOB en NBB zijn in sync!")
+        
+        # Nieuwe wedstrijden
+        if nieuwe_wedstrijden:
+            st.divider()
+            st.subheader("➕ Nieuwe wedstrijden in NBB")
+            st.write(f"**{len(nieuwe_wedstrijden)} wedstrijden** in NBB die nog niet in BOB staan:")
+            
+            nieuwe_preview = []
+            for nw in nieuwe_wedstrijden:
+                nieuwe_preview.append({
+                    "Datum": nw["datum"],
+                    "Thuisteam": nw["thuisteam"],
+                    "Uitteam": nw["uitteam"],
+                    "Niveau": nw["niveau"],
+                    "Veld": nw["veld"] or "-"
+                })
+            
+            st.dataframe(pd.DataFrame(nieuwe_preview), use_container_width=True, hide_index=True)
+            st.caption("💡 Gebruik de 'NBB Wedstrijden' tab om deze te importeren.")
+        
+    except Exception as e:
+        st.error(f"Fout bij verwerken bestand: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
 def toon_import_export():
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "📤 Export"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "🔄 Synchronisatie", "📤 Export"])
     
     with tab1:
         st.write("**Import wedstrijden uit NBB export**")
@@ -8482,6 +8800,9 @@ def toon_import_export():
                 st.rerun()
     
     with tab6:
+        toon_synchronisatie_tab()
+    
+    with tab7:
         st.write("**📤 Exporteer data**")
         
         col_exp1, col_exp2 = st.columns(2)
