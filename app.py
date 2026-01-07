@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.0"
+APP_VERSIE = "1.22.1"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.1 (2026-01-07)
+**Mobiele sidebar verbeteringen:**
+- 📱 Nieuwe ☰ knop aan linkerkant op mobiel om sidebar te openen
+- 📱 Knop verdwijnt automatisch wanneer sidebar open is
+- 🎨 Blauwe gradient knop met schaduw, goed zichtbaar
+
 ### v1.22.0 (2026-01-07)
 **Dagen blokkeren:**
 - 🚫 Spelers kunnen nu wedstrijddagen blokkeren
@@ -34,7 +40,6 @@ APP_CHANGELOG = """
 - 🚫 Geblokkeerde dagen worden uitgefilterd bij vervangingsverzoeken
 - 🔒 Blokkades voor verleden dagen kunnen niet worden verwijderd
 - 📱 Desktop: sidebar breder (320px)
-- 📱 Mobiel: sidebar openen via blauwe knop links
 
 ### v1.21.1 (2026-01-07)
 **Kritieke bugfix inschrijvingen:**
@@ -2509,35 +2514,52 @@ def toon_speler_view(nbb_nummer: str):
                 width: 100% !important;
             }
             
-            /* Sidebar toggle knop groter en duidelijker op mobiel */
+            /* Sidebar collapse knop (in open sidebar) - naar links wijzend */
             button[data-testid="stSidebarCollapseButton"],
             button[data-testid="baseButton-headerNoPadding"] {
                 width: 44px !important;
                 height: 44px !important;
                 min-width: 44px !important;
                 min-height: 44px !important;
+                background-color: #003082 !important;
+                border-radius: 8px !important;
             }
             
-            /* Collapsed sidebar indicator - grotere touch area */
+            button[data-testid="stSidebarCollapseButton"] svg,
+            button[data-testid="baseButton-headerNoPadding"] svg {
+                color: white !important;
+                fill: white !important;
+            }
+            
+            /* Sidebar collapsed control (wanneer sidebar dicht is) */
             [data-testid="stSidebarCollapsedControl"],
             [data-testid="collapsedControl"] {
+                position: fixed !important;
+                left: 0 !important;
+                top: 45% !important;
+                z-index: 999999 !important;
                 width: 36px !important;
+                height: 72px !important;
                 min-width: 36px !important;
-                background-color: #003082 !important;
-                border-radius: 0 8px 8px 0 !important;
+                background: linear-gradient(135deg, #003082 0%, #004db3 100%) !important;
+                border-radius: 0 12px 12px 0 !important;
+                box-shadow: 2px 2px 8px rgba(0,0,0,0.3) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
                 opacity: 1 !important;
             }
             
             [data-testid="stSidebarCollapsedControl"] button,
             [data-testid="collapsedControl"] button {
-                width: 36px !important;
-                height: 60px !important;
+                width: 100% !important;
+                height: 100% !important;
                 min-width: 36px !important;
-                min-height: 60px !important;
+                min-height: 72px !important;
                 padding: 0 !important;
-                background-color: #003082 !important;
+                background: transparent !important;
                 border: none !important;
-                border-radius: 0 8px 8px 0 !important;
+                border-radius: 0 12px 12px 0 !important;
             }
             
             [data-testid="stSidebarCollapsedControl"] button svg,
@@ -2546,6 +2568,8 @@ def toon_speler_view(nbb_nummer: str):
                 fill: white !important;
                 width: 20px !important;
                 height: 20px !important;
+                /* Draai zodat pijl naar rechts wijst (= sidebar openen) */
+                transform: rotate(180deg) !important;
             }
         }
         
