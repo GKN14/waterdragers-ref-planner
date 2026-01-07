@@ -27,6 +27,10 @@ db.check_geo_access()
 APP_VERSIE = "1.22.8"
 APP_VERSIE_DATUM = "2026-01-07"
 APP_CHANGELOG = """
+### v1.22.9 (2026-01-07)
+**Team toevoeging:**
+- ➕ V12-2 toegevoegd aan selecteerbare teams voor scheidsrechters/coaches
+
 ### v1.22.8 (2026-01-07)
 **Begeleiders ranking fix:**
 - 🐛 Fix: alleen echte MSE spelers (MSE in eigen_teams) tellen als begeleider
@@ -699,6 +703,7 @@ DATA_DIR = Path(__file__).parent / "data"
 
 # Teams waaruit scheidsrechters komen (vanaf U16, plus coaches van lagere teams)
 SCHEIDSRECHTER_TEAMS = [
+    "V12-2",  # Voor coaches
     "X14-1",  # Voor coaches
     "M16-1", "M16-2",
     "V16-1", "V16-2",
