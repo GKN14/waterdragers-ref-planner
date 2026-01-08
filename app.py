@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.3"
+APP_VERSIE = "1.23.4"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.4 (2026-01-08)
+**Aankomend weekend openstellen:**
+- 🗓️ Wedstrijden in aankomend weekend met open posities zijn nu zichtbaar
+- 🚫 Zelf inschrijven voor deze wedstrijden geeft nog steeds geen bonus
+
 ### v1.23.3 (2026-01-08)
 **Tekst aanpassing alert:**
 - 📝 "1e/2e zoekt vervanger" → "1e/2e scheids zoekt vervanger"
@@ -1838,6 +1843,51 @@ def get_deadline_maand_info() -> dict:
         "gesloten_jaar": gesloten_jaar,
         "is_verlopen": nu > deadline
     }
+
+def is_aankomend_weekend(wed_datum: datetime) -> bool:
+    """
+    Check of een wedstrijd in het aankomend weekend valt.
+    Aankomend weekend = wedstrijden die:
+    - Op zaterdag of zondag vallen
+    - Nog niet gespeeld zijn (in de toekomst liggen)
+    - Binnen 7 dagen vallen
+    """
+    nu = datetime.now()
+    wed_date = wed_datum.date()
+    vandaag = nu.date()
+    
+    # Moet in de toekomst zijn (of vandaag)
+    if wed_date < vandaag:
+        return False
+    
+    # Moet op zaterdag (5) of zondag (6) vallen
+    if wed_datum.weekday() not in [5, 6]:
+        return False
+    
+    # Moet binnen 7 dagen zijn
+    dagen_vooruit = (wed_date - vandaag).days
+    return dagen_vooruit <= 7
+
+def is_inschrijving_open_incl_weekend(wed_datum: datetime, wed: dict):
+    """
+    Check of inschrijving open is, inclusief uitzondering voor aankomend weekend.
+    
+    Returns: (is_open, is_weekend_uitzondering)
+    - is_open: True als speler zich mag inschrijven
+    - is_weekend_uitzondering: True als dit via de weekend-uitzondering is (geen bonus)
+    """
+    # Eerst normale deadline check
+    if is_inschrijving_open_voor_wedstrijd(wed_datum):
+        return (True, False)
+    
+    # Deadline is voorbij - check weekend uitzondering
+    # Alleen als wedstrijd in aankomend weekend EN er nog een open positie is
+    if is_aankomend_weekend(wed_datum):
+        heeft_open_positie = not wed.get("scheids_1") or not wed.get("scheids_2")
+        if heeft_open_positie:
+            return (True, True)  # Open via weekend-uitzondering (geen bonus)
+    
+    return (False, False)
 
 def heeft_eigen_wedstrijd(nbb_nummer: str, datum_tijd: datetime, wedstrijden: dict, scheidsrechters: dict) -> bool:
     """
@@ -3876,8 +3926,8 @@ def toon_speler_view(nbb_nummer: str):
         
         kan_inschrijven = kan_als_1e or kan_als_2e
         
-        # Check deadline per maand
-        deadline_open = is_inschrijving_open_voor_wedstrijd(wed_datum)
+        # Check deadline per maand (met weekend uitzondering)
+        deadline_open, _ = is_inschrijving_open_incl_weekend(wed_datum, wed)
         if not deadline_open:
             kan_inschrijven = False
         
@@ -4154,8 +4204,8 @@ def toon_speler_view(nbb_nummer: str):
                         else:
                             kan_als_2e = False
                     
-                    # Combineer alle checks inclusief deadline per maand
-                    deadline_open = is_inschrijving_open_voor_wedstrijd(wed_datum)
+                    # Combineer alle checks inclusief deadline per maand (met weekend uitzondering)
+                    deadline_open, is_weekend_uitzondering = is_inschrijving_open_incl_weekend(wed_datum, wed)
                     kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked and deadline_open
                     
                     # MSE's kunnen ook begeleiden (zonder te fluiten)
@@ -4196,6 +4246,7 @@ def toon_speler_view(nbb_nummer: str):
                         "datum": wed["datum"],
                         "wed_datum": wed_datum,
                         "kan_inschrijven": kan_inschrijven,
+                        "is_weekend_uitzondering": is_weekend_uitzondering,
                         **wed
                     })
     
