@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.1"
+APP_VERSIE = "1.23.2"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.2 (2026-01-08)
+**Bugfix zoekt vervanging:**
+- 🐛 Fix: checkbox veroorzaakte geen infinite loop meer
+
 ### v1.23.1 (2026-01-08)
 **Zoekt vervanging status:**
 - 🔄 Nieuw: markeer scheidsrechter als "zoekt vervanging" in admin
@@ -6344,7 +6348,6 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_1 != zoekt_1:
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.rerun()
                         else:
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
                             if kandidaten:
@@ -6383,7 +6386,6 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_2 != zoekt_2:
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.rerun()
                         else:
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
                             if kandidaten:
