@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.7"
+APP_VERSIE = "1.23.8"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.8 (2026-01-08)
+**Bugfix duplicate form keys:**
+- 🐛 Fix voor form key conflict na bulk annulering
+
 ### v1.23.7 (2026-01-08)
 **Bulk annulering wedstrijden:**
 - 🚫 Nieuwe functie: annuleer alle wedstrijden per dag
@@ -6249,6 +6253,12 @@ def toon_wedstrijden_beheer():
                         aantal_geannuleerd += 1
                     
                     sla_wedstrijden_op(wedstrijden)
+                    
+                    # Clear alle bewerk session states voor deze wedstrijden
+                    for wed_id, wed, wed_datum in wedstrijden_op_dag:
+                        if f"bewerk_{wed_id}" in st.session_state:
+                            del st.session_state[f"bewerk_{wed_id}"]
+                    
                     st.session_state.toon_annuleer_dag = False
                     st.success(f"✅ {aantal_geannuleerd} wedstrijden geannuleerd, {len(unieke_scheids)} scheidsrechters afgemeld!")
                     st.rerun()
@@ -6308,7 +6318,7 @@ def toon_wedstrijden_beheer():
             st.rerun()
 
 
-def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict):
+def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict, form_context: str = "default"):
     """Toon het bewerk formulier voor een wedstrijd."""
     st.markdown("---")
     st.markdown("**📝 Wedstrijd bewerken**")
@@ -6316,21 +6326,22 @@ def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict):
     wed_data = wedstrijden[wed["id"]]
     huidige_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
     
-    with st.form(f"bewerk_form_{wed['id']}"):
+    # Unieke form key met context om duplicates te voorkomen
+    with st.form(f"bewerk_form_{wed['id']}_{form_context}"):
         col_d, col_t, col_v = st.columns(3)
         
         with col_d:
             nieuwe_datum = st.date_input(
                 "Datum", 
                 value=huidige_datum.date(),
-                key=f"edit_datum_{wed['id']}"
+                key=f"edit_datum_{wed['id']}_{form_context}"
             )
         
         with col_t:
             nieuwe_tijd = st.time_input(
                 "Tijd",
                 value=huidige_datum.time(),
-                key=f"edit_tijd_{wed['id']}"
+                key=f"edit_tijd_{wed['id']}_{form_context}"
             )
         
         with col_v:
@@ -6338,7 +6349,7 @@ def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict):
             nieuw_veld = st.text_input(
                 "Veld",
                 value=huidig_veld,
-                key=f"edit_veld_{wed['id']}",
+                key=f"edit_veld_{wed['id']}_{form_context}",
                 placeholder="bijv. 1, 2, 3..."
             )
         
@@ -6348,13 +6359,13 @@ def toon_bewerk_formulier(wed: dict, wedstrijden: dict, scheidsrechters: dict):
                 "Niveau",
                 options=[1, 2, 3, 4, 5],
                 index=wed_data.get("niveau", 1) - 1,
-                key=f"edit_niveau_{wed['id']}"
+                key=f"edit_niveau_{wed['id']}_{form_context}"
             )
         with col_bs2:
             nieuw_bs2 = st.checkbox(
                 "Vereist BS2",
                 value=wed_data.get("vereist_bs2", False),
-                key=f"edit_bs2_{wed['id']}"
+                key=f"edit_bs2_{wed['id']}_{form_context}"
             )
         
         submitted = st.form_submit_button("💾 Opslaan", type="primary")
@@ -6544,7 +6555,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     
                     # Bewerk formulier voor geannuleerde wedstrijd
                     if st.session_state.get(f"bewerk_{wed['id']}", False):
-                        toon_bewerk_formulier(wed, wedstrijden, scheidsrechters)
+                        toon_bewerk_formulier(wed, wedstrijden, scheidsrechters, form_context="geannuleerd")
                 else:
                     col1, col2, col_beg, col3 = st.columns([2, 2, 2, 1])
                     
@@ -6700,7 +6711,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                 
                 # Bewerk formulier (buiten de columns, volledige breedte)
                 if st.session_state.get(f"bewerk_{wed['id']}", False):
-                    toon_bewerk_formulier(wed, wedstrijden, scheidsrechters)
+                    toon_bewerk_formulier(wed, wedstrijden, scheidsrechters, form_context="actief")
             else:
                 # Uitwedstrijd - info, bewerk en delete
                 col1, col2 = st.columns([3, 1])
