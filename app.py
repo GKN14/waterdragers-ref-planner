@@ -24,12 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.22.8"
-APP_VERSIE_DATUM = "2026-01-07"
+APP_VERSIE = "1.23.0"
+APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
-### v1.22.9 (2026-01-07)
-**Team toevoeging:**
-- ➕ V12-2 toegevoegd aan selecteerbare teams voor scheidsrechters/coaches
+### v1.23.0 (2026-01-08)
+**Bonus systeem herziening & Open Posities Alert:**
+- 🎯 Last-minute bonus alleen bij vervanging of TC-toewijzing
+- 🚫 Zelf inschrijven na deadline geeft geen bonus meer
+- 📊 Bonus gebaseerd op moment van uitnodiging, niet acceptatie
+- 🚨 Nieuw: Open Posities Alert overzicht voor WhatsApp
+- ⚠️ Teams met ** (no-show risico) worden extra benadrukt
+- ➕ V12-2 toegevoegd aan selecteerbare teams voor coaches
 
 ### v1.22.8 (2026-01-07)
 **Begeleiders ranking fix:**
@@ -1350,9 +1355,21 @@ def is_last_minute_inval(wed_id: str, wed_datum: datetime) -> dict:
     else:
         return {"is_inval": False, "bonus": 0, "uren": 0}
 
-def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> dict:
+def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dict, scheidsrechters: dict, bron: str = "zelf") -> dict:
     """
     Bereken hoeveel punten een speler krijgt voor een wedstrijd.
+    
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        wed_id: ID van de wedstrijd
+        wedstrijden: Dict van alle wedstrijden
+        scheidsrechters: Dict van alle scheidsrechters
+        bron: Hoe de inschrijving tot stand kwam:
+              - "zelf": Speler schreef zichzelf in (geen last-minute bonus)
+              - "vervanging": Via vervangingsverzoek van afmelder
+              - "tc": Handmatig toegewezen door TC
+              - "uitnodiging": Via MSE begeleidingsuitnodiging
+    
     Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str, "berekening": dict}
     """
     beloningsinst = laad_beloningsinstellingen()
@@ -1370,9 +1387,14 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     # Lastig tijdstip
     lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
     
-    # Last-minute inval
-    inval_info = is_last_minute_inval(wed_id, wed_datum)
-    inval_bonus = inval_info["bonus"]
+    # Last-minute inval bonus - ALLEEN bij vervanging, TC-toewijzing of uitnodiging
+    # Zelf inschrijven geeft geen bonus om "gaming" te voorkomen
+    inval_bonus = 0
+    inval_info = {"is_inval": False, "bonus": 0, "uren": 0}
+    
+    if bron in ["vervanging", "tc", "uitnodiging"]:
+        inval_info = is_last_minute_inval(wed_id, wed_datum)
+        inval_bonus = inval_info["bonus"]
     
     totaal = basis + lastig + inval_bonus
     
@@ -1392,7 +1414,9 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "uren_tot_wedstrijd": round(uren_tot_wedstrijd, 1),
         "is_inval_48u": uren_tot_wedstrijd < 48,
         "is_inval_24u": uren_tot_wedstrijd < 24,
-        "is_lastig_tijdstip": lastig > 0
+        "is_lastig_tijdstip": lastig > 0,
+        "bron": bron,
+        "bonus_reden": "vervanging/TC" if bron in ["vervanging", "tc", "uitnodiging"] else "zelf ingeschreven (geen bonus)"
     }
     
     return {
@@ -1404,7 +1428,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "berekening": berekening
     }
 
-def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict) -> dict:
+def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict, bron: str = "zelf") -> dict:
     """
     Schrijf een scheidsrechter in voor een wedstrijd.
     
@@ -1414,6 +1438,11 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
         positie: "scheids_1" of "scheids_2"
         wedstrijden: Dict van alle wedstrijden
         scheidsrechters: Dict van alle scheidsrechters
+        bron: Hoe de inschrijving tot stand kwam:
+              - "zelf": Speler schreef zichzelf in (geen last-minute bonus)
+              - "vervanging": Via vervangingsverzoek van afmelder
+              - "tc": Handmatig toegewezen door TC
+              - "uitnodiging": Via MSE begeleidingsuitnodiging
     
     Returns:
         dict met punten_info of None bij fout
@@ -1421,8 +1450,8 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     De punten worden BEREKEND en OPGESLAGEN bij de wedstrijd, maar NIET toegekend aan de speler.
     Punten worden pas toegekend wanneer de TC de wedstrijd bevestigt als "gefloten".
     """
-    # Bereken punten
-    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, wedstrijden, scheidsrechters)
+    # Bereken punten met bron parameter
+    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, wedstrijden, scheidsrechters, bron)
     
     # Bepaal punten kolom naam
     punten_kolom = "scheids_1_punten_berekend" if positie == "scheids_1" else "scheids_2_punten_berekend"
@@ -3630,8 +3659,8 @@ def toon_speler_view(nbb_nummer: str):
                 with col_accept:
                     if st.button("✅", key=f"beg_acc_{uitnodiging['id']}", help="Accepteren"):
                         wedstrijden[uitnodiging["wed_id"]]["scheids_2"] = nbb_nummer
-                        # Bereken en sla punten op voor de nieuwe scheidsrechter
-                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, uitnodiging["wed_id"], wedstrijden, scheidsrechters)
+                        # Bereken en sla punten op - uitnodiging geeft recht op last-minute bonus
+                        punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, uitnodiging["wed_id"], wedstrijden, scheidsrechters, bron="uitnodiging")
                         wedstrijden[uitnodiging["wed_id"]]["scheids_2_punten_berekend"] = punten_info["totaal"]
                         wedstrijden[uitnodiging["wed_id"]]["scheids_2_punten_details"] = punten_info
                         sla_wedstrijd_op(uitnodiging["wed_id"], wedstrijden[uitnodiging["wed_id"]])
@@ -3655,7 +3684,8 @@ def toon_speler_view(nbb_nummer: str):
                 wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
                 dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
                 aanvrager = scheidsrechters.get(verzoek["aanvrager_nbb"], {}).get("naam", "?")
-                punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, verzoek["wed_id"], wedstrijden, scheidsrechters)
+                # Preview met vervanging-bonus (omdat dit een vervangingsverzoek is)
+                punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, verzoek["wed_id"], wedstrijden, scheidsrechters, bron="vervanging")
                 
                 col_info, col_accept, col_reject = st.columns([3, 1, 1])
                 with col_info:
@@ -3663,8 +3693,8 @@ def toon_speler_view(nbb_nummer: str):
                 with col_accept:
                     if st.button("✅", key=f"verz_acc_{verzoek['id']}", help="Accepteren"):
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
-                        # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
-                        schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters)
+                        # Vervanging via uitnodiging: bonus op basis van moment uitnodiging
+                        schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging")
                         verzoeken[verzoek["id"]]["status"] = "accepted"
                         verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
                         sla_vervangingsverzoeken_op(verzoeken)
@@ -5518,6 +5548,190 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     buffer.seek(0)
     return buffer.getvalue()
 
+def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheidsrechters: dict) -> bytes:
+    """
+    Genereer een alert-stijl afbeelding met open scheidsrechtersposities.
+    Teams met ** worden extra benadrukt als kritiek (no-show risico).
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    
+    # Verzamel wedstrijden met open posities
+    open_wedstrijden = []
+    for dag in weekend_dagen:
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type") == "uit" or wed.get("geannuleerd"):
+                continue
+            try:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            except:
+                continue
+            
+            if wed_datum.date() != dag:
+                continue
+            
+            # Check open posities
+            open_1e = not wed.get("scheids_1")
+            open_2e = not wed.get("scheids_2")
+            
+            if open_1e or open_2e:
+                # Check of dit een kritiek team is (met **)
+                thuisteam = wed.get("thuisteam", "")
+                is_kritiek = "**" in thuisteam
+                
+                open_wedstrijden.append({
+                    "datum": wed_datum,
+                    "dag": ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()],
+                    "tijd": wed_datum.strftime("%H:%M"),
+                    "thuisteam": thuisteam,
+                    "uitteam": wed.get("uitteam", ""),
+                    "open_1e": open_1e,
+                    "open_2e": open_2e,
+                    "is_kritiek": is_kritiek
+                })
+    
+    # Sorteer: kritiek eerst, dan op datum/tijd
+    open_wedstrijden.sort(key=lambda x: (not x["is_kritiek"], x["datum"]))
+    
+    # Tel statistieken
+    totaal_wedstrijden = len(open_wedstrijden)
+    totaal_posities = sum(1 for w in open_wedstrijden if w["open_1e"]) + sum(1 for w in open_wedstrijden if w["open_2e"])
+    kritieke_wedstrijden = sum(1 for w in open_wedstrijden if w["is_kritiek"])
+    
+    # Afmetingen
+    width = 450
+    header_height = 100
+    stats_height = 70
+    row_height = 80
+    warning_height = 60
+    footer_height = 50
+    
+    content_height = len(open_wedstrijden) * row_height if open_wedstrijden else 60
+    height = header_height + stats_height + content_height + warning_height + footer_height + 40
+    
+    # Kleuren
+    bg_color = (26, 26, 26)
+    header_orange = (255, 102, 0)
+    critical_red = (255, 51, 51)
+    text_white = (255, 255, 255)
+    text_gray = (136, 136, 136)
+    card_bg = (42, 42, 42)
+    
+    # Maak afbeelding
+    img = Image.new('RGB', (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
+    
+    # Probeer fonts te laden
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        font_subtitle = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        font_normal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+        font_number = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 26)
+    except:
+        font_title = ImageFont.load_default()
+        font_subtitle = font_title
+        font_normal = font_title
+        font_bold = font_title
+        font_small = font_title
+        font_number = font_title
+    
+    y = 0
+    
+    # Header met gradient
+    draw.rectangle([0, 0, width, header_height], fill=header_orange)
+    
+    # Alert icoon
+    draw.text((width//2, 20), "🚨", font=font_title, anchor="mt", fill=text_white)
+    draw.text((width//2, 50), "SCHEIDSRECHTERS GEZOCHT!", font=font_title, anchor="mt", fill=text_white)
+    
+    # Weekend datum
+    if weekend_dagen:
+        start_dag = min(weekend_dagen)
+        eind_dag = max(weekend_dagen)
+        if start_dag == eind_dag:
+            datum_str = f"{start_dag.strftime('%d %B')}"
+        else:
+            datum_str = f"Weekend {start_dag.strftime('%d')}-{eind_dag.strftime('%d %B')}"
+        draw.text((width//2, 78), datum_str, font=font_subtitle, anchor="mt", fill=(255, 255, 255, 200))
+    
+    y = header_height + 15
+    
+    # Statistieken
+    stat_width = width // 3
+    stats = [
+        (str(totaal_wedstrijden), "Wedstrijden", header_orange),
+        (str(totaal_posities), "Open posities", header_orange),
+        (str(kritieke_wedstrijden), "Kritiek ⚠️", critical_red if kritieke_wedstrijden > 0 else header_orange)
+    ]
+    
+    for i, (number, label, color) in enumerate(stats):
+        x = stat_width * i + stat_width // 2
+        draw.text((x, y), number, font=font_number, anchor="mt", fill=color)
+        draw.text((x, y + 32), label, font=font_small, anchor="mt", fill=text_gray)
+    
+    y += stats_height
+    
+    # Wedstrijden
+    if not open_wedstrijden:
+        draw.text((width//2, y + 20), "Geen open posities! 🎉", font=font_normal, anchor="mt", fill=text_white)
+        y += 60
+    else:
+        for wed in open_wedstrijden:
+            # Card achtergrond
+            card_color = (60, 30, 30) if wed["is_kritiek"] else card_bg
+            border_color = critical_red if wed["is_kritiek"] else header_orange
+            
+            draw.rectangle([15, y, width-15, y + row_height - 8], fill=card_color)
+            draw.rectangle([15, y, 19, y + row_height - 8], fill=border_color)
+            
+            # Tijd
+            tijd_color = critical_red if wed["is_kritiek"] else header_orange
+            draw.text((30, y + 10), f"{wed['dag']} {wed['tijd']}", font=font_bold, fill=tijd_color)
+            
+            # Kritiek badge
+            if wed["is_kritiek"]:
+                badge_x = width - 60
+                draw.rectangle([badge_x, y + 8, width - 20, y + 24], fill=critical_red)
+                draw.text((badge_x + 20, y + 16), "⚠️ **", font=font_small, anchor="mm", fill=text_white)
+            
+            # Teams
+            thuisteam_display = wed["thuisteam"].replace("**", "").strip()
+            draw.text((30, y + 30), thuisteam_display, font=font_normal, fill=text_white)
+            draw.text((30, y + 46), f"vs {wed['uitteam']}", font=font_small, fill=text_gray)
+            
+            # Open posities
+            pos_y = y + 62
+            pos_x = 30
+            pos_color = (255, 150, 100) if not wed["is_kritiek"] else (255, 100, 100)
+            
+            if wed["open_1e"]:
+                draw.text((pos_x, pos_y), "• 1e scheids nodig", font=font_small, fill=pos_color)
+                pos_x += 120
+            if wed["open_2e"]:
+                draw.text((pos_x, pos_y), "• 2e scheids nodig", font=font_small, fill=pos_color)
+            
+            y += row_height
+    
+    # Waarschuwing box (alleen als er kritieke wedstrijden zijn)
+    if kritieke_wedstrijden > 0:
+        y += 5
+        draw.rectangle([15, y, width-15, y + warning_height - 10], fill=(60, 30, 30), outline=(100, 50, 50))
+        draw.text((25, y + 12), "⚠️ ** = Team heeft al no-show gehad", font=font_small, fill=(255, 100, 100))
+        draw.text((25, y + 28), "Nog een no-show = uitsluiting competitie!", font=font_small, fill=(255, 150, 150))
+        y += warning_height
+    
+    # Footer
+    y += 10
+    draw.rectangle([0, y, width, height], fill=(34, 34, 34))
+    draw.text((width//2, y + 20), "Inschrijven via BOB App of TC", font=font_normal, anchor="mt", fill=text_gray)
+    
+    # Sla op als PNG
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 def toon_weekend_overzicht():
     """Genereer een weekend overzicht als afbeelding."""
     st.subheader("Weekend Overzicht Generator")
@@ -5703,6 +5917,64 @@ def toon_weekend_overzicht():
         
         if dag_idx < len(gekozen_dagen) - 1:
             st.markdown("---")
+    
+    # === OPEN POSITIES ALERT SECTIE ===
+    st.markdown("---")
+    st.subheader("🚨 Open Posities Alert")
+    st.caption("Genereer een alert-afbeelding met open posities voor WhatsApp. Teams met ** (no-show risico) worden extra benadrukt.")
+    
+    # Tel open posities voor geselecteerd weekend
+    open_count = 0
+    kritiek_count = 0
+    for dag in gekozen_dagen:
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type") == "uit" or wed.get("geannuleerd"):
+                continue
+            try:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            except:
+                continue
+            if wed_datum.date() == dag:
+                if not wed.get("scheids_1"):
+                    open_count += 1
+                if not wed.get("scheids_2"):
+                    open_count += 1
+                if "**" in wed.get("thuisteam", "") and (not wed.get("scheids_1") or not wed.get("scheids_2")):
+                    kritiek_count += 1
+    
+    if open_count == 0:
+        st.success("🎉 Geen open posities voor dit weekend!")
+    else:
+        st.warning(f"⚠️ {open_count} open posities" + (f" waarvan {kritiek_count} kritiek (**)" if kritiek_count > 0 else ""))
+        
+        col_gen, col_download = st.columns(2)
+        
+        alert_key = f"alert_{'_'.join([d.strftime('%Y%m%d') for d in gekozen_dagen])}"
+        
+        with col_gen:
+            if st.button("🚨 Genereer Alert PNG", key=f"gen_alert_{alert_key}", type="primary"):
+                try:
+                    alert_bytes = genereer_open_posities_alert(gekozen_dagen, wedstrijden, scheidsrechters)
+                    st.session_state[f"alert_png_{alert_key}"] = alert_bytes
+                    st.success("Alert afbeelding gegenereerd!")
+                except Exception as e:
+                    st.error(f"Fout bij genereren: {e}")
+        
+        with col_download:
+            if f"alert_png_{alert_key}" in st.session_state:
+                start_dag = min(gekozen_dagen)
+                st.download_button(
+                    "⬇️ Download Alert PNG",
+                    data=st.session_state[f"alert_png_{alert_key}"],
+                    file_name=f"open_posities_alert_{start_dag.strftime('%Y-%m-%d')}.png",
+                    mime="image/png",
+                    key=f"download_alert_{alert_key}"
+                )
+        
+        # Toon gegenereerde alert
+        if f"alert_png_{alert_key}" in st.session_state:
+            with st.expander("Bekijk gegenereerde alert", expanded=True):
+                st.image(st.session_state[f"alert_png_{alert_key}"])
 
 def toon_wedstrijden_beheer():
     """Beheer wedstrijden en toewijzingen."""
@@ -6041,8 +6313,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if selectie != "-- Selecteer --":
                                     idx = keuzes.index(selectie) - 1
                                     if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
-                                        wedstrijden[wed["id"]]["scheids_1"] = kandidaten[idx]["nbb_nummer"]
-                                        sla_wedstrijden_op(wedstrijden)
+                                        gekozen_nbb = kandidaten[idx]["nbb_nummer"]
+                                        # TC-toewijzing: bereken punten met bonus
+                                        schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_1", wedstrijden, scheidsrechters, bron="tc")
                                         st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
@@ -6068,8 +6341,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if selectie != "-- Selecteer --":
                                     idx = keuzes.index(selectie) - 1
                                     if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
-                                        wedstrijden[wed["id"]]["scheids_2"] = kandidaten[idx]["nbb_nummer"]
-                                        sla_wedstrijden_op(wedstrijden)
+                                        gekozen_nbb = kandidaten[idx]["nbb_nummer"]
+                                        # TC-toewijzing: bereken punten met bonus
+                                        schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_2", wedstrijden, scheidsrechters, bron="tc")
                                         st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
