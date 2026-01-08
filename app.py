@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.0"
+APP_VERSIE = "1.23.1"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.1 (2026-01-08)
+**Zoekt vervanging status:**
+- 🔄 Nieuw: markeer scheidsrechter als "zoekt vervanging" in admin
+- 🚨 Alert toont "zoekt vervanging" status naast open posities
+- 🐛 Fix: io import voor alert PNG generatie
+
 ### v1.23.0 (2026-01-08)
 **Bonus systeem herziening & Open Posities Alert:**
 - 🎯 Last-minute bonus alleen bij vervanging of TC-toewijzing
@@ -5569,11 +5575,14 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
             if wed_datum.date() != dag:
                 continue
             
-            # Check open posities
+            # Check open posities en zoekt vervanging status
             open_1e = not wed.get("scheids_1")
             open_2e = not wed.get("scheids_2")
+            zoekt_1e = wed.get("scheids_1_zoekt_vervanging", False) and wed.get("scheids_1")
+            zoekt_2e = wed.get("scheids_2_zoekt_vervanging", False) and wed.get("scheids_2")
             
-            if open_1e or open_2e:
+            # Toon als er een open positie is OF iemand zoekt vervanging
+            if open_1e or open_2e or zoekt_1e or zoekt_2e:
                 # Check of dit een kritiek team is (met **)
                 thuisteam = wed.get("thuisteam", "")
                 is_kritiek = "**" in thuisteam
@@ -5586,6 +5595,8 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
                     "uitteam": wed.get("uitteam", ""),
                     "open_1e": open_1e,
                     "open_2e": open_2e,
+                    "zoekt_1e": zoekt_1e,
+                    "zoekt_2e": zoekt_2e,
                     "is_kritiek": is_kritiek
                 })
     
@@ -5594,7 +5605,9 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
     
     # Tel statistieken
     totaal_wedstrijden = len(open_wedstrijden)
-    totaal_posities = sum(1 for w in open_wedstrijden if w["open_1e"]) + sum(1 for w in open_wedstrijden if w["open_2e"])
+    totaal_open = sum(1 for w in open_wedstrijden if w["open_1e"]) + sum(1 for w in open_wedstrijden if w["open_2e"])
+    totaal_zoekt = sum(1 for w in open_wedstrijden if w["zoekt_1e"]) + sum(1 for w in open_wedstrijden if w["zoekt_2e"])
+    totaal_posities = totaal_open + totaal_zoekt
     kritieke_wedstrijden = sum(1 for w in open_wedstrijden if w["is_kritiek"])
     
     # Afmetingen
@@ -5700,16 +5713,23 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
             draw.text((30, y + 30), thuisteam_display, font=font_normal, fill=text_white)
             draw.text((30, y + 46), f"vs {wed['uitteam']}", font=font_small, fill=text_gray)
             
-            # Open posities
+            # Open posities en zoekt vervanging
             pos_y = y + 62
             pos_x = 30
             pos_color = (255, 150, 100) if not wed["is_kritiek"] else (255, 100, 100)
+            zoekt_color = (255, 200, 100)  # Geel/oranje voor zoekt vervanging
             
             if wed["open_1e"]:
                 draw.text((pos_x, pos_y), "• 1e scheids nodig", font=font_small, fill=pos_color)
-                pos_x += 120
+                pos_x += 130
+            elif wed.get("zoekt_1e"):
+                draw.text((pos_x, pos_y), "• 1e zoekt vervanger", font=font_small, fill=zoekt_color)
+                pos_x += 135
+            
             if wed["open_2e"]:
                 draw.text((pos_x, pos_y), "• 2e scheids nodig", font=font_small, fill=pos_color)
+            elif wed.get("zoekt_2e"):
+                draw.text((pos_x, pos_y), "• 2e zoekt vervanger", font=font_small, fill=zoekt_color)
             
             y += row_height
     
@@ -5727,7 +5747,7 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
     draw.text((width//2, y + 20), "Inschrijven via BOB App of TC", font=font_normal, anchor="mt", fill=text_gray)
     
     # Sla op als PNG
-    buffer = io.BytesIO()
+    buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
     return buffer.getvalue()
@@ -5923,8 +5943,9 @@ def toon_weekend_overzicht():
     st.subheader("🚨 Open Posities Alert")
     st.caption("Genereer een alert-afbeelding met open posities voor WhatsApp. Teams met ** (no-show risico) worden extra benadrukt.")
     
-    # Tel open posities voor geselecteerd weekend
+    # Tel open posities en zoekt vervanging voor geselecteerd weekend
     open_count = 0
+    zoekt_count = 0
     kritiek_count = 0
     for dag in gekozen_dagen:
         for wed_id, wed in wedstrijden.items():
@@ -5937,15 +5958,28 @@ def toon_weekend_overzicht():
             if wed_datum.date() == dag:
                 if not wed.get("scheids_1"):
                     open_count += 1
+                elif wed.get("scheids_1_zoekt_vervanging"):
+                    zoekt_count += 1
                 if not wed.get("scheids_2"):
                     open_count += 1
+                elif wed.get("scheids_2_zoekt_vervanging"):
+                    zoekt_count += 1
                 if "**" in wed.get("thuisteam", "") and (not wed.get("scheids_1") or not wed.get("scheids_2")):
                     kritiek_count += 1
     
-    if open_count == 0:
-        st.success("🎉 Geen open posities voor dit weekend!")
+    totaal_aandacht = open_count + zoekt_count
+    
+    if totaal_aandacht == 0:
+        st.success("🎉 Geen open posities of vervangers gezocht voor dit weekend!")
     else:
-        st.warning(f"⚠️ {open_count} open posities" + (f" waarvan {kritiek_count} kritiek (**)" if kritiek_count > 0 else ""))
+        status_parts = []
+        if open_count > 0:
+            status_parts.append(f"{open_count} open")
+        if zoekt_count > 0:
+            status_parts.append(f"{zoekt_count} zoekt vervanger")
+        if kritiek_count > 0:
+            status_parts.append(f"{kritiek_count} kritiek (**)")
+        st.warning(f"⚠️ {', '.join(status_parts)}")
         
         col_gen, col_download = st.columns(2)
         
@@ -6295,11 +6329,22 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     with col1:
                         st.write("**1e Scheidsrechter:**")
                         if wed["scheids_1_naam"]:
-                            st.write(f"✓ {wed['scheids_1_naam']}")
-                            if st.button("Verwijderen", key=f"del1_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_1"] = None
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
+                            zoekt_1 = wed.get("scheids_1_zoekt_vervanging", False)
+                            status_1 = f"✓ {wed['scheids_1_naam']}" + (" 🔄" if zoekt_1 else "")
+                            st.write(status_1)
+                            col_del1, col_zoekt1 = st.columns(2)
+                            with col_del1:
+                                if st.button("Verwijderen", key=f"del1_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_1"] = None
+                                    wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = False
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                            with col_zoekt1:
+                                nieuwe_zoekt_1 = st.checkbox("Zoekt", value=zoekt_1, key=f"zoekt1_{wed['id']}", help="Zoekt vervanging")
+                                if nieuwe_zoekt_1 != zoekt_1:
+                                    wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
+                                    sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                    st.rerun()
                         else:
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
                             if kandidaten:
@@ -6323,11 +6368,22 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     with col2:
                         st.write("**2e Scheidsrechter:**")
                         if wed["scheids_2_naam"]:
-                            st.write(f"✓ {wed['scheids_2_naam']}")
-                            if st.button("Verwijderen", key=f"del2_{wed['id']}"):
-                                wedstrijden[wed["id"]]["scheids_2"] = None
-                                sla_wedstrijden_op(wedstrijden)
-                                st.rerun()
+                            zoekt_2 = wed.get("scheids_2_zoekt_vervanging", False)
+                            status_2 = f"✓ {wed['scheids_2_naam']}" + (" 🔄" if zoekt_2 else "")
+                            st.write(status_2)
+                            col_del2, col_zoekt2 = st.columns(2)
+                            with col_del2:
+                                if st.button("Verwijderen", key=f"del2_{wed['id']}"):
+                                    wedstrijden[wed["id"]]["scheids_2"] = None
+                                    wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = False
+                                    sla_wedstrijden_op(wedstrijden)
+                                    st.rerun()
+                            with col_zoekt2:
+                                nieuwe_zoekt_2 = st.checkbox("Zoekt", value=zoekt_2, key=f"zoekt2_{wed['id']}", help="Zoekt vervanging")
+                                if nieuwe_zoekt_2 != zoekt_2:
+                                    wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
+                                    sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                    st.rerun()
                         else:
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
                             if kandidaten:
