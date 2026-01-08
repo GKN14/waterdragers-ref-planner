@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.2"
+APP_VERSIE = "1.23.3"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.3 (2026-01-08)
+**Tekst aanpassing alert:**
+- 📝 "1e/2e zoekt vervanger" → "1e/2e scheids zoekt vervanger"
+
 ### v1.23.2 (2026-01-08)
 **Bugfix zoekt vervanging:**
 - 🐛 Fix: checkbox veroorzaakte geen infinite loop meer
@@ -5727,13 +5731,13 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
                 draw.text((pos_x, pos_y), "• 1e scheids nodig", font=font_small, fill=pos_color)
                 pos_x += 130
             elif wed.get("zoekt_1e"):
-                draw.text((pos_x, pos_y), "• 1e zoekt vervanger", font=font_small, fill=zoekt_color)
-                pos_x += 135
+                draw.text((pos_x, pos_y), "• 1e scheids zoekt vervanger", font=font_small, fill=zoekt_color)
+                pos_x += 175
             
             if wed["open_2e"]:
                 draw.text((pos_x, pos_y), "• 2e scheids nodig", font=font_small, fill=pos_color)
             elif wed.get("zoekt_2e"):
-                draw.text((pos_x, pos_y), "• 2e zoekt vervanger", font=font_small, fill=zoekt_color)
+                draw.text((pos_x, pos_y), "• 2e scheids zoekt vervanger", font=font_small, fill=zoekt_color)
             
             y += row_height
     
