@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.8"
+APP_VERSIE = "1.23.9"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.9 (2026-01-08)
+**Wedstrijden verplaatsen bij NBB sync:**
+- 🔄 Detecteert wedstrijden die verplaatst zijn naar nieuwe datum
+- 📅 Keuze: verplaatsen (scheidsrechters behouden) of nieuwe wedstrijd
+- ❌ Werkt ook voor geannuleerde wedstrijden (heractiveren)
+
 ### v1.23.8 (2026-01-08)
 **Bugfix duplicate form keys:**
 - 🐛 Fix voor form key conflict na bulk annulering
@@ -8802,8 +8808,9 @@ def toon_synchronisatie_tab():
         
         st.success(f"📊 {len(df_thuis)} thuiswedstrijden gevonden in NBB bestand")
         
-        # Laad bestaande wedstrijden
+        # Laad bestaande wedstrijden en scheidsrechters
         wedstrijden = laad_wedstrijden()
+        scheidsrechters = laad_scheidsrechters()
         
         # Maak lookup van bestaande wedstrijden op basis van datum/tijd/teams
         def maak_match_key(datum_str, thuisteam, uitteam):
@@ -8823,6 +8830,24 @@ def toon_synchronisatie_tab():
         # Analyseer NBB data en match met bestaande wedstrijden
         matches = []
         nieuwe_wedstrijden = []
+        
+        # Extra lookup voor verplaatsingen: match alleen op teams (zonder datum)
+        def maak_team_key(thuisteam, uitteam):
+            """Maak een sleutel gebaseerd op alleen de teams."""
+            thuis_norm = str(thuisteam).strip().lower()
+            uit_norm = str(uitteam).strip().lower()
+            return f"{thuis_norm}|{uit_norm}"
+        
+        team_lookup = {}  # team_key -> [(wed_id, wed_data), ...]
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type", "thuis") != "thuis":
+                continue
+            team_key = maak_team_key(wed["thuisteam"], wed["uitteam"])
+            if team_key not in team_lookup:
+                team_lookup[team_key] = []
+            team_lookup[team_key].append((wed_id, wed))
+        
+        verplaatsingen = []  # Wedstrijden die verplaatst kunnen worden
         
         for idx, row in df_thuis.iterrows():
             datum = pd.to_datetime(row["Datum"]).strftime("%Y-%m-%d")
@@ -8845,7 +8870,7 @@ def toon_synchronisatie_tab():
             # BS2 vereiste
             vereist_bs2_nbb = "MSE" in eigen_team.upper()
             
-            # Match met bestaande wedstrijd
+            # Match met bestaande wedstrijd op datum/tijd/teams
             key = maak_match_key(datum_tijd, thuisteam, uitteam)
             
             nbb_data = {
@@ -8858,6 +8883,7 @@ def toon_synchronisatie_tab():
             }
             
             if key in bestaande_lookup:
+                # Exacte match op datum/tijd/teams
                 wed_id = bestaande_lookup[key]
                 bob_data = wedstrijden[wed_id]
                 matches.append({
@@ -8867,9 +8893,140 @@ def toon_synchronisatie_tab():
                     "key": key
                 })
             else:
-                nieuwe_wedstrijden.append(nbb_data)
+                # Geen exacte match - check of teams matchen (mogelijke verplaatsing)
+                team_key = maak_team_key(thuisteam, uitteam)
+                if team_key in team_lookup:
+                    # Teams gevonden - check of datum anders is
+                    for wed_id, bob_data in team_lookup[team_key]:
+                        bob_datum = bob_data["datum"]
+                        if bob_datum != datum_tijd:
+                            # Datum verschilt - dit is een mogelijke verplaatsing
+                            verplaatsingen.append({
+                                "wed_id": wed_id,
+                                "nbb": nbb_data,
+                                "bob": bob_data,
+                                "team_key": team_key,
+                                "is_geannuleerd": bob_data.get("geannuleerd", False)
+                            })
+                            break  # Eén match per NBB wedstrijd
+                    else:
+                        # Geen verplaatsing gevonden, nieuwe wedstrijd
+                        nieuwe_wedstrijden.append(nbb_data)
+                else:
+                    nieuwe_wedstrijden.append(nbb_data)
         
         st.divider()
+        
+        # FASE 0: Verplaatsingen
+        if verplaatsingen:
+            st.subheader("🔄 Fase 0: Verplaatsingen")
+            st.write("Deze wedstrijden staan in NBB met een **andere datum** dan in BOB.")
+            
+            if "verplaats_selectie" not in st.session_state:
+                st.session_state["verplaats_selectie"] = {}
+            
+            for i, verplaats in enumerate(verplaatsingen):
+                bob = verplaats["bob"]
+                nbb = verplaats["nbb"]
+                wed_id = verplaats["wed_id"]
+                is_geannuleerd = verplaats["is_geannuleerd"]
+                
+                status_icon = "❌" if is_geannuleerd else "📅"
+                status_tekst = " (GEANNULEERD)" if is_geannuleerd else ""
+                
+                with st.expander(f"{status_icon} {nbb['thuisteam']} vs {nbb['uitteam']}{status_tekst}", expanded=True):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.write("**BOB (huidig):**")
+                        st.write(f"📅 {bob['datum']}")
+                        if bob.get("scheids_1") or bob.get("scheids_2"):
+                            s1 = scheidsrechters.get(bob.get("scheids_1"), {}).get("naam", "-")
+                            s2 = scheidsrechters.get(bob.get("scheids_2"), {}).get("naam", "-")
+                            st.write(f"👥 {s1} / {s2}")
+                        else:
+                            st.write("👥 Geen scheidsrechters")
+                    
+                    with col2:
+                        st.write("**NBB (nieuw):**")
+                        st.write(f"📅 {nbb['datum']}")
+                        if nbb.get("veld"):
+                            st.write(f"📍 Veld {nbb['veld']}")
+                    
+                    with col3:
+                        st.write("**Actie:**")
+                        actie = st.radio(
+                            "Kies actie",
+                            options=["verplaats", "nieuw", "negeer"],
+                            format_func=lambda x: {
+                                "verplaats": "🔄 Verplaats naar nieuwe datum",
+                                "nieuw": "➕ Maak nieuwe wedstrijd",
+                                "negeer": "⏭️ Negeer"
+                            }[x],
+                            key=f"verplaats_actie_{wed_id}",
+                            index=0 if not is_geannuleerd else 0,  # Default: verplaats
+                            label_visibility="collapsed"
+                        )
+                        st.session_state["verplaats_selectie"][wed_id] = {
+                            "actie": actie,
+                            "nbb": nbb,
+                            "bob": bob
+                        }
+            
+            # Verwerk verplaatsingen
+            col_apply, col_info = st.columns([1, 2])
+            with col_apply:
+                if st.button("✅ Voer verplaatsingen uit", key="btn_verplaats", type="primary"):
+                    aantal_verplaatst = 0
+                    aantal_nieuw = 0
+                    
+                    for wed_id, selectie in st.session_state["verplaats_selectie"].items():
+                        actie = selectie["actie"]
+                        nbb = selectie["nbb"]
+                        
+                        if actie == "verplaats":
+                            # Update bestaande wedstrijd met nieuwe datum
+                            wedstrijden[wed_id]["datum"] = nbb["datum"]
+                            wedstrijden[wed_id]["geannuleerd"] = False  # Heractiveer indien nodig
+                            wedstrijden[wed_id]["geannuleerd_op"] = None
+                            if nbb.get("veld"):
+                                wedstrijden[wed_id]["veld"] = nbb["veld"]
+                            if nbb.get("niveau"):
+                                wedstrijden[wed_id]["niveau"] = nbb["niveau"]
+                            aantal_verplaatst += 1
+                            
+                        elif actie == "nieuw":
+                            # Maak nieuwe wedstrijd
+                            nieuw_id = f"wed_{datetime.now().strftime('%Y%m%d%H%M%S')}_{aantal_nieuw}"
+                            wedstrijden[nieuw_id] = {
+                                "datum": nbb["datum"],
+                                "thuisteam": nbb["thuisteam"],
+                                "uitteam": nbb["uitteam"],
+                                "niveau": nbb["niveau"],
+                                "veld": nbb.get("veld", ""),
+                                "vereist_bs2": nbb.get("vereist_bs2", False),
+                                "type": "thuis",
+                                "scheids_1": None,
+                                "scheids_2": None
+                            }
+                            aantal_nieuw += 1
+                    
+                    sla_wedstrijden_op(wedstrijden)
+                    st.session_state["verplaats_selectie"] = {}
+                    
+                    msg_parts = []
+                    if aantal_verplaatst > 0:
+                        msg_parts.append(f"{aantal_verplaatst} verplaatst")
+                    if aantal_nieuw > 0:
+                        msg_parts.append(f"{aantal_nieuw} nieuw aangemaakt")
+                    
+                    st.success(f"✅ {', '.join(msg_parts)}!")
+                    st.rerun()
+            
+            with col_info:
+                st.caption("💡 Bij 'Verplaats' worden scheidsrechters behouden. Bij 'Nieuw' moet je opnieuw toewijzen.")
+            
+            st.divider()
         
         # FASE 1: Completeren
         st.subheader("📥 Fase 1: Completeren")
