@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.6"
+APP_VERSIE = "1.23.7"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.7 (2026-01-08)
+**Bulk annulering wedstrijden:**
+- 🚫 Nieuwe functie: annuleer alle wedstrijden per dag
+- 📝 Scheidsrechters worden afgemeld met reden "annulering_wedstrijd"
+- 🗓️ Wedstrijden worden gemarkeerd als geannuleerd
+
 ### v1.23.6 (2026-01-08)
 **Verbeterde race condition fix:**
 - 🔒 Niemand kan overschrijven (ook TC niet)
@@ -6131,6 +6137,9 @@ def toon_wedstrijden_beheer():
     with col1:
         if st.button("🗑️ Alle wedstrijden verwijderen", type="secondary"):
             st.session_state.bevestig_delete_all = True
+    with col2:
+        if st.button("🚫 Wedstrijden annuleren per dag", type="secondary"):
+            st.session_state.toon_annuleer_dag = True
     
     if st.session_state.get("bevestig_delete_all"):
         st.warning("⚠️ Weet je zeker dat je ALLE wedstrijden wilt verwijderen?")
@@ -6145,6 +6154,111 @@ def toon_wedstrijden_beheer():
             if st.button("❌ Annuleren"):
                 st.session_state.bevestig_delete_all = False
                 st.rerun()
+    
+    # Bulk annulering per dag
+    if st.session_state.get("toon_annuleer_dag"):
+        st.markdown("---")
+        st.markdown("### 🚫 Wedstrijden annuleren per dag")
+        st.caption("Annuleer alle wedstrijden op een specifieke dag. Scheidsrechters worden automatisch afgemeld met reden 'wedstrijd geannuleerd'.")
+        
+        # Verzamel unieke dagen met wedstrijden
+        dagen_met_wedstrijden = set()
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("geannuleerd"):
+                continue
+            try:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                dagen_met_wedstrijden.add(wed_datum.date())
+            except:
+                pass
+        
+        if not dagen_met_wedstrijden:
+            st.info("Geen actieve wedstrijden gevonden.")
+        else:
+            gesorteerde_dagen = sorted(dagen_met_wedstrijden)
+            dag_namen_nl = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+            maand_namen_nl = ["", "januari", "februari", "maart", "april", "mei", "juni", 
+                             "juli", "augustus", "september", "oktober", "november", "december"]
+            dag_opties = {
+                f"{dag_namen_nl[d.weekday()]} {d.day} {maand_namen_nl[d.month]} {d.year}": d 
+                for d in gesorteerde_dagen
+            }
+            
+            gekozen_dag_str = st.selectbox(
+                "Selecteer dag om te annuleren",
+                options=list(dag_opties.keys()),
+                key="annuleer_dag_select"
+            )
+            gekozen_dag = dag_opties[gekozen_dag_str]
+            
+            # Toon wedstrijden op die dag
+            wedstrijden_op_dag = []
+            for wed_id, wed in wedstrijden.items():
+                if wed.get("geannuleerd"):
+                    continue
+                try:
+                    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                    if wed_datum.date() == gekozen_dag:
+                        wedstrijden_op_dag.append((wed_id, wed, wed_datum))
+                except:
+                    pass
+            
+            wedstrijden_op_dag.sort(key=lambda x: x[2])
+            
+            st.write(f"**{len(wedstrijden_op_dag)} wedstrijden** op {gekozen_dag_str}:")
+            
+            scheids_affected = []
+            for wed_id, wed, wed_datum in wedstrijden_op_dag:
+                scheids_1_naam = scheidsrechters.get(wed.get("scheids_1"), {}).get("naam", "-")
+                scheids_2_naam = scheidsrechters.get(wed.get("scheids_2"), {}).get("naam", "-")
+                st.write(f"• {wed_datum.strftime('%H:%M')} - {wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')} ({scheids_1_naam} / {scheids_2_naam})")
+                if wed.get("scheids_1"):
+                    scheids_affected.append((wed.get("scheids_1"), scheids_1_naam))
+                if wed.get("scheids_2"):
+                    scheids_affected.append((wed.get("scheids_2"), scheids_2_naam))
+            
+            unieke_scheids = list(set(scheids_affected))
+            if unieke_scheids:
+                st.write(f"**{len(unieke_scheids)} scheidsrechters** worden afgemeld: {', '.join([s[1] for s in unieke_scheids])}")
+            
+            col_ja, col_nee = st.columns(2)
+            with col_ja:
+                if st.button("🚫 Annuleer deze dag", type="primary", key="bevestig_annuleer_dag"):
+                    # Annuleer alle wedstrijden op deze dag
+                    aantal_geannuleerd = 0
+                    for wed_id, wed, wed_datum in wedstrijden_op_dag:
+                        # Log afmelding voor scheidsrechters
+                        for positie in ["scheids_1", "scheids_2"]:
+                            scheids_nbb = wed.get(positie)
+                            if scheids_nbb:
+                                try:
+                                    db.log_registratie(scheids_nbb, wed_id, positie, "annulering_wedstrijd", wed_datum)
+                                except:
+                                    pass
+                        
+                        # Markeer wedstrijd als geannuleerd en verwijder scheidsrechters
+                        wedstrijden[wed_id]["geannuleerd"] = True
+                        wedstrijden[wed_id]["geannuleerd_op"] = datetime.now().isoformat()
+                        wedstrijden[wed_id]["scheids_1"] = None
+                        wedstrijden[wed_id]["scheids_2"] = None
+                        wedstrijden[wed_id]["scheids_1_punten_berekend"] = None
+                        wedstrijden[wed_id]["scheids_2_punten_berekend"] = None
+                        wedstrijden[wed_id]["scheids_1_punten_details"] = None
+                        wedstrijden[wed_id]["scheids_2_punten_details"] = None
+                        wedstrijden[wed_id]["begeleider"] = None
+                        aantal_geannuleerd += 1
+                    
+                    sla_wedstrijden_op(wedstrijden)
+                    st.session_state.toon_annuleer_dag = False
+                    st.success(f"✅ {aantal_geannuleerd} wedstrijden geannuleerd, {len(unieke_scheids)} scheidsrechters afgemeld!")
+                    st.rerun()
+            
+            with col_nee:
+                if st.button("❌ Terug", key="annuleer_terug"):
+                    st.session_state.toon_annuleer_dag = False
+                    st.rerun()
+        
+        st.markdown("---")
     
     # Tabs voor thuis en uit
     tab_thuis, tab_uit = st.tabs(["🏠 Thuiswedstrijden (scheids nodig)", "🚗 Uitwedstrijden (blokkades)"])
