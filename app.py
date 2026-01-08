@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.4"
+APP_VERSIE = "1.23.5"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.5 (2026-01-08)
+**KRITIEKE FIX - Race condition bij inschrijving:**
+- 🔒 Verse database check voordat inschrijving wordt opgeslagen
+- ⚠️ Foutmelding als positie al door iemand anders is ingenomen
+- 🛡️ Voorkomt overschrijven van bestaande inschrijvingen
+
 ### v1.23.4 (2026-01-08)
 **Aankomend weekend openstellen:**
 - 🗓️ Wedstrijden in aankomend weekend met open posities zijn nu zichtbaar
@@ -1464,29 +1470,46 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
               - "uitnodiging": Via MSE begeleidingsuitnodiging
     
     Returns:
-        dict met punten_info of None bij fout
+        dict met punten_info bij succes, None bij fout (positie al bezet)
     
     De punten worden BEREKEND en OPGESLAGEN bij de wedstrijd, maar NIET toegekend aan de speler.
     Punten worden pas toegekend wanneer de TC de wedstrijd bevestigt als "gefloten".
     """
-    # Bereken punten met bron parameter
-    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, wedstrijden, scheidsrechters, bron)
+    # KRITIEKE FIX: Laad verse data uit database om race conditions te voorkomen
+    verse_wedstrijden = laad_wedstrijden()
+    verse_wed = verse_wedstrijden.get(wed_id)
+    
+    if not verse_wed:
+        return None  # Wedstrijd bestaat niet meer
+    
+    # Check of positie nog vrij is
+    huidige_scheids = verse_wed.get(positie)
+    if huidige_scheids is not None and huidige_scheids != nbb_nummer:
+        # Positie is al bezet door iemand anders!
+        return None
+    
+    # Positie is vrij of al van deze speler - ga door met inschrijving
+    # Gebruik verse data voor punten berekening
+    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, verse_wedstrijden, scheidsrechters, bron)
     
     # Bepaal punten kolom naam
     punten_kolom = "scheids_1_punten_berekend" if positie == "scheids_1" else "scheids_2_punten_berekend"
     details_kolom = "scheids_1_punten_details" if positie == "scheids_1" else "scheids_2_punten_details"
     
-    # Update wedstrijd met scheidsrechter EN berekende punten
-    wedstrijden[wed_id][positie] = nbb_nummer
-    wedstrijden[wed_id][punten_kolom] = punten_info["totaal"]
-    wedstrijden[wed_id][details_kolom] = punten_info  # Volledige details voor transparantie
+    # Update verse wedstrijd data met scheidsrechter EN berekende punten
+    verse_wed[positie] = nbb_nummer
+    verse_wed[punten_kolom] = punten_info["totaal"]
+    verse_wed[details_kolom] = punten_info  # Volledige details voor transparantie
     
-    # Sla ALLEEN deze wedstrijd op (niet alle wedstrijden - voorkomt race conditions)
-    sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+    # Sla op naar database
+    sla_wedstrijd_op(wed_id, verse_wed)
+    
+    # Update ook de lokale cache zodat UI correct is
+    wedstrijden[wed_id] = verse_wed
     
     # Log de inschrijving voor gedragsanalyse
     try:
-        wed_datum = datetime.strptime(wedstrijden[wed_id]["datum"], "%Y-%m-%d %H:%M")
+        wed_datum = datetime.strptime(verse_wed["datum"], "%Y-%m-%d %H:%M")
         db.log_registratie(nbb_nummer, wed_id, positie, "inschrijven", wed_datum)
     except:
         pass  # Logging failure mag inschrijving niet blokkeren
@@ -3758,11 +3781,14 @@ def toon_speler_view(nbb_nummer: str):
                     if st.button("✅", key=f"verz_acc_{verzoek['id']}", help="Accepteren"):
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
                         # Vervanging via uitnodiging: bonus op basis van moment uitnodiging
-                        schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging")
-                        verzoeken[verzoek["id"]]["status"] = "accepted"
-                        verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
-                        sla_vervangingsverzoeken_op(verzoeken)
-                        st.rerun()
+                        resultaat = schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging")
+                        if resultaat is None:
+                            st.error("⚠️ Deze positie is al door iemand anders ingenomen.")
+                        else:
+                            verzoeken[verzoek["id"]]["status"] = "accepted"
+                            verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
+                            sla_vervangingsverzoeken_op(verzoeken)
+                            st.rerun()
                 with col_reject:
                     if st.button("❌", key=f"verz_rej_{verzoek['id']}", help="Kan niet"):
                         verzoeken[verzoek["id"]]["status"] = "rejected"
@@ -4396,9 +4422,12 @@ def toon_speler_view(nbb_nummer: str):
                                             if st.button("✅ Toch inschrijven", key=f"bevestig_ja_1e_{wed['id']}", type="secondary"):
                                                 # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
-                                            
-                                                del st.session_state[bevestig_key]
-                                                st.rerun()
+                                                
+                                                if punten_definitief is None:
+                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                else:
+                                                    del st.session_state[bevestig_key]
+                                                    st.rerun()
                                         with col_nee:
                                             if st.button("❌ Annuleren", key=f"bevestig_nee_1e_{wed['id']}"):
                                                 del st.session_state[bevestig_key]
@@ -4428,15 +4457,17 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Direct inschrijven - punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief and punten_definitief.get('inval_bonus', 0) > 0:
-                                                    st.success(f"""
-                                                    ✅ **Ingeschreven!**  
-                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                    🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
-                                                    """)
-                                            
-                                                st.rerun()
+                                                if punten_definitief is None:
+                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                else:
+                                                    if punten_definitief.get('inval_bonus', 0) > 0:
+                                                        st.success(f"""
+                                                        ✅ **Ingeschreven!**  
+                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                        🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
+                                                        """)
+                                                    st.rerun()
                                 else:
                                     st.caption(f"~~1e scheids~~ *({status_1e['reden']})*")
                         
@@ -4504,9 +4535,12 @@ def toon_speler_view(nbb_nummer: str):
                                             if st.button("✅ Toch inschrijven", key=f"bevestig_ja_2e_{wed['id']}", type="secondary"):
                                                 # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
-                                            
-                                                del st.session_state[bevestig_key]
-                                                st.rerun()
+                                                
+                                                if punten_definitief is None:
+                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                else:
+                                                    del st.session_state[bevestig_key]
+                                                    st.rerun()
                                         with col_nee:
                                             if st.button("❌ Annuleren", key=f"bevestig_nee_2e_{wed['id']}"):
                                                 del st.session_state[bevestig_key]
@@ -4535,15 +4569,17 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Direct inschrijven - punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief and punten_definitief.get('inval_bonus', 0) > 0:
-                                                    st.success(f"""
-                                                    ✅ **Ingeschreven!**  
-                                                    🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
-                                                    ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
-                                                    🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
-                                                    """)
-                                            
-                                                st.rerun()
+                                                if punten_definitief is None:
+                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                else:
+                                                    if punten_definitief.get('inval_bonus', 0) > 0:
+                                                        st.success(f"""
+                                                        ✅ **Ingeschreven!**  
+                                                        🕐 Geregistreerd: **{punten_definitief['berekening']['inschrijf_moment_leesbaar']}**  
+                                                        ⏱️ {punten_definitief['berekening']['uren_tot_wedstrijd']} uur tot wedstrijd  
+                                                        🏆 **{punten_definitief['totaal']} punten** na bevestiging ({punten_definitief['details']})
+                                                        """)
+                                                    st.rerun()
                                 else:
                                     st.caption(f"~~2e scheids~~ *({status_2e['reden']})*")
                                 
@@ -6418,8 +6454,11 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
                                         gekozen_nbb = kandidaten[idx]["nbb_nummer"]
                                         # TC-toewijzing: bereken punten met bonus
-                                        schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_1", wedstrijden, scheidsrechters, bron="tc")
-                                        st.rerun()
+                                        resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_1", wedstrijden, scheidsrechters, bron="tc")
+                                        if resultaat is None:
+                                            st.error("⚠️ Positie al bezet. Ververs de pagina.")
+                                        else:
+                                            st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
                     
@@ -6456,8 +6495,11 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
                                         gekozen_nbb = kandidaten[idx]["nbb_nummer"]
                                         # TC-toewijzing: bereken punten met bonus
-                                        schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_2", wedstrijden, scheidsrechters, bron="tc")
-                                        st.rerun()
+                                        resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_2", wedstrijden, scheidsrechters, bron="tc")
+                                        if resultaat is None:
+                                            st.error("⚠️ Positie al bezet. Ververs de pagina.")
+                                        else:
+                                            st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
                     
