@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.5"
+APP_VERSIE = "1.23.6"
 APP_VERSIE_DATUM = "2026-01-08"
 APP_CHANGELOG = """
+### v1.23.6 (2026-01-08)
+**Verbeterde race condition fix:**
+- 🔒 Niemand kan overschrijven (ook TC niet)
+- 📢 Duidelijke foutmelding met naam van wie er al staat
+- 🔄 TC moet pagina verversen om actuele data te zien
+
 ### v1.23.5 (2026-01-08)
 **KRITIEKE FIX - Race condition bij inschrijving:**
 - 🔒 Verse database check voordat inschrijving wordt opgeslagen
@@ -1486,7 +1492,9 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     huidige_scheids = verse_wed.get(positie)
     if huidige_scheids is not None and huidige_scheids != nbb_nummer:
         # Positie is al bezet door iemand anders!
-        return None
+        # Retourneer info over wie er staat zodat UI dit kan tonen
+        huidige_naam = scheidsrechters.get(huidige_scheids, {}).get("naam", f"NBB {huidige_scheids}")
+        return {"error": "bezet", "huidige_scheids": huidige_scheids, "huidige_naam": huidige_naam}
     
     # Positie is vrij of al van deze speler - ga door met inschrijving
     # Gebruik verse data voor punten berekening
@@ -3782,8 +3790,9 @@ def toon_speler_view(nbb_nummer: str):
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
                         # Vervanging via uitnodiging: bonus op basis van moment uitnodiging
                         resultaat = schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging")
-                        if resultaat is None:
-                            st.error("⚠️ Deze positie is al door iemand anders ingenomen.")
+                        if resultaat is None or (isinstance(resultaat, dict) and resultaat.get("error")):
+                            naam = resultaat.get("huidige_naam", "iemand anders") if isinstance(resultaat, dict) else "iemand anders"
+                            st.error(f"⚠️ Deze positie is al door **{naam}** ingenomen.")
                         else:
                             verzoeken[verzoek["id"]]["status"] = "accepted"
                             verzoeken[verzoek["id"]]["bevestigd_op"] = datetime.now().isoformat()
@@ -4423,8 +4432,9 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief is None:
-                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
+                                                    naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
+                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     del st.session_state[bevestig_key]
                                                     st.rerun()
@@ -4457,8 +4467,9 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Direct inschrijven - punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_1", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief is None:
-                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
+                                                    naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
+                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     if punten_definitief.get('inval_bonus', 0) > 0:
                                                         st.success(f"""
@@ -4536,8 +4547,9 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Gebruik nieuwe functie: punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief is None:
-                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
+                                                    naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
+                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     del st.session_state[bevestig_key]
                                                     st.rerun()
@@ -4569,8 +4581,9 @@ def toon_speler_view(nbb_nummer: str):
                                                 # Direct inschrijven - punten worden opgeslagen maar niet toegekend
                                                 punten_definitief = schrijf_in_als_scheids(nbb_nummer, wed['id'], "scheids_2", wedstrijden, scheidsrechters)
                                                 
-                                                if punten_definitief is None:
-                                                    st.error("⚠️ Deze positie is zojuist door iemand anders ingenomen. Ververs de pagina.")
+                                                if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
+                                                    naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
+                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     if punten_definitief.get('inval_bonus', 0) > 0:
                                                         st.success(f"""
@@ -6456,7 +6469,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                         # TC-toewijzing: bereken punten met bonus
                                         resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_1", wedstrijden, scheidsrechters, bron="tc")
                                         if resultaat is None:
-                                            st.error("⚠️ Positie al bezet. Ververs de pagina.")
+                                            st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
+                                        elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
+                                            st.error(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
                                             st.rerun()
                             else:
@@ -6497,7 +6512,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                         # TC-toewijzing: bereken punten met bonus
                                         resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_2", wedstrijden, scheidsrechters, bron="tc")
                                         if resultaat is None:
-                                            st.error("⚠️ Positie al bezet. Ververs de pagina.")
+                                            st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
+                                        elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
+                                            st.error(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
                                             st.rerun()
                             else:
