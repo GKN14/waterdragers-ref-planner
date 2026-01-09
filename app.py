@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.2"
+APP_VERSIE = "1.25.3"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.3 (2026-01-09)
+**Pool-berekening verbeterd:**
+- 🔄 Ingeschreven scheidsrechters worden nu uit pool van overlappende wedstrijden gehaald
+- 🎯 Als MSE zich inschrijft voor 14:30, telt hij niet meer mee in pool van andere 14:30 wedstrijd
+
 ### v1.25.2 (2026-01-09)
 **Bugfix beschikbare teams v2:**
 - 🐛 Fix: teams worden nu getoond (keek naar gefilterde items i.p.v. alle wedstrijden)
@@ -2630,7 +2635,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
 def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> int:
     """
     Bereken het aantal scheidsrechters dat beschikbaar is voor een wedstrijd.
-    Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap.
+    Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap, al ingeschreven.
     """
     if wed_id not in wedstrijden:
         return 0
@@ -2688,6 +2693,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
         
         # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
         if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
+            continue
+        
+        # Check of scheidsrechter al ingeschreven is voor een overlappende fluitwedstrijd
+        if heeft_overlappende_fluitwedstrijd(nbb, wed_id, wed_datum, wedstrijden):
             continue
         
         pool_count += 1
@@ -2797,6 +2806,10 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
             
             # Check tijdsoverlap met eigen wedstrijd
             if heeft_eigen_wedstrijd(nbb, wed["wed_datum"], wedstrijden, scheidsrechters):
+                continue
+            
+            # Check of al ingeschreven voor overlappende fluitwedstrijd
+            if heeft_overlappende_fluitwedstrijd(nbb, wed["id"], wed["wed_datum"], wedstrijden):
                 continue
             
             kan_minstens_een = True
