@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.24.0"
+APP_VERSIE = "1.24.1"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.24.1 (2026-01-09)
+**Niveau in alert afbeelding:**
+- 📊 Wedstrijdniveau getoond in alert header
+- 🎯 Benodigd niveau per positie (1e/2e scheids)
+
 ### v1.24.0 (2026-01-09)
 **Verbeterde wedstrijd filtering:**
 - 🚫 Wedstrijden waar je niet op kunt inschrijven worden verborgen
@@ -5717,6 +5722,11 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
                 thuisteam = wed.get("thuisteam", "")
                 is_kritiek = "**" in thuisteam
                 
+                # Niveau van de wedstrijd
+                wed_niveau = wed.get("niveau", 1)
+                # 2e scheids mag 1 niveau lager (maar minimaal 1)
+                niveau_2e = max(1, wed_niveau - 1)
+                
                 open_wedstrijden.append({
                     "datum": wed_datum,
                     "dag": ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()],
@@ -5727,7 +5737,10 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
                     "open_2e": open_2e,
                     "zoekt_1e": zoekt_1e,
                     "zoekt_2e": zoekt_2e,
-                    "is_kritiek": is_kritiek
+                    "is_kritiek": is_kritiek,
+                    "niveau": wed_niveau,
+                    "niveau_1e": wed_niveau,
+                    "niveau_2e": niveau_2e
                 })
     
     # Sorteer: kritiek eerst, dan op datum/tijd
@@ -5832,11 +5845,15 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
             tijd_color = critical_red if wed["is_kritiek"] else header_orange
             draw.text((30, y + 10), f"{wed['dag']} {wed['tijd']}", font=font_bold, fill=tijd_color)
             
+            # Niveau badge (rechts naast tijd)
+            niveau_tekst = f"Niv.{wed['niveau']}"
+            draw.text((width - 70, y + 10), niveau_tekst, font=font_bold, fill=text_gray)
+            
             # Kritiek badge
             if wed["is_kritiek"]:
                 badge_x = width - 60
-                draw.rectangle([badge_x, y + 8, width - 20, y + 24], fill=critical_red)
-                draw.text((badge_x + 20, y + 16), "⚠️ **", font=font_small, anchor="mm", fill=text_white)
+                draw.rectangle([badge_x, y + 28, width - 20, y + 44], fill=critical_red)
+                draw.text((badge_x + 20, y + 36), "⚠️ **", font=font_small, anchor="mm", fill=text_white)
             
             # Teams
             thuisteam_display = wed["thuisteam"].replace("**", "").strip()
@@ -5850,16 +5867,16 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
             zoekt_color = (255, 200, 100)  # Geel/oranje voor zoekt vervanging
             
             if wed["open_1e"]:
-                draw.text((pos_x, pos_y), "• 1e scheids nodig", font=font_small, fill=pos_color)
-                pos_x += 130
+                draw.text((pos_x, pos_y), f"• 1e scheids nodig (niv.{wed['niveau_1e']})", font=font_small, fill=pos_color)
+                pos_x += 165
             elif wed.get("zoekt_1e"):
-                draw.text((pos_x, pos_y), "• 1e scheids zoekt vervanger", font=font_small, fill=zoekt_color)
-                pos_x += 175
+                draw.text((pos_x, pos_y), f"• 1e zoekt vervanger (niv.{wed['niveau_1e']})", font=font_small, fill=zoekt_color)
+                pos_x += 185
             
             if wed["open_2e"]:
-                draw.text((pos_x, pos_y), "• 2e scheids nodig", font=font_small, fill=pos_color)
+                draw.text((pos_x, pos_y), f"• 2e scheids nodig (niv.{wed['niveau_2e']})", font=font_small, fill=pos_color)
             elif wed.get("zoekt_2e"):
-                draw.text((pos_x, pos_y), "• 2e scheids zoekt vervanger", font=font_small, fill=zoekt_color)
+                draw.text((pos_x, pos_y), f"• 2e zoekt vervanger (niv.{wed['niveau_2e']})", font=font_small, fill=zoekt_color)
             
             y += row_height
     
