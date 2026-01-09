@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.24.1"
+APP_VERSIE = "1.24.2"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.24.2 (2026-01-09)
+**Bugfix weekend overzicht:**
+- 🔄 Overzicht update nu correct bij wisselen van weekend
+- 🗑️ Oude gegenereerde afbeeldingen worden gewist bij selectie wijziging
+
 ### v1.24.1 (2026-01-09)
 **Niveau in alert afbeelding:**
 - 📊 Wedstrijdniveau getoond in alert header
@@ -5957,7 +5962,29 @@ def toon_weekend_overzicht():
     
     # Weekend selectie
     st.markdown("**Selecteer weekend**")
-    gekozen_weekend = st.selectbox("Kies een weekend", list(weekend_opties.keys()))
+    
+    # Check of geselecteerd weekend is gewijzigd
+    if "vorig_weekend" not in st.session_state:
+        st.session_state.vorig_weekend = None
+    
+    gekozen_weekend = st.selectbox(
+        "Kies een weekend", 
+        list(weekend_opties.keys()),
+        key="weekend_selectie"
+    )
+    
+    # Als weekend is gewijzigd, clear oude PNG states en rerun
+    if st.session_state.vorig_weekend is not None and st.session_state.vorig_weekend != gekozen_weekend:
+        # Verwijder oude gegenereerde afbeeldingen
+        keys_to_remove = [k for k in list(st.session_state.keys()) if k.startswith("overzicht_png_") or k.startswith("alert_png_")]
+        for k in keys_to_remove:
+            del st.session_state[k]
+        st.session_state.vorig_weekend = gekozen_weekend
+        st.rerun()
+    
+    # Update vorig_weekend bij eerste keer
+    st.session_state.vorig_weekend = gekozen_weekend
+    
     gekozen_dagen = sorted(weekend_opties[gekozen_weekend])
     
     # Toon info over geselecteerde dagen
