@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.3"
+APP_VERSIE = "1.25.4"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.4 (2026-01-09)
+**Fix bulk annulering:**
+- 🐛 Kritieke fix: bulk annulering slaat nu per wedstrijd op (voorkomt race conditions)
+- 🔒 Voorheen kon bulk save andere wijzigingen overschrijven
+
 ### v1.25.3 (2026-01-09)
 **Pool-berekening verbeterd:**
 - 🔄 Ingeschreven scheidsrechters worden nu uit pool van overlappende wedstrijden gehaald
@@ -6577,7 +6582,7 @@ def toon_wedstrijden_beheer():
             col_ja, col_nee = st.columns(2)
             with col_ja:
                 if st.button("🚫 Annuleer deze dag", type="primary", key="bevestig_annuleer_dag"):
-                    # Annuleer alle wedstrijden op deze dag
+                    # Annuleer alle wedstrijden op deze dag - per wedstrijd opslaan (voorkomt race conditions)
                     aantal_geannuleerd = 0
                     for wed_id, wed, wed_datum in wedstrijden_op_dag:
                         # Log afmelding voor scheidsrechters
@@ -6590,18 +6595,20 @@ def toon_wedstrijden_beheer():
                                     pass
                         
                         # Markeer wedstrijd als geannuleerd en verwijder scheidsrechters
-                        wedstrijden[wed_id]["geannuleerd"] = True
-                        wedstrijden[wed_id]["geannuleerd_op"] = datetime.now().isoformat()
-                        wedstrijden[wed_id]["scheids_1"] = None
-                        wedstrijden[wed_id]["scheids_2"] = None
-                        wedstrijden[wed_id]["scheids_1_punten_berekend"] = None
-                        wedstrijden[wed_id]["scheids_2_punten_berekend"] = None
-                        wedstrijden[wed_id]["scheids_1_punten_details"] = None
-                        wedstrijden[wed_id]["scheids_2_punten_details"] = None
-                        wedstrijden[wed_id]["begeleider"] = None
+                        wed_data = {
+                            **wed,
+                            "geannuleerd": True,
+                            "geannuleerd_op": datetime.now().isoformat(),
+                            "scheids_1": None,
+                            "scheids_2": None,
+                            "scheids_1_punten_berekend": None,
+                            "scheids_2_punten_berekend": None,
+                            "scheids_1_punten_details": None,
+                            "scheids_2_punten_details": None,
+                            "begeleider": None
+                        }
+                        sla_wedstrijd_op(wed_id, wed_data)
                         aantal_geannuleerd += 1
-                    
-                    sla_wedstrijden_op(wedstrijden)
                     
                     # Clear alle bewerk session states voor deze wedstrijden
                     for wed_id, wed, wed_datum in wedstrijden_op_dag:
