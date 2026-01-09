@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.5"
+APP_VERSIE = "1.25.6"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.6 (2026-01-09)
+**Uitsluiten van pool optie:**
+- 🧪 Nieuwe optie: "Uitsluiten van pool" voor test/reserve spelers
+- 📊 Uitgesloten spelers tellen niet mee in pool-berekening
+- 👁️ Zichtbaar in overzichtstabel en scheidsrechter details
+
 ### v1.25.5 (2026-01-09)
 **Geblokkeerde dagen zichtbaar voor TC:**
 - 👁️ Geblokkeerde dagen nu zichtbaar in scheidsrechter details (beheerder view)
@@ -2656,6 +2662,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
     
     pool_count = 0
     for nbb, scheids in scheidsrechters.items():
+        # Check of uitgesloten van pool (testgebruikers, reserves)
+        if scheids.get("uitgesloten_van_pool", False):
+            continue
+        
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         
         # Check BS2 vereiste
@@ -2761,6 +2771,10 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
     teams_met_niveau = {}
     
     for nbb, scheids in scheidsrechters.items():
+        # Check of uitgesloten van pool (testgebruikers, reserves)
+        if scheids.get("uitgesloten_van_pool", False):
+            continue
+        
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         
         # Check of deze scheidsrechter minstens één wedstrijd kan fluiten qua niveau
@@ -7285,6 +7299,7 @@ def toon_scheidsrechters_beheer():
             "BS2": "✓" if scheids.get("bs2_diploma", False) else "",
             "🎓": "✓" if scheids.get("open_voor_begeleiding", False) else "",
             "🤕": "✓" if scheids.get("geblesseerd_tm") else "",
+            "🧪": "✓" if scheids.get("uitgesloten_van_pool", False) else "",
         })
     
     if overzicht_data:
@@ -7313,11 +7328,14 @@ def toon_scheidsrechters_beheer():
         # Tel spelers open voor begeleiding
         open_voor_begeleiding_count = sum(1 for d in overzicht_data if d["🎓"] == "✓")
         geblesseerd_count = sum(1 for d in overzicht_data if d["🤕"] == "✓")
+        uitgesloten_count = sum(1 for d in overzicht_data if d["🧪"] == "✓")
         legenda_items = []
         if open_voor_begeleiding_count > 0:
             legenda_items.append(f"🎓 = Open voor begeleiding ({open_voor_begeleiding_count})")
         if geblesseerd_count > 0:
             legenda_items.append(f"🤕 = Geblesseerd ({geblesseerd_count})")
+        if uitgesloten_count > 0:
+            legenda_items.append(f"🧪 = Uitgesloten van pool ({uitgesloten_count})")
         if legenda_items:
             st.caption(" | ".join(legenda_items))
     
@@ -7364,6 +7382,12 @@ def toon_scheidsrechters_beheer():
                         nieuwe_naam = st.text_input("Naam", value=str(scheids.get("naam", "") or ""), key=f"naam_{nbb}")
                         bs2_diploma = st.checkbox("BS2 diploma", value=bool(scheids.get("bs2_diploma", False)), key=f"bs2_{nbb}")
                         niet_op_zondag = st.checkbox("Niet op zondag", value=bool(scheids.get("niet_op_zondag", False)), key=f"zondag_{nbb}")
+                        uitgesloten_van_pool = st.checkbox(
+                            "Uitsluiten van pool", 
+                            value=bool(scheids.get("uitgesloten_van_pool", False)), 
+                            key=f"pool_{nbb}",
+                            help="Test/reserve spelers - telt niet mee in pool-berekening"
+                        )
                         
                         # Blessure status
                         st.markdown("**🤕 Blessure**")
@@ -7444,11 +7468,13 @@ def toon_scheidsrechters_beheer():
                                 "naam": nieuwe_naam,
                                 "bs2_diploma": bs2_diploma,
                                 "niet_op_zondag": niet_op_zondag,
+                                "uitgesloten_van_pool": uitgesloten_van_pool,
                                 "niveau_1e_scheids": niveau_1e,
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
                                 "eigen_teams": eigen_teams,
                                 "geblesseerd_tm": blessure_waarde,
+                                "geblokkeerde_dagen": scheids.get("geblokkeerde_dagen", []),
                                 "open_voor_begeleiding": open_voor_begeleiding,
                                 "begeleiding_reden": begeleiding_reden if open_voor_begeleiding else "",
                                 "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
@@ -7475,6 +7501,8 @@ def toon_scheidsrechters_beheer():
                     st.write(f"**NBB-nummer:** {nbb}")
                     st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
                     st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
+                    if scheids.get("uitgesloten_van_pool"):
+                        st.write("**🧪 Uitgesloten van pool:** Ja")
                     # Blessure indicator
                     if scheids.get("geblesseerd_tm"):
                         st.write(f"**🤕 Geblesseerd t/m:** {scheids.get('geblesseerd_tm')}")
