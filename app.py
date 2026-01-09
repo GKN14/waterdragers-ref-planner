@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.10"
+APP_VERSIE = "1.25.11"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.11 (2026-01-09)
+**Verwijder "Open posities" hints:**
+- 🧹 "Open posities" hints verwijderd - pool-indicator is nu de primaire indicator
+- ✅ Bevestigingsdialoog bij lager niveau blijft behouden
+
 ### v1.25.10 (2026-01-09)
 **Dag-indicator negeert volledig bezette wedstrijden:**
 - 🎯 Wedstrijden met beide scheidsrechters ingevuld tellen niet mee voor dag-indicator
@@ -4818,19 +4823,6 @@ def toon_speler_view(nbb_nummer: str):
                                                 st.rerun()
                                     else:
                                         # Normale knop, maar bij laag niveau eerst bevestiging vragen
-                                        if is_laag_niveau:
-                                            # Toon subtiele hint met alle hogere niveaus
-                                            totaal_hoger = 0
-                                            niveau_hints = []
-                                            for check_niveau in range(eigen_niveau, wed["niveau"], -1):
-                                                open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
-                                                if open_op_niveau['totaal_open'] > 0:
-                                                    totaal_hoger += open_op_niveau['totaal_open']
-                                                    niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
-                                        
-                                            if totaal_hoger > 0:
-                                                hint_tekst = ", ".join(niveau_hints)
-                                                st.caption(f"💡 *Open posities: {hint_tekst}*")
                                     
                                         if st.button(button_label, key=f"1e_{wed['id']}", type="primary" if is_eigen_niveau else "secondary"):
                                             if is_laag_niveau:
@@ -4933,19 +4925,6 @@ def toon_speler_view(nbb_nummer: str):
                                                 st.rerun()
                                     else:
                                         # Normale knop, maar bij laag niveau eerst bevestiging vragen
-                                        if is_laag_niveau:
-                                            # Toon subtiele hint met alle hogere niveaus
-                                            totaal_hoger = 0
-                                            niveau_hints = []
-                                            for check_niveau in range(eigen_niveau, wed["niveau"], -1):
-                                                open_op_niveau = tel_open_posities_op_niveau(nbb_nummer, check_niveau)
-                                                if open_op_niveau['totaal_open'] > 0:
-                                                    totaal_hoger += open_op_niveau['totaal_open']
-                                                    niveau_hints.append(f"niv.{check_niveau}: {open_op_niveau['totaal_open']}")
-                                        
-                                            if totaal_hoger > 0:
-                                                hint_tekst = ", ".join(niveau_hints)
-                                                st.caption(f"💡 *Open posities: {hint_tekst}*")
                                     
                                         if st.button(button_label, key=f"2e_{wed['id']}", type="primary" if is_eigen_niveau or (is_niveau_hoger and heeft_1e_scheids) else "secondary"):
                                             if is_laag_niveau:
