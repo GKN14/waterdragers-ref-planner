@@ -3293,6 +3293,20 @@ def toon_speler_view(nbb_nummer: str):
             **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
             """)
             
+            st.markdown("**🏆 Pool Bonus:**")
+            st.markdown(f"""
+            Extra punten voor wedstrijden met weinig beschikbare scheids:
+            
+            | Pool grootte | Bonus |
+            |--------------|-------|
+            | 🔴 ≤{beloningsinst.get('pool_kritiek_grens', 3)} (kritiek) | +{beloningsinst.get('punten_pool_kritiek', 3)} |
+            | 🟠 {beloningsinst.get('pool_kritiek_grens', 3)+1}-{beloningsinst.get('pool_zeer_krap_grens', 5)} (zeer krap) | +{beloningsinst.get('punten_pool_zeer_krap', 2)} |
+            | 🟡 {beloningsinst.get('pool_zeer_krap_grens', 5)+1}-{beloningsinst.get('pool_krap_grens', 8)} (krap) | +{beloningsinst.get('punten_pool_krap', 1)} |
+            | 🟢 >{beloningsinst.get('pool_krap_grens', 8)} | geen bonus |
+            
+            *De pool zie je bij elke wedstrijd*
+            """)
+            
             st.divider()
             
             st.markdown("**Strikes:**")
