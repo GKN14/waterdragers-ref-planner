@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.27.0"
+APP_VERSIE = "1.27.1"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.27.1 (2026-01-09)
+**KRITIEKE BUGFIX - Ingeschreven wedstrijden niet zichtbaar:**
+- 🐛 Fix: indentatiefout waardoor alleen de laatste ingeschreven wedstrijd werd getoond
+- 🐛 Fix: buggy `kan_inschrijven` check verwijderd die UI blokkeerde
+- ✅ Alle ingeschreven wedstrijden worden nu correct getoond
+
 ### v1.27.0 (2026-01-09)
 **Pool Bonus uitleg & opschoning:**
 - 📋 Pool bonus uitleg toegevoegd aan "Punten & Strikes" expander
@@ -4422,115 +4428,112 @@ def toon_speler_view(nbb_nummer: str):
                     v.get("aanvrager_nbb") == nbb_nummer and 
                     v.get("status") == "pending"
                     for v in verzoeken.values()
-                )
+                    )
             
-                with st.container():
-                    col1, col2, col3 = st.columns([2, 3, 2])
-                    with col1:
-                        st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
-                    with col2:
-                        st.write(f"{wed['thuisteam']} - {wed['uitteam']}")
-                    with col3:
-                        st.write(f"*{wed['rol']}*")
-                
-                    if heeft_openstaand_verzoek:
-                        st.warning("⏳ Wacht op bevestiging van vervanger...")
-                    elif kan_inschrijven and wed_datum > datetime.now():
-                        # Afmelden met expander voor opties (alleen voor toekomstige wedstrijden)
-                        with st.expander("❌ Afmelden"):
-                            st.write("**Hoe wil je afmelden?**")
-                        
-                            # Bereken hoeveel uur tot de wedstrijd
-                            uren_tot_wed = (wed_datum - datetime.now()).total_seconds() / 3600
-                        
-                            if uren_tot_wed < 48:
-                                if uren_tot_wed < 24:
-                                    st.error("⚠️ **Let op:** Afmelden zonder vervanging binnen 24 uur geeft **2 strikes**.")
-                                else:
-                                    st.warning("⚠️ **Let op:** Afmelden zonder vervanging binnen 48 uur geeft **1 strike**.")
-                        
-                            col_zonder, col_met = st.columns(2)
-                        
-                            with col_zonder:
-                                st.write("**Zonder vervanging**")
-                                strikes_tekst = ""
-                                if uren_tot_wed < 24:
-                                    strikes_tekst = " (2 strikes)"
-                                elif uren_tot_wed < 48:
-                                    strikes_tekst = " (1 strike)"
+                    with st.container():
+                        col1, col2, col3 = st.columns([2, 3, 2])
+                        with col1:
+                            st.write(f"**{dag} {wed_datum.strftime('%d-%m %H:%M')}**")
+                        with col2:
+                            st.write(f"{wed['thuisteam']} - {wed['uitteam']}")
+                        with col3:
+                            st.write(f"*{wed['rol']}*")
+                    
+                        if heeft_openstaand_verzoek:
+                            st.warning("⏳ Wacht op bevestiging van vervanger...")
+                        elif wed_datum > datetime.now():
+                            # Afmelden met expander voor opties (alleen voor toekomstige wedstrijden)
+                            with st.expander("❌ Afmelden"):
+                                st.write("**Hoe wil je afmelden?**")
                             
-                                if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
-                                    positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
-                                    punten_kolom = f"{positie}_punten_berekend"
-                                    details_kolom = f"{positie}_punten_details"
-                                    wedstrijden[wed["id"]][positie] = None
-                                    wedstrijden[wed["id"]][punten_kolom] = None
-                                    wedstrijden[wed["id"]][details_kolom] = None
-                                    sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                
-                                    # Log de uitschrijving
-                                    try:
-                                        db.log_registratie(nbb_nummer, wed["id"], positie, "uitschrijven", wed_datum)
-                                    except:
-                                        pass
-                                
-                                    # Strikes toekennen indien nodig
+                                # Bereken hoeveel uur tot de wedstrijd
+                                uren_tot_wed = (wed_datum - datetime.now()).total_seconds() / 3600
+                            
+                                if uren_tot_wed < 48:
                                     if uren_tot_wed < 24:
-                                        voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                        st.error("⚠️ **Let op:** Afmelden zonder vervanging binnen 24 uur geeft **2 strikes**.")
+                                    else:
+                                        st.warning("⚠️ **Let op:** Afmelden zonder vervanging binnen 48 uur geeft **1 strike**.")
+                            
+                                col_zonder, col_met = st.columns(2)
+                            
+                                with col_zonder:
+                                    st.write("**Zonder vervanging**")
+                                    strikes_tekst = ""
+                                    if uren_tot_wed < 24:
+                                        strikes_tekst = " (2 strikes)"
                                     elif uren_tot_wed < 48:
-                                        voeg_strike_toe(nbb_nummer, 1, f"Afmelding <48u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                        strikes_tekst = " (1 strike)"
                                 
-                                    st.rerun()
-                        
-                            with col_met:
-                                st.write("**Met vervanging** (geen strike)")
-                            
-                                # Haal geschikte vervangers op
-                                positie = wed["rol"]
-                                als_eerste = positie == "1e scheidsrechter"
-                                kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste)
-                            
-                                # Filter jezelf eruit
-                                kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
-                            
-                                if kandidaten:
-                                    vervanger_opties = {
-                                        ("😴 " if k.get('is_passief') else "") + f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] 
-                                        for k in kandidaten
-                                    }
-                                
-                                    geselecteerde = st.selectbox(
-                                        "Selecteer vervanger",
-                                        options=list(vervanger_opties.keys()),
-                                        key=f"vervanger_{wed['id']}"
-                                    )
-                                
-                                    if st.button("📤 Verstuur verzoek", key=f"verzoek_{wed['id']}", type="primary"):
-                                        vervanger_nbb = vervanger_opties[geselecteerde]
+                                    if st.button(f"❌ Afmelden{strikes_tekst}", key=f"afmeld_zonder_{wed['id']}", type="secondary"):
+                                        positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
+                                        punten_kolom = f"{positie}_punten_berekend"
+                                        details_kolom = f"{positie}_punten_details"
+                                        wedstrijden[wed["id"]][positie] = None
+                                        wedstrijden[wed["id"]][punten_kolom] = None
+                                        wedstrijden[wed["id"]][details_kolom] = None
+                                        sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                     
-                                        # Maak vervangingsverzoek aan
-                                        verzoek_id = f"verz_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-                                        verzoeken[verzoek_id] = {
-                                            "id": verzoek_id,
-                                            "wed_id": wed["id"],
-                                            "aanvrager_nbb": nbb_nummer,
-                                            "vervanger_nbb": vervanger_nbb,
-                                            "positie": positie,
-                                            "status": "pending",
-                                            "aangemaakt_op": datetime.now().isoformat()
-                                        }
-                                        sla_vervangingsverzoeken_op(verzoeken)
+                                        # Log de uitschrijving
+                                        try:
+                                            db.log_registratie(nbb_nummer, wed["id"], positie, "uitschrijven", wed_datum)
+                                        except:
+                                            pass
                                     
-                                        vervanger_naam = scheidsrechters.get(vervanger_nbb, {}).get("naam", "")
-                                        st.success(f"Verzoek verstuurd naar {vervanger_naam}. Zorg dat die persoon het bevestigt!")
+                                        # Strikes toekennen indien nodig
+                                        if uren_tot_wed < 24:
+                                            voeg_strike_toe(nbb_nummer, 2, f"Afmelding <24u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                        elif uren_tot_wed < 48:
+                                            voeg_strike_toe(nbb_nummer, 1, f"Afmelding <48u voor {wed['thuisteam']} vs {wed['uitteam']}")
+                                    
                                         st.rerun()
-                                else:
-                                    st.caption("*Geen geschikte vervangers beschikbaar*")
+                            
+                                with col_met:
+                                    st.write("**Met vervanging** (geen strike)")
+                                
+                                    # Haal geschikte vervangers op
+                                    positie = wed["rol"]
+                                    als_eerste = positie == "1e scheidsrechter"
+                                    kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste)
+                                
+                                    # Filter jezelf eruit
+                                    kandidaten = [k for k in kandidaten if k["nbb_nummer"] != nbb_nummer]
+                                
+                                    if kandidaten:
+                                        vervanger_opties = {
+                                            ("😴 " if k.get('is_passief') else "") + f"{k['naam']} ({k['huidig_aantal']} wed)": k['nbb_nummer'] 
+                                            for k in kandidaten
+                                        }
+                                    
+                                        geselecteerde = st.selectbox(
+                                            "Selecteer vervanger",
+                                            options=list(vervanger_opties.keys()),
+                                            key=f"vervanger_{wed['id']}"
+                                        )
+                                    
+                                        if st.button("📤 Verstuur verzoek", key=f"verzoek_{wed['id']}", type="primary"):
+                                            vervanger_nbb = vervanger_opties[geselecteerde]
+                                        
+                                            # Maak vervangingsverzoek aan
+                                            verzoek_id = f"verz_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                                            verzoeken[verzoek_id] = {
+                                                "id": verzoek_id,
+                                                "wed_id": wed["id"],
+                                                "aanvrager_nbb": nbb_nummer,
+                                                "vervanger_nbb": vervanger_nbb,
+                                                "positie": positie,
+                                                "status": "pending",
+                                                "aangemaakt_op": datetime.now().isoformat()
+                                            }
+                                            sla_vervangingsverzoeken_op(verzoeken)
+                                        
+                                            vervanger_naam = scheidsrechters.get(vervanger_nbb, {}).get("naam", "")
+                                            st.success(f"Verzoek verstuurd naar {vervanger_naam}. Zorg dat die persoon het bevestigt!")
+                                            st.rerun()
+                                    else:
+                                        st.caption("*Geen geschikte vervangers beschikbaar*")
             else:
                 st.write("*Je hebt je nog niet ingeschreven voor wedstrijden.*")
-    
-        if not kan_inschrijven:
-            return
     
         st.divider()
     
