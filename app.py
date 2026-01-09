@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.4"
+APP_VERSIE = "1.25.5"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.5 (2026-01-09)
+**Geblokkeerde dagen zichtbaar voor TC:**
+- 👁️ Geblokkeerde dagen nu zichtbaar in scheidsrechter details (beheerder view)
+- 📅 Alleen toekomstige blokkades worden getoond
+
 ### v1.25.4 (2026-01-09)
 **Fix bulk annulering:**
 - 🐛 Kritieke fix: bulk annulering slaat nu per wedstrijd op (voorkomt race conditions)
@@ -7478,6 +7483,14 @@ def toon_scheidsrechters_beheer():
                     st.write(f"**1e scheids t/m niveau:** {niveau_1e}")
                     st.write(f"**2e scheids t/m niveau:** {max_niveau_2e}")
                     st.write(f"**Eigen teams:** {', '.join(scheids.get('eigen_teams', [])) or '-'}")
+                
+                # Geblokkeerde dagen tonen
+                geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
+                if geblokkeerde_dagen:
+                    # Sorteer en filter op toekomstige dagen
+                    toekomstige_blokkades = sorted([d for d in geblokkeerde_dagen if d >= datetime.now().strftime("%Y-%m-%d")])
+                    if toekomstige_blokkades:
+                        st.write(f"**🚫 Geblokkeerde dagen:** {', '.join(toekomstige_blokkades)}")
                 
                 # Begeleidingsinfo tonen indien aanwezig
                 if scheids.get("open_voor_begeleiding", False):
