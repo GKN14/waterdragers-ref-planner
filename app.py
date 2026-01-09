@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.0"
+APP_VERSIE = "1.25.1"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.1 (2026-01-09)
+**Bugfix beschikbare teams:**
+- 🐛 Fix: beschikbare teams nu dynamisch per dag (was statisch)
+- 🎯 Kijkt nu naar wedstrijdniveaus, eigen team, en tijdsoverlap
+
 ### v1.25.0 (2026-01-09)
 **Pool-indicator & Inschrijfadvies:**
 - 🎯 Pool-indicator per wedstrijd toont aantal beschikbare scheidsrechters
@@ -2698,15 +2703,27 @@ def get_pool_indicator(pool_size: int) -> tuple[str, str]:
         return "🟢", "#4CAF50"  # Ruim
 
 
-def get_beschikbare_teams_voor_dag(dag_datum: datetime, wedstrijden: dict, scheidsrechters: dict) -> list[str]:
+def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstrijden: dict, scheidsrechters: dict) -> list[str]:
     """
-    Bepaal welke teams op een bepaalde dag kunnen fluiten.
+    Bepaal welke teams op een bepaalde dag kunnen fluiten voor de wedstrijden die er zijn.
+    Kijkt naar: niveau van wedstrijden, beschikbaarheid, eigen wedstrijden.
     Returns een lijst van teamnamen, gesorteerd op niveau (hoogste eerst).
     """
+    # Bepaal het laagste niveau van de wedstrijden op deze dag
+    laagste_wed_niveau = 5
+    for item in dag_items:
+        if item.get("type") == "fluiten":
+            wed_niveau = item.get("niveau", 1)
+            laagste_wed_niveau = min(laagste_wed_niveau, wed_niveau)
+    
     teams_met_niveau = {}
     
     for nbb, scheids in scheidsrechters.items():
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        
+        # Check of deze scheidsrechter minstens één wedstrijd kan fluiten qua niveau
+        if niveau_1e < laagste_wed_niveau:
+            continue  # Niveau te laag voor alle wedstrijden
         
         # Check zondag
         if scheids.get("niet_op_zondag", False) and dag_datum.weekday() == 6:
@@ -2735,6 +2752,35 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, wedstrijden: dict, schei
             dag_str = dag_datum.strftime("%Y-%m-%d")
             if dag_str in geblokkeerde_dagen:
                 continue
+        
+        # Check of scheidsrechter kan fluiten voor minstens één wedstrijd
+        # (niet eigen team, geen tijdsoverlap met eigen wedstrijd)
+        kan_minstens_een = False
+        for item in dag_items:
+            if item.get("type") != "fluiten":
+                continue
+            
+            wed_niveau = item.get("niveau", 1)
+            if wed_niveau > niveau_1e:
+                continue  # Dit niveau kan deze scheids niet
+            
+            # Check eigen team
+            eigen_teams_scheids = scheids.get("eigen_teams", [])
+            is_eigen_thuis = any(team_match(item["thuisteam"], et) for et in eigen_teams_scheids)
+            is_eigen_uit = any(team_match(item["uitteam"], et) for et in eigen_teams_scheids)
+            if is_eigen_thuis or is_eigen_uit:
+                continue
+            
+            # Check tijdsoverlap met eigen wedstrijd
+            item_datum = item["wed_datum"]
+            if heeft_eigen_wedstrijd(nbb, item_datum, wedstrijden, scheidsrechters):
+                continue
+            
+            kan_minstens_een = True
+            break
+        
+        if not kan_minstens_een:
+            continue
         
         # Haal teams van deze scheidsrechter
         eigen_teams = scheids.get("eigen_teams", [])
@@ -4543,7 +4589,7 @@ def toon_speler_view(nbb_nummer: str):
                 buiten_tekst = " *(buiten periode)*" if buiten_doelmaand else ""
                 
                 # Bereken beschikbare teams en dag-indicator
-                beschikbare_teams = get_beschikbare_teams_voor_dag(wed_datum, wedstrijden, scheidsrechters)
+                beschikbare_teams = get_beschikbare_teams_voor_dag(wed_datum, dag_items, wedstrijden, scheidsrechters)
                 teams_tekst = format_beschikbare_teams(beschikbare_teams)
                 dag_emoji, dag_kleur = bereken_dag_indicator(dag_items, wedstrijden, scheidsrechters, nbb_nummer)
                 
