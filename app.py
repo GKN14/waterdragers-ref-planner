@@ -5958,34 +5958,25 @@ def toon_weekend_overzicht():
     
     # Sorteer weekenden
     weekend_lijst = sorted(weekenden.items(), key=lambda x: min(x[1]["dagen"]))
-    weekend_opties = {v["label"]: v["dagen"] for k, v in weekend_lijst}
+    weekend_labels = [v["label"] for k, v in weekend_lijst]
+    weekend_dagen_lijst = [v["dagen"] for k, v in weekend_lijst]
     
     # Weekend selectie
     st.markdown("**Selecteer weekend**")
     
-    # Check of geselecteerd weekend is gewijzigd
-    if "vorig_weekend" not in st.session_state:
-        st.session_state.vorig_weekend = None
-    
-    gekozen_weekend = st.selectbox(
+    # Gebruik index voor betere tracking
+    gekozen_index = st.selectbox(
         "Kies een weekend", 
-        list(weekend_opties.keys()),
-        key="weekend_selectie"
+        range(len(weekend_labels)),
+        format_func=lambda i: weekend_labels[i],
+        key="weekend_selectie_idx"
     )
     
-    # Als weekend is gewijzigd, clear oude PNG states en rerun
-    if st.session_state.vorig_weekend is not None and st.session_state.vorig_weekend != gekozen_weekend:
-        # Verwijder oude gegenereerde afbeeldingen
-        keys_to_remove = [k for k in list(st.session_state.keys()) if k.startswith("overzicht_png_") or k.startswith("alert_png_")]
-        for k in keys_to_remove:
-            del st.session_state[k]
-        st.session_state.vorig_weekend = gekozen_weekend
-        st.rerun()
+    gekozen_weekend = weekend_labels[gekozen_index]
+    gekozen_dagen = sorted(weekend_dagen_lijst[gekozen_index])
     
-    # Update vorig_weekend bij eerste keer
-    st.session_state.vorig_weekend = gekozen_weekend
-    
-    gekozen_dagen = sorted(weekend_opties[gekozen_weekend])
+    # Debug: toon welke dagen geselecteerd zijn
+    st.caption(f"📅 Geselecteerd: {', '.join([d.strftime('%d-%m-%Y') for d in gekozen_dagen])}")
     
     # Toon info over geselecteerde dagen
     dag_namen_lang = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
