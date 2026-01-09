@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.1"
+APP_VERSIE = "1.25.2"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.2 (2026-01-09)
+**Bugfix beschikbare teams v2:**
+- 🐛 Fix: teams worden nu getoond (keek naar gefilterde items i.p.v. alle wedstrijden)
+- 🎯 Kijkt nu naar alle wedstrijden van die dag, onafhankelijk van ingelogde speler
+
 ### v1.25.1 (2026-01-09)
 **Bugfix beschikbare teams:**
 - 🐛 Fix: beschikbare teams nu dynamisch per dag (was statisch)
@@ -2709,12 +2714,30 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
     Kijkt naar: niveau van wedstrijden, beschikbaarheid, eigen wedstrijden.
     Returns een lijst van teamnamen, gesorteerd op niveau (hoogste eerst).
     """
+    # Verzamel ALLE wedstrijden van deze dag (niet alleen de gefilterde dag_items)
+    dag_str = dag_datum.strftime("%Y-%m-%d")
+    alle_wed_van_dag = []
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        if wed.get("type") == "uit":
+            continue
+        wed_datum_str = wed["datum"][:10]  # "YYYY-MM-DD"
+        if wed_datum_str == dag_str:
+            alle_wed_van_dag.append({
+                "id": wed_id,
+                "niveau": wed.get("niveau", 1),
+                "thuisteam": wed.get("thuisteam", ""),
+                "uitteam": wed.get("uitteam", ""),
+                "wed_datum": datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M"),
+                "vereist_bs2": wed.get("vereist_bs2", False)
+            })
+    
+    if not alle_wed_van_dag:
+        return []
+    
     # Bepaal het laagste niveau van de wedstrijden op deze dag
-    laagste_wed_niveau = 5
-    for item in dag_items:
-        if item.get("type") == "fluiten":
-            wed_niveau = item.get("niveau", 1)
-            laagste_wed_niveau = min(laagste_wed_niveau, wed_niveau)
+    laagste_wed_niveau = min(w["niveau"] for w in alle_wed_van_dag)
     
     teams_met_niveau = {}
     
@@ -2749,31 +2772,31 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
         # Check geblokkeerde dagen
         geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
         if geblokkeerde_dagen:
-            dag_str = dag_datum.strftime("%Y-%m-%d")
             if dag_str in geblokkeerde_dagen:
                 continue
         
         # Check of scheidsrechter kan fluiten voor minstens één wedstrijd
         # (niet eigen team, geen tijdsoverlap met eigen wedstrijd)
         kan_minstens_een = False
-        for item in dag_items:
-            if item.get("type") != "fluiten":
-                continue
-            
-            wed_niveau = item.get("niveau", 1)
+        eigen_teams_scheids = scheids.get("eigen_teams", [])
+        
+        for wed in alle_wed_van_dag:
+            wed_niveau = wed["niveau"]
             if wed_niveau > niveau_1e:
                 continue  # Dit niveau kan deze scheids niet
             
+            # Check BS2 vereiste
+            if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
+                continue
+            
             # Check eigen team
-            eigen_teams_scheids = scheids.get("eigen_teams", [])
-            is_eigen_thuis = any(team_match(item["thuisteam"], et) for et in eigen_teams_scheids)
-            is_eigen_uit = any(team_match(item["uitteam"], et) for et in eigen_teams_scheids)
+            is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams_scheids)
+            is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams_scheids)
             if is_eigen_thuis or is_eigen_uit:
                 continue
             
             # Check tijdsoverlap met eigen wedstrijd
-            item_datum = item["wed_datum"]
-            if heeft_eigen_wedstrijd(nbb, item_datum, wedstrijden, scheidsrechters):
+            if heeft_eigen_wedstrijd(nbb, wed["wed_datum"], wedstrijden, scheidsrechters):
                 continue
             
             kan_minstens_een = True
@@ -2783,8 +2806,7 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
             continue
         
         # Haal teams van deze scheidsrechter
-        eigen_teams = scheids.get("eigen_teams", [])
-        for team in eigen_teams:
+        for team in eigen_teams_scheids:
             if team not in teams_met_niveau:
                 teams_met_niveau[team] = niveau_1e
             else:
