@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.23.9"
-APP_VERSIE_DATUM = "2026-01-08"
+APP_VERSIE = "1.24.0"
+APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.24.0 (2026-01-09)
+**Verbeterde wedstrijd filtering:**
+- 🚫 Wedstrijden waar je niet op kunt inschrijven worden verborgen
+- 🔒 BS2-vereiste wedstrijden niet meer zichtbaar zonder BS2 diploma
+- 👁️ Alleen zichtbaar via "Hele overzicht" filter
+
 ### v1.23.9 (2026-01-08)
 **Wedstrijden verplaatsen bij NBB sync:**
 - 🔄 Detecteert wedstrijden die verplaatst zijn naar nieuwe datum
@@ -4259,9 +4265,9 @@ def toon_speler_view(nbb_nummer: str):
                     deadline_open, is_weekend_uitzondering = is_inschrijving_open_incl_weekend(wed_datum, wed)
                     kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked and deadline_open
                     
-                    # MSE's kunnen ook begeleiden (zonder te fluiten)
+                    # MSE's kunnen ook begeleiden (zonder te fluiten), maar alleen als ze BS2 hebben voor MSE wedstrijden
                     kan_begeleiden = False
-                    if is_mse and not heeft_eigen and not heeft_overlap and not al_ingeschreven:
+                    if is_mse and not heeft_eigen and not heeft_overlap and not al_ingeschreven and not bs2_blocked:
                         al_begeleider = wed.get("begeleider") == nbb_nummer
                         heeft_begeleider = wed.get("begeleider") is not None
                         if not al_begeleider and not heeft_begeleider:
