@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.7"
+APP_VERSIE = "1.25.8"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.8 (2026-01-09)
+**Fix dag-indicator v2:**
+- 🐛 Fix: "type" veld werd overschreven door wedstrijd data
+- 🎯 Dag-indicator toont nu correct de laagste pool kleur
+
 ### v1.25.7 (2026-01-09)
 **Fix dag-indicator:**
 - 🐛 Dag-indicator toont nu laagste pool van alle getoonde wedstrijden
@@ -4599,12 +4604,12 @@ def toon_speler_view(nbb_nummer: str):
                     
                     alle_items.append({
                         "id": wed_id,
-                        "type": "fluiten",
                         "datum": wed["datum"],
                         "wed_datum": wed_datum,
                         "kan_inschrijven": kan_inschrijven,
                         "is_weekend_uitzondering": is_weekend_uitzondering,
-                        **wed
+                        **wed,
+                        "type": "fluiten",  # Na **wed zodat het niet overschreven wordt
                     })
     
         # Sorteer chronologisch
@@ -4647,11 +4652,22 @@ def toon_speler_view(nbb_nummer: str):
                 # Bereken beschikbare teams en dag-indicator
                 beschikbare_teams = get_beschikbare_teams_voor_dag(wed_datum, dag_items, wedstrijden, scheidsrechters)
                 teams_tekst = format_beschikbare_teams(beschikbare_teams)
+                
+                # Debug: bereken pool voor elke fluiten wedstrijd
+                fluiten_pools = []
+                for item in dag_items:
+                    if item.get("type") == "fluiten":
+                        p = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
+                        fluiten_pools.append(p)
+                
                 dag_emoji, dag_kleur = bereken_dag_indicator(dag_items, wedstrijden, scheidsrechters, nbb_nummer)
+                
+                # Debug info
+                debug_info = f"[{len(dag_items)} items, {len(fluiten_pools)} fluiten, pools: {fluiten_pools}]"
                 
                 st.markdown(f"""
                 <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                    <div><strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}</div>
+                    <div><strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst} <small style="opacity:0.7">{debug_info}</small></div>
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <span style="font-size: 0.85rem; opacity: 0.9;">{teams_tekst}</span>
                         <span style="font-size: 1.1rem;">{dag_emoji}</span>
