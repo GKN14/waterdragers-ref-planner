@@ -4652,22 +4652,11 @@ def toon_speler_view(nbb_nummer: str):
                 # Bereken beschikbare teams en dag-indicator
                 beschikbare_teams = get_beschikbare_teams_voor_dag(wed_datum, dag_items, wedstrijden, scheidsrechters)
                 teams_tekst = format_beschikbare_teams(beschikbare_teams)
-                
-                # Debug: bereken pool voor elke fluiten wedstrijd
-                fluiten_pools = []
-                for item in dag_items:
-                    if item.get("type") == "fluiten":
-                        p = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
-                        fluiten_pools.append(p)
-                
                 dag_emoji, dag_kleur = bereken_dag_indicator(dag_items, wedstrijden, scheidsrechters, nbb_nummer)
-                
-                # Debug info
-                debug_info = f"[{len(dag_items)} items, {len(fluiten_pools)} fluiten, pools: {fluiten_pools}]"
                 
                 st.markdown(f"""
                 <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                    <div><strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst} <small style="opacity:0.7">{debug_info}</small></div>
+                    <div><strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}</div>
                     <div style="display: flex; align-items: center; gap: 12px;">
                         <span style="font-size: 0.85rem; opacity: 0.9;">{teams_tekst}</span>
                         <span style="font-size: 1.1rem;">{dag_emoji}</span>
