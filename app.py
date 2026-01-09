@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.6"
+APP_VERSIE = "1.25.7"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.7 (2026-01-09)
+**Fix dag-indicator:**
+- 🐛 Dag-indicator toont nu laagste pool van alle getoonde wedstrijden
+- 🎯 Consistentie: dag-kleur komt nu overeen met wedstrijd-kleuren
+
 ### v1.25.6 (2026-01-09)
 **Uitsluiten van pool optie:**
 - 🧪 Nieuwe optie: "Uitsluiten van pool" voor test/reserve spelers
@@ -2873,28 +2878,20 @@ def format_beschikbare_teams(teams: list[str], max_tonen: int = 3) -> str:
 
 def bereken_dag_indicator(dag_items: list, wedstrijden: dict, scheidsrechters: dict, nbb_nummer: str) -> tuple[str, str]:
     """
-    Bereken de dag-indicator op basis van de laagste pool van wedstrijden
-    die relevant zijn voor de ingelogde speler.
+    Bereken de dag-indicator op basis van de laagste pool van alle getoonde wedstrijden.
     Returns: (emoji, css_kleur)
     """
-    scheids = scheidsrechters.get(nbb_nummer, {})
-    eigen_niveau = scheids.get("niveau_1e_scheids", 1)
-    
     laagste_pool = float('inf')
     
     for item in dag_items:
         if item.get("type") != "fluiten":
             continue
         
-        wed_niveau = item.get("niveau", 1)
-        
-        # Alleen wedstrijden meetellen waar deze speler voor in aanmerking komt
-        if wed_niveau <= eigen_niveau:
-            pool = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
-            laagste_pool = min(laagste_pool, pool)
+        pool = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
+        laagste_pool = min(laagste_pool, pool)
     
     if laagste_pool == float('inf'):
-        return "🟢", "#4CAF50"  # Geen relevante wedstrijden
+        return "🟢", "#4CAF50"  # Geen wedstrijden om te fluiten
     
     return get_pool_indicator(laagste_pool)
 
