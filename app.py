@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.26.0"
+APP_VERSIE = "1.27.0"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.27.0 (2026-01-09)
+**Pool Bonus uitleg & opschoning:**
+- 📋 Pool bonus uitleg toegevoegd aan "Punten & Strikes" expander
+- 🧹 Bonuspunten verwijderd uit pool badge (te druk) - bonus staat nu in uitleg
+- 🎯 Pool badge toont alleen nog het pool getal
+
 ### v1.26.0 (2026-01-09)
 **Pool Bonus - Beloning voor kritieke wedstrijden:**
 - 🏆 Nieuwe bonus: extra punten voor inschrijven op wedstrijden met kleine pool
@@ -4759,18 +4765,6 @@ def toon_speler_view(nbb_nummer: str):
                             pool_size = bereken_pool_voor_wedstrijd(wed["id"], wedstrijden, scheidsrechters)
                             pool_emoji, pool_kleur = get_pool_indicator(pool_size)
                             
-                            # Bereken pool bonus
-                            beloningsinst = laad_beloningsinstellingen()
-                            pool_bonus_preview = 0
-                            if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
-                                pool_bonus_preview = beloningsinst.get("punten_pool_kritiek", 3)
-                            elif pool_size <= beloningsinst.get("pool_zeer_krap_grens", 5):
-                                pool_bonus_preview = beloningsinst.get("punten_pool_zeer_krap", 2)
-                            elif pool_size <= beloningsinst.get("pool_krap_grens", 8):
-                                pool_bonus_preview = beloningsinst.get("punten_pool_krap", 1)
-                            
-                            bonus_tekst = f"<div style='font-size: 0.7rem; color: #ff6600; font-weight: bold;'>+{pool_bonus_preview}🏆</div>" if pool_bonus_preview > 0 else ""
-                            
                             # Bepaal achtergrondkleur voor pool-badge
                             if pool_size < 5:
                                 pool_bg = "#ffebee"  # Licht rood
@@ -4791,7 +4785,6 @@ def toon_speler_view(nbb_nummer: str):
                                     <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
                                         <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
                                         <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
-                                        {bonus_tekst}
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -4803,7 +4796,6 @@ def toon_speler_view(nbb_nummer: str):
                                     <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
                                         <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
                                         <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
-                                        {bonus_tekst}
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
