@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.24.2"
+APP_VERSIE = "1.25.0"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.0 (2026-01-09)
+**Pool-indicator & Inschrijfadvies:**
+- 🎯 Pool-indicator per wedstrijd toont aantal beschikbare scheidsrechters
+- 🔴🟠🟢 Kleurcodering: Kritiek (<5), Krap (5-8), Ruim (>8)
+- 📋 Dag-header toont welke teams die dag kunnen fluiten
+- 💡 Spelers zien direct waar hun inschrijving het meest nodig is
+
 ### v1.24.2 (2026-01-09)
 **Bugfix weekend overzicht:**
 - 🔄 Overzicht update nu correct bij wisselen van weekend
@@ -2607,6 +2614,187 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     ))
 
 # ============================================================
+# POOL-INDICATOR FUNCTIES
+# ============================================================
+
+def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> int:
+    """
+    Bereken het aantal scheidsrechters dat beschikbaar is voor een wedstrijd.
+    Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap.
+    """
+    if wed_id not in wedstrijden:
+        return 0
+    
+    wed = wedstrijden[wed_id]
+    wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+    wed_niveau = wed.get("niveau", 1)
+    
+    pool_count = 0
+    for nbb, scheids in scheidsrechters.items():
+        niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        
+        # Check BS2 vereiste
+        if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
+            continue
+        
+        # Check niveau (moet op of boven wedstrijdniveau kunnen fluiten)
+        if wed_niveau > niveau_1e:
+            continue
+        
+        # Check eigen team
+        eigen_teams_scheids = scheids.get("eigen_teams", [])
+        is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams_scheids)
+        is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams_scheids)
+        if is_eigen_thuis or is_eigen_uit:
+            continue
+        
+        # Check zondag
+        if scheids.get("niet_op_zondag", False) and wed_datum.weekday() == 6:
+            continue
+        
+        # Check blessure status
+        geblesseerd_tm = scheids.get("geblesseerd_tm", "")
+        if geblesseerd_tm:
+            try:
+                maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                              "juli", "augustus", "september", "oktober", "november", "december"]
+                delen = geblesseerd_tm.split()
+                if len(delen) == 2:
+                    maand_naam, jaar = delen[0].lower(), int(delen[1])
+                    if maand_naam in maand_namen:
+                        blessure_maand = maand_namen.index(maand_naam) + 1
+                        if (wed_datum.year < jaar or 
+                            (wed_datum.year == jaar and wed_datum.month <= blessure_maand)):
+                            continue
+            except:
+                pass
+        
+        # Check geblokkeerde dagen
+        geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
+        if geblokkeerde_dagen:
+            wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+            if wed_dag_str in geblokkeerde_dagen:
+                continue
+        
+        # Check of scheidsrechter op dit tijdstip een eigen wedstrijd heeft
+        if heeft_eigen_wedstrijd(nbb, wed_datum, wedstrijden, scheidsrechters):
+            continue
+        
+        pool_count += 1
+    
+    return pool_count
+
+
+def get_pool_indicator(pool_size: int) -> tuple[str, str]:
+    """
+    Bepaal de kleur-indicator op basis van pool-grootte.
+    Returns: (emoji, css_kleur)
+    """
+    if pool_size < 5:
+        return "🔴", "#f44336"  # Kritiek
+    elif pool_size <= 8:
+        return "🟠", "#FF9800"  # Krap
+    else:
+        return "🟢", "#4CAF50"  # Ruim
+
+
+def get_beschikbare_teams_voor_dag(dag_datum: datetime, wedstrijden: dict, scheidsrechters: dict) -> list[str]:
+    """
+    Bepaal welke teams op een bepaalde dag kunnen fluiten.
+    Returns een lijst van teamnamen, gesorteerd op niveau (hoogste eerst).
+    """
+    teams_met_niveau = {}
+    
+    for nbb, scheids in scheidsrechters.items():
+        niveau_1e = scheids.get("niveau_1e_scheids", 1)
+        
+        # Check zondag
+        if scheids.get("niet_op_zondag", False) and dag_datum.weekday() == 6:
+            continue
+        
+        # Check blessure status
+        geblesseerd_tm = scheids.get("geblesseerd_tm", "")
+        if geblesseerd_tm:
+            try:
+                maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                              "juli", "augustus", "september", "oktober", "november", "december"]
+                delen = geblesseerd_tm.split()
+                if len(delen) == 2:
+                    maand_naam, jaar = delen[0].lower(), int(delen[1])
+                    if maand_naam in maand_namen:
+                        blessure_maand = maand_namen.index(maand_naam) + 1
+                        if (dag_datum.year < jaar or 
+                            (dag_datum.year == jaar and dag_datum.month <= blessure_maand)):
+                            continue
+            except:
+                pass
+        
+        # Check geblokkeerde dagen
+        geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
+        if geblokkeerde_dagen:
+            dag_str = dag_datum.strftime("%Y-%m-%d")
+            if dag_str in geblokkeerde_dagen:
+                continue
+        
+        # Haal teams van deze scheidsrechter
+        eigen_teams = scheids.get("eigen_teams", [])
+        for team in eigen_teams:
+            if team not in teams_met_niveau:
+                teams_met_niveau[team] = niveau_1e
+            else:
+                # Houd hoogste niveau bij voor dit team
+                teams_met_niveau[team] = max(teams_met_niveau[team], niveau_1e)
+    
+    # Sorteer op niveau (hoogste eerst) en dan alfabetisch
+    gesorteerd = sorted(teams_met_niveau.items(), key=lambda x: (-x[1], x[0]))
+    return [team for team, niveau in gesorteerd]
+
+
+def format_beschikbare_teams(teams: list[str], max_tonen: int = 3) -> str:
+    """
+    Formatteer de lijst van beschikbare teams voor weergave.
+    Toont max_tonen teams en dan +X voor de rest.
+    """
+    if not teams:
+        return ""
+    
+    if len(teams) <= max_tonen:
+        return ", ".join(teams)
+    else:
+        getoonde = ", ".join(teams[:max_tonen])
+        rest = len(teams) - max_tonen
+        return f"{getoonde} +{rest}"
+
+
+def bereken_dag_indicator(dag_items: list, wedstrijden: dict, scheidsrechters: dict, nbb_nummer: str) -> tuple[str, str]:
+    """
+    Bereken de dag-indicator op basis van de laagste pool van wedstrijden
+    die relevant zijn voor de ingelogde speler.
+    Returns: (emoji, css_kleur)
+    """
+    scheids = scheidsrechters.get(nbb_nummer, {})
+    eigen_niveau = scheids.get("niveau_1e_scheids", 1)
+    
+    laagste_pool = float('inf')
+    
+    for item in dag_items:
+        if item.get("type") != "fluiten":
+            continue
+        
+        wed_niveau = item.get("niveau", 1)
+        
+        # Alleen wedstrijden meetellen waar deze speler voor in aanmerking komt
+        if wed_niveau <= eigen_niveau:
+            pool = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
+            laagste_pool = min(laagste_pool, pool)
+    
+    if laagste_pool == float('inf'):
+        return "🟢", "#4CAF50"  # Geen relevante wedstrijden
+    
+    return get_pool_indicator(laagste_pool)
+
+
+# ============================================================
 # SPELER VIEW
 # ============================================================
 
@@ -4353,9 +4541,19 @@ def toon_speler_view(nbb_nummer: str):
             
                 # Dag header met gekleurde balk
                 buiten_tekst = " *(buiten periode)*" if buiten_doelmaand else ""
+                
+                # Bereken beschikbare teams en dag-indicator
+                beschikbare_teams = get_beschikbare_teams_voor_dag(wed_datum, wedstrijden, scheidsrechters)
+                teams_tekst = format_beschikbare_teams(beschikbare_teams)
+                dag_emoji, dag_kleur = bereken_dag_indicator(dag_items, wedstrijden, scheidsrechters, nbb_nummer)
+                
                 st.markdown(f"""
-                <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem;">
-                    <strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}
+                <div style="background-color: {header_kleur}; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <div><strong>📆 {dag_naam} {wed_datum.strftime('%d-%m-%Y')}</strong>{buiten_tekst}</div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 0.85rem; opacity: 0.9;">{teams_tekst}</span>
+                        <span style="font-size: 1.1rem;">{dag_emoji}</span>
+                    </div>
                 </div>
                 <div style="background-color: {bg_kleur}; padding: 0.5rem; border-radius: 0 0 0.5rem 0.5rem; margin-bottom: 1rem;">
                 </div>
@@ -4389,19 +4587,42 @@ def toon_speler_view(nbb_nummer: str):
                             # Bepaal status voor 2e scheidsrechter  
                             status_2e = bepaal_scheids_status(nbb_nummer, wed, scheids, wedstrijden, scheidsrechters, als_eerste=False)
                         
+                            # Bereken pool-indicator voor deze wedstrijd
+                            pool_size = bereken_pool_voor_wedstrijd(wed["id"], wedstrijden, scheidsrechters)
+                            pool_emoji, pool_kleur = get_pool_indicator(pool_size)
+                            
+                            # Bepaal achtergrondkleur voor pool-badge
+                            if pool_size < 5:
+                                pool_bg = "#ffebee"  # Licht rood
+                                pool_text = "#c62828"
+                            elif pool_size <= 8:
+                                pool_bg = "#fff3e0"  # Licht oranje
+                                pool_text = "#e65100"
+                            else:
+                                pool_bg = "#e8f5e9"  # Licht groen
+                                pool_text = "#2e7d32"
+                        
                             # Fluitwedstrijd - prominenter als op eigen niveau
                             if is_eigen_niveau:
-                                # Eigen niveau: groene box met ster
+                                # Eigen niveau: groene box met ster + pool indicator
                                 st.markdown(f"""
-                                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
-                                    ⭐ <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <strong>Niveau {wed['niveau']}</strong> <em>(jouw niveau)</em>
+                                <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>⭐ <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <strong>Niveau {wed['niveau']}</strong> <em>(jouw niveau)</em></div>
+                                    <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
+                                        <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
+                                        <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
+                                    </div>
                                 </div>
                                 """, unsafe_allow_html=True)
                             else:
-                                # Onder eigen niveau: grijze box (minder prominent)
+                                # Onder eigen niveau: grijze box (minder prominent) + pool indicator
                                 st.markdown(f"""
-                                <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0;">
-                                    🏀 <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <em>Niveau {wed['niveau']}</em>
+                                <div style="background-color: #f0f2f6; border-left: 4px solid #6c757d; padding: 0.75rem; border-radius: 0 0.5rem 0.5rem 0; margin: 0.5rem 0; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>🏀 <strong>{item_datum.strftime('%H:%M')}</strong> · {wed['thuisteam']} - {wed['uitteam']} · <em>Niveau {wed['niveau']}</em></div>
+                                    <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
+                                        <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
+                                        <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
+                                    </div>
                                 </div>
                                 """, unsafe_allow_html=True)
                         
