@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.8"
+APP_VERSIE = "1.25.9"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.9 (2026-01-09)
+**Pool telt toegewezen scheidsrechters niet mee:**
+- 🐛 Fix: scheidsrechters die al aan deze wedstrijd zijn toegewezen tellen niet meer mee in pool
+- 🎯 Pool toont nu correct het aantal nog beschikbare scheidsrechters
+
 ### v1.25.8 (2026-01-09)
 **Fix dag-indicator v2:**
 - 🐛 Fix: "type" veld werd overschreven door wedstrijd data
@@ -2674,6 +2679,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
     for nbb, scheids in scheidsrechters.items():
         # Check of uitgesloten van pool (testgebruikers, reserves)
         if scheids.get("uitgesloten_van_pool", False):
+            continue
+        
+        # Check of al toegewezen aan deze wedstrijd
+        if wed.get("scheids_1") == nbb or wed.get("scheids_2") == nbb:
             continue
         
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
