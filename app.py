@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.9"
+APP_VERSIE = "1.25.10"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.25.10 (2026-01-09)
+**Dag-indicator negeert volledig bezette wedstrijden:**
+- 🎯 Wedstrijden met beide scheidsrechters ingevuld tellen niet mee voor dag-indicator
+- ✅ Als alle wedstrijden op een dag bezet zijn, wordt de dag groen
+
 ### v1.25.9 (2026-01-09)
 **Pool telt toegewezen scheidsrechters niet mee:**
 - 🐛 Fix: scheidsrechters die al aan deze wedstrijd zijn toegewezen tellen niet meer mee in pool
@@ -57,11 +62,6 @@ APP_CHANGELOG = """
 **Fix bulk annulering:**
 - 🐛 Kritieke fix: bulk annulering slaat nu per wedstrijd op (voorkomt race conditions)
 - 🔒 Voorheen kon bulk save andere wijzigingen overschrijven
-
-### v1.25.3 (2026-01-09)
-**Pool-berekening verbeterd:**
-- 🔄 Ingeschreven scheidsrechters worden nu uit pool van overlappende wedstrijden gehaald
-- 🎯 Als MSE zich inschrijft voor 14:30, telt hij niet meer mee in pool van andere 14:30 wedstrijd
 
 ### v1.25.2 (2026-01-09)
 **Bugfix beschikbare teams v2:**
@@ -2892,7 +2892,7 @@ def format_beschikbare_teams(teams: list[str], max_tonen: int = 3) -> str:
 
 def bereken_dag_indicator(dag_items: list, wedstrijden: dict, scheidsrechters: dict, nbb_nummer: str) -> tuple[str, str]:
     """
-    Bereken de dag-indicator op basis van de laagste pool van alle getoonde wedstrijden.
+    Bereken de dag-indicator op basis van de laagste pool van wedstrijden die nog open posities hebben.
     Returns: (emoji, css_kleur)
     """
     laagste_pool = float('inf')
@@ -2901,11 +2901,16 @@ def bereken_dag_indicator(dag_items: list, wedstrijden: dict, scheidsrechters: d
         if item.get("type") != "fluiten":
             continue
         
+        # Skip wedstrijden die volledig bezet zijn (beide scheidsrechters toegewezen)
+        wed = wedstrijden.get(item["id"], {})
+        if wed.get("scheids_1") and wed.get("scheids_2"):
+            continue
+        
         pool = bereken_pool_voor_wedstrijd(item["id"], wedstrijden, scheidsrechters)
         laagste_pool = min(laagste_pool, pool)
     
     if laagste_pool == float('inf'):
-        return "🟢", "#4CAF50"  # Geen wedstrijden om te fluiten
+        return "🟢", "#4CAF50"  # Geen wedstrijden met open posities
     
     return get_pool_indicator(laagste_pool)
 
