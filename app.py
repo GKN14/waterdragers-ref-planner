@@ -24,9 +24,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.25.11"
+APP_VERSIE = "1.26.0"
 APP_VERSIE_DATUM = "2026-01-09"
 APP_CHANGELOG = """
+### v1.26.0 (2026-01-09)
+**Pool Bonus - Beloning voor kritieke wedstrijden:**
+- 🏆 Nieuwe bonus: extra punten voor inschrijven op wedstrijden met kleine pool
+- 🔴 Pool ≤3 (kritiek): +3 punten
+- 🟠 Pool 4-5 (zeer krap): +2 punten  
+- 🟡 Pool 6-8 (krap): +1 punt
+- 👁️ Bonus zichtbaar in pool badge (+X🏆)
+- ⚙️ Grenzen configureerbaar in beloningsinstellingen
+
 ### v1.25.11 (2026-01-09)
 **Verwijder "Open posities" hints:**
 - 🧹 "Open posities" hints verwijderd - pool-indicator is nu de primaire indicator
@@ -57,16 +66,6 @@ APP_CHANGELOG = """
 - 🧪 Nieuwe optie: "Uitsluiten van pool" voor test/reserve spelers
 - 📊 Uitgesloten spelers tellen niet mee in pool-berekening
 - 👁️ Zichtbaar in overzichtstabel en scheidsrechter details
-
-### v1.25.5 (2026-01-09)
-**Geblokkeerde dagen zichtbaar voor TC:**
-- 👁️ Geblokkeerde dagen nu zichtbaar in scheidsrechter details (beheerder view)
-- 📅 Alleen toekomstige blokkades worden getoond
-
-### v1.25.4 (2026-01-09)
-**Fix bulk annulering:**
-- 🐛 Kritieke fix: bulk annulering slaat nu per wedstrijd op (voorkomt race conditions)
-- 🔒 Voorheen kon bulk save andere wijzigingen overschrijven
 
 ### v1.25.2 (2026-01-09)
 **Bugfix beschikbare teams v2:**
@@ -951,6 +950,14 @@ DEFAULT_BELONINGSINSTELLINGEN = {
     "punten_inval_24u": 5,
     "punten_voor_voucher": 15,
     
+    # Pool bonus (kritieke wedstrijden)
+    "punten_pool_kritiek": 3,      # Pool ≤ 3
+    "punten_pool_zeer_krap": 2,    # Pool 4-5
+    "punten_pool_krap": 1,         # Pool 6-8
+    "pool_kritiek_grens": 3,       # Pool ≤ deze waarde = kritiek
+    "pool_zeer_krap_grens": 5,     # Pool ≤ deze waarde = zeer krap
+    "pool_krap_grens": 8,          # Pool ≤ deze waarde = krap
+    
     # Strikes
     "strikes_afmelding_48u": 1,
     "strikes_afmelding_24u": 2,
@@ -1491,7 +1498,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
               - "tc": Handmatig toegewezen door TC
               - "uitnodiging": Via MSE begeleidingsuitnodiging
     
-    Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "totaal": int, "details": str, "berekening": dict}
+    Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "pool_bonus": int, "totaal": int, "details": str, "berekening": dict}
     """
     beloningsinst = laad_beloningsinstellingen()
     wed = wedstrijden.get(wed_id, {})
@@ -1517,7 +1524,22 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         inval_info = is_last_minute_inval(wed_id, wed_datum)
         inval_bonus = inval_info["bonus"]
     
-    totaal = basis + lastig + inval_bonus
+    # Pool bonus - beloning voor inschrijven op kritieke wedstrijden
+    pool_bonus = 0
+    pool_size = bereken_pool_voor_wedstrijd(wed_id, wedstrijden, scheidsrechters)
+    pool_categorie = ""
+    
+    if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
+        pool_bonus = beloningsinst.get("punten_pool_kritiek", 3)
+        pool_categorie = "kritiek"
+    elif pool_size <= beloningsinst.get("pool_zeer_krap_grens", 5):
+        pool_bonus = beloningsinst.get("punten_pool_zeer_krap", 2)
+        pool_categorie = "zeer krap"
+    elif pool_size <= beloningsinst.get("pool_krap_grens", 8):
+        pool_bonus = beloningsinst.get("punten_pool_krap", 1)
+        pool_categorie = "krap"
+    
+    totaal = basis + lastig + inval_bonus + pool_bonus
     
     details = []
     details.append(f"{basis} basis")
@@ -1525,6 +1547,8 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         details.append(f"+{lastig} lastig tijdstip")
     if inval_bonus:
         details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
+    if pool_bonus:
+        details.append(f"+{pool_bonus} {pool_categorie} pool")
     
     # Gedetailleerde berekening voor transparantie
     berekening = {
@@ -1536,6 +1560,8 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "is_inval_48u": uren_tot_wedstrijd < 48,
         "is_inval_24u": uren_tot_wedstrijd < 24,
         "is_lastig_tijdstip": lastig > 0,
+        "pool_size": pool_size,
+        "pool_categorie": pool_categorie,
         "bron": bron,
         "bonus_reden": "vervanging/TC" if bron in ["vervanging", "tc", "uitnodiging"] else "zelf ingeschreven (geen bonus)"
     }
@@ -1544,6 +1570,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "basis": basis,
         "lastig_tijdstip": lastig,
         "inval_bonus": inval_bonus,
+        "pool_bonus": pool_bonus,
         "totaal": totaal,
         "details": ", ".join(details),
         "berekening": berekening
@@ -1762,6 +1789,7 @@ def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, b
         "basis": basis_punten,
         "lastig_tijdstip": lastig_bonus,
         "inval_bonus": inval_bonus,
+        "pool_bonus": 0,  # Niet van toepassing bij no-show vervanging (wedstrijd al gespeeld)
         "totaal": totaal_punten,
         "details": f"{basis_punten} basis, +{inval_bonus} inval (no-show vervanging)" + (f", +{lastig_bonus} lastig tijdstip" if lastig_bonus else ""),
         "berekening": {
@@ -4717,6 +4745,18 @@ def toon_speler_view(nbb_nummer: str):
                             pool_size = bereken_pool_voor_wedstrijd(wed["id"], wedstrijden, scheidsrechters)
                             pool_emoji, pool_kleur = get_pool_indicator(pool_size)
                             
+                            # Bereken pool bonus
+                            beloningsinst = laad_beloningsinstellingen()
+                            pool_bonus_preview = 0
+                            if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
+                                pool_bonus_preview = beloningsinst.get("punten_pool_kritiek", 3)
+                            elif pool_size <= beloningsinst.get("pool_zeer_krap_grens", 5):
+                                pool_bonus_preview = beloningsinst.get("punten_pool_zeer_krap", 2)
+                            elif pool_size <= beloningsinst.get("pool_krap_grens", 8):
+                                pool_bonus_preview = beloningsinst.get("punten_pool_krap", 1)
+                            
+                            bonus_tekst = f"<div style='font-size: 0.7rem; color: #ff6600; font-weight: bold;'>+{pool_bonus_preview}🏆</div>" if pool_bonus_preview > 0 else ""
+                            
                             # Bepaal achtergrondkleur voor pool-badge
                             if pool_size < 5:
                                 pool_bg = "#ffebee"  # Licht rood
@@ -4737,6 +4777,7 @@ def toon_speler_view(nbb_nummer: str):
                                     <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
                                         <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
                                         <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
+                                        {bonus_tekst}
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -4748,6 +4789,7 @@ def toon_speler_view(nbb_nummer: str):
                                     <div style="background: {pool_bg}; color: {pool_text}; padding: 4px 10px; border-radius: 6px; text-align: center; min-width: 50px;">
                                         <div style="font-size: 1.3rem; font-weight: bold;">{pool_size}</div>
                                         <div style="font-size: 0.65rem; text-transform: uppercase;">pool</div>
+                                        {bonus_tekst}
                                     </div>
                                 </div>
                                 """, unsafe_allow_html=True)
