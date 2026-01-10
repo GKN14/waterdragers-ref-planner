@@ -1640,17 +1640,14 @@ def toon_error_met_scroll(melding: str):
     # Toon de error
     st.error(melding)
     
-    # Simpele scroll naar laatste alert
+    # Scroll een stukje omhoog zodat de error zichtbaar wordt
     components.html(
         """
         <script>
             try {
                 setTimeout(function() {
-                    var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
-                    if (alerts && alerts.length > 0) {
-                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                }, 150);
+                    window.parent.scrollBy({ top: -200, behavior: 'smooth' });
+                }, 100);
             } catch(e) { console.log(e); }
         </script>
         """,
@@ -1664,16 +1661,14 @@ def scroll_naar_warning():
     """
     import streamlit.components.v1 as components
     
+    # Scroll een stukje omhoog zodat de warning zichtbaar wordt
     components.html(
         """
         <script>
             try {
                 setTimeout(function() {
-                    var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
-                    if (alerts && alerts.length > 0) {
-                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
-                }, 150);
+                    window.parent.scrollBy({ top: -200, behavior: 'smooth' });
+                }, 100);
             } catch(e) { console.log(e); }
         </script>
         """,
