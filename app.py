@@ -1640,21 +1640,18 @@ def toon_error_met_scroll(melding: str):
     # Toon de error
     st.error(melding)
     
-    # JavaScript om naar het element te scrollen via iframe component
+    # Simpele scroll naar laatste alert
     components.html(
         """
         <script>
-            setTimeout(function() {
-                var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
-                if (alerts.length > 0) {
-                    var lastAlert = alerts[alerts.length - 1];
-                    // Scroll zodat element bovenaan viewport komt, met wat marge
-                    var rect = lastAlert.getBoundingClientRect();
-                    var scrollTop = window.parent.pageYOffset || window.parent.document.documentElement.scrollTop;
-                    var targetY = scrollTop + rect.top - 100; // 100px marge boven element
-                    window.parent.scrollTo({ top: targetY, behavior: 'smooth' });
-                }
-            }, 100);
+            try {
+                setTimeout(function() {
+                    var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+                    if (alerts && alerts.length > 0) {
+                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 150);
+            } catch(e) { console.log(e); }
         </script>
         """,
         height=0
@@ -1670,17 +1667,14 @@ def scroll_naar_warning():
     components.html(
         """
         <script>
-            setTimeout(function() {
-                var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
-                if (alerts.length > 0) {
-                    var lastAlert = alerts[alerts.length - 1];
-                    // Scroll zodat element bovenaan viewport komt, met wat marge
-                    var rect = lastAlert.getBoundingClientRect();
-                    var scrollTop = window.parent.pageYOffset || window.parent.document.documentElement.scrollTop;
-                    var targetY = scrollTop + rect.top - 100; // 100px marge boven element
-                    window.parent.scrollTo({ top: targetY, behavior: 'smooth' });
-                }
-            }, 100);
+            try {
+                setTimeout(function() {
+                    var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+                    if (alerts && alerts.length > 0) {
+                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 150);
+            } catch(e) { console.log(e); }
         </script>
         """,
         height=0
