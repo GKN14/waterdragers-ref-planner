@@ -28,9 +28,10 @@ APP_VERSIE = "1.28.3"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
 ### v1.28.3 (2026-01-10)
-**UX verbetering - Toast notificaties bij conflicten:**
-- 🔔 Toast popup bij "Positie al bezet" melding - altijd zichtbaar ongeacht scrollpositie
+**UX verbetering - Auto-scroll naar foutmeldingen:**
+- 🔄 Scherm scrollt automatisch naar "Positie al bezet" melding
 - ✅ Toegevoegd op alle 6 plekken (speler 1e/2e scheids, TC 1e/2e scheids)
+- 📜 Nieuwe helper functie `toon_error_met_scroll()` voor toekomstig gebruik
 
 ### v1.28.2 (2026-01-10)
 **Bugfix - Race condition melding en None handling:**
@@ -1624,6 +1625,32 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "details": ", ".join(details),
         "berekening": berekening
     }
+
+# ============================================================
+# UI HELPER FUNCTIES
+# ============================================================
+
+def toon_error_met_scroll(melding: str):
+    """
+    Toon een error melding en scroll automatisch naar die melding.
+    Handig wanneer de melding anders buiten beeld zou vallen.
+    """
+    # Unieke ID voor dit error element
+    error_id = f"error_{hash(melding) % 10000}"
+    
+    # Toon de error met een anchor
+    st.markdown(f'<div id="{error_id}"></div>', unsafe_allow_html=True)
+    st.error(melding)
+    
+    # JavaScript om naar het element te scrollen
+    st.markdown(f"""
+    <script>
+        var element = document.getElementById('{error_id}');
+        if (element) {{
+            element.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+        }}
+    </script>
+    """, unsafe_allow_html=True)
 
 # ============================================================
 # AFMELDREGISTRATIE FUNCTIES
@@ -5079,8 +5106,7 @@ def toon_speler_view(nbb_nummer: str):
                                                 
                                                 if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
                                                     naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
-                                                    st.toast(f"Positie al bezet door {naam}!", icon="🚫")
-                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
+                                                    toon_error_met_scroll(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     del st.session_state[bevestig_key]
                                                     st.rerun()
@@ -5102,8 +5128,7 @@ def toon_speler_view(nbb_nummer: str):
                                                 
                                                 if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
                                                     naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
-                                                    st.toast(f"Positie al bezet door {naam}!", icon="🚫")
-                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
+                                                    toon_error_met_scroll(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     if punten_definitief.get('inval_bonus', 0) > 0:
                                                         st.success(f"""
@@ -5186,8 +5211,7 @@ def toon_speler_view(nbb_nummer: str):
                                                 
                                                 if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
                                                     naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
-                                                    st.toast(f"Positie al bezet door {naam}!", icon="🚫")
-                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
+                                                    toon_error_met_scroll(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     del st.session_state[bevestig_key]
                                                     st.rerun()
@@ -5208,8 +5232,7 @@ def toon_speler_view(nbb_nummer: str):
                                                 
                                                 if punten_definitief is None or (isinstance(punten_definitief, dict) and punten_definitief.get("error")):
                                                     naam = punten_definitief.get("huidige_naam", "iemand anders") if isinstance(punten_definitief, dict) else "iemand anders"
-                                                    st.toast(f"Positie al bezet door {naam}!", icon="🚫")
-                                                    st.error(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
+                                                    toon_error_met_scroll(f"⚠️ Deze positie is zojuist door **{naam}** ingenomen. Ververs de pagina.")
                                                 else:
                                                     if punten_definitief.get('inval_bonus', 0) > 0:
                                                         st.success(f"""
@@ -7250,8 +7273,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                         if resultaat is None:
                                             st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
                                         elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
-                                            st.toast(f"Positie al bezet door {resultaat['huidige_naam']}!", icon="🚫")
-                                            st.error(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
+                                            toon_error_met_scroll(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
                                             st.rerun()
                             else:
@@ -7300,8 +7322,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                         if resultaat is None:
                                             st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
                                         elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
-                                            st.toast(f"Positie al bezet door {resultaat['huidige_naam']}!", icon="🚫")
-                                            st.error(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
+                                            toon_error_met_scroll(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
                                             st.rerun()
                             else:
