@@ -1640,15 +1640,21 @@ def toon_error_met_scroll(melding: str):
     # Toon de error
     st.error(melding)
     
-    # JavaScript om naar boven te scrollen via iframe component
-    # Dit werkt betrouwbaarder dan st.markdown met script tags
+    # JavaScript om naar het element te scrollen via iframe component
     components.html(
         """
         <script>
-            // Scroll naar het laatste error element op de pagina
-            window.parent.document.querySelectorAll('[data-testid="stAlert"]').forEach(function(el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            });
+            setTimeout(function() {
+                var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+                if (alerts.length > 0) {
+                    var lastAlert = alerts[alerts.length - 1];
+                    // Scroll zodat element bovenaan viewport komt, met wat marge
+                    var rect = lastAlert.getBoundingClientRect();
+                    var scrollTop = window.parent.pageYOffset || window.parent.document.documentElement.scrollTop;
+                    var targetY = scrollTop + rect.top - 100; // 100px marge boven element
+                    window.parent.scrollTo({ top: targetY, behavior: 'smooth' });
+                }
+            }, 100);
         </script>
         """,
         height=0
@@ -1664,11 +1670,15 @@ def scroll_naar_warning():
     components.html(
         """
         <script>
-            // Kleine vertraging om te wachten tot DOM is bijgewerkt
             setTimeout(function() {
                 var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
                 if (alerts.length > 0) {
-                    alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    var lastAlert = alerts[alerts.length - 1];
+                    // Scroll zodat element bovenaan viewport komt, met wat marge
+                    var rect = lastAlert.getBoundingClientRect();
+                    var scrollTop = window.parent.pageYOffset || window.parent.document.documentElement.scrollTop;
+                    var targetY = scrollTop + rect.top - 100; // 100px marge boven element
+                    window.parent.scrollTo({ top: targetY, behavior: 'smooth' });
                 }
             }, 100);
         </script>
