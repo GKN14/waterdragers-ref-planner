@@ -24,9 +24,18 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.27.1"
-APP_VERSIE_DATUM = "2026-01-09"
+APP_VERSIE = "1.28.0"
+APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
+### v1.28.0 (2026-01-10)
+**Pool blijft stabiel na afmelding:**
+- 🎯 Pool stijgt niet meer onterecht wanneer een scheidsrechter zich afmeldt
+- 📝 Afmeldingen worden nu geregistreerd per wedstrijd
+- 🔙 Scheidsrechters die zich hebben afgemeld kunnen zich alsnog heraanmelden
+- ⚠️ Bij heraanmelding geen bonus (voorkomt gaming)
+- 👀 TC ziet in beheer wie zich eerder had afgemeld (⚠️ indicator)
+- 🔙 In kandidatenlijst toont 🔙 icoon bij eerder afgemelde scheidsrechters
+
 ### v1.27.1 (2026-01-09)
 **KRITIEKE BUGFIX - Ingeschreven wedstrijden niet zichtbaar:**
 - 🐛 Fix: indentatiefout waardoor alleen de laatste ingeschreven wedstrijd werd getoond
@@ -1509,6 +1518,7 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
               - "vervanging": Via vervangingsverzoek van afmelder
               - "tc": Handmatig toegewezen door TC
               - "uitnodiging": Via MSE begeleidingsuitnodiging
+              - "heraanmelding": Speler die zich eerder had afgemeld (GEEN bonussen!)
     
     Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "pool_bonus": int, "totaal": int, "details": str, "berekening": dict}
     """
@@ -1521,14 +1531,20 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     verschil = wed_datum - nu
     uren_tot_wedstrijd = verschil.total_seconds() / 3600
     
-    # Basis punten
+    # NIEUW: Bij heraanmelding krijgt speler alleen basispunten, geen bonussen
+    is_heraanmelding = bron == "heraanmelding"
+    
+    # Basis punten (altijd)
     basis = beloningsinst["punten_per_wedstrijd"]
     
-    # Lastig tijdstip
-    lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
+    # Lastig tijdstip - NIET bij heraanmelding
+    if is_heraanmelding:
+        lastig = 0
+    else:
+        lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
     
     # Last-minute inval bonus - ALLEEN bij vervanging, TC-toewijzing of uitnodiging
-    # Zelf inschrijven geeft geen bonus om "gaming" te voorkomen
+    # Zelf inschrijven en heraanmelding geeft geen bonus
     inval_bonus = 0
     inval_info = {"is_inval": False, "bonus": 0, "uren": 0}
     
@@ -1537,19 +1553,21 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         inval_bonus = inval_info["bonus"]
     
     # Pool bonus - beloning voor inschrijven op kritieke wedstrijden
+    # NIET bij heraanmelding (om gaming te voorkomen: afmelden en dan bonus claimen)
     pool_bonus = 0
     pool_size = bereken_pool_voor_wedstrijd(wed_id, wedstrijden, scheidsrechters)
     pool_categorie = ""
     
-    if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
-        pool_bonus = beloningsinst.get("punten_pool_kritiek", 3)
-        pool_categorie = "kritiek"
-    elif pool_size <= beloningsinst.get("pool_zeer_krap_grens", 5):
-        pool_bonus = beloningsinst.get("punten_pool_zeer_krap", 2)
-        pool_categorie = "zeer krap"
-    elif pool_size <= beloningsinst.get("pool_krap_grens", 8):
-        pool_bonus = beloningsinst.get("punten_pool_krap", 1)
-        pool_categorie = "krap"
+    if not is_heraanmelding:  # Alleen bonus als het geen heraanmelding is
+        if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
+            pool_bonus = beloningsinst.get("punten_pool_kritiek", 3)
+            pool_categorie = "kritiek"
+        elif pool_size <= beloningsinst.get("pool_zeer_krap_grens", 5):
+            pool_bonus = beloningsinst.get("punten_pool_zeer_krap", 2)
+            pool_categorie = "zeer krap"
+        elif pool_size <= beloningsinst.get("pool_krap_grens", 8):
+            pool_bonus = beloningsinst.get("punten_pool_krap", 1)
+            pool_categorie = "krap"
     
     totaal = basis + lastig + inval_bonus + pool_bonus
     
@@ -1561,6 +1579,8 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
     if pool_bonus:
         details.append(f"+{pool_bonus} {pool_categorie} pool")
+    if is_heraanmelding:
+        details.append("(heraanmelding, geen bonus)")
     
     # Gedetailleerde berekening voor transparantie
     berekening = {
@@ -1575,7 +1595,8 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "pool_size": pool_size,
         "pool_categorie": pool_categorie,
         "bron": bron,
-        "bonus_reden": "vervanging/TC" if bron in ["vervanging", "tc", "uitnodiging"] else "zelf ingeschreven (geen bonus)"
+        "is_heraanmelding": is_heraanmelding,
+        "bonus_reden": "heraanmelding (geen bonus)" if is_heraanmelding else ("vervanging/TC" if bron in ["vervanging", "tc", "uitnodiging"] else "zelf ingeschreven (geen bonus)")
     }
     
     return {
@@ -1587,6 +1608,125 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "details": ", ".join(details),
         "berekening": berekening
     }
+
+# ============================================================
+# AFMELDREGISTRATIE FUNCTIES
+# ============================================================
+
+def registreer_afmelding(wed_id: str, nbb_nummer: str, positie: str, wedstrijden: dict) -> bool:
+    """
+    Registreer dat een scheidsrechter zich heeft afgemeld voor een wedstrijd.
+    Dit zorgt ervoor dat:
+    1. De scheidsrechter niet meer meetelt in de pool
+    2. Bij heraanmelding geen bonus wordt gegeven
+    3. TC kan zien wie zich eerder had afgemeld
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        nbb_nummer: NBB nummer van de scheidsrechter die zich afmeldt
+        positie: "scheids_1" of "scheids_2"
+        wedstrijden: Dict van alle wedstrijden
+    
+    Returns:
+        True bij succes
+    """
+    if wed_id not in wedstrijden:
+        return False
+    
+    wed = wedstrijden[wed_id]
+    
+    # Initialiseer afgemeld_door lijst als die nog niet bestaat
+    if "afgemeld_door" not in wed:
+        wed["afgemeld_door"] = []
+    
+    # Check of deze scheidsrechter al in de lijst staat
+    bestaande_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in wed["afgemeld_door"]]
+    if nbb_nummer in bestaande_nbbs:
+        return True  # Al geregistreerd
+    
+    # Voeg afmelding toe met timestamp en positie
+    afmelding = {
+        "nbb": nbb_nummer,
+        "positie": positie,
+        "afgemeld_op": datetime.now().isoformat()
+    }
+    wed["afgemeld_door"].append(afmelding)
+    
+    return True
+
+def is_eerder_afgemeld(wed_id: str, nbb_nummer: str, wedstrijden: dict) -> bool:
+    """
+    Check of een scheidsrechter zich eerder heeft afgemeld voor deze wedstrijd.
+    Gebruikt om te bepalen of bonus moet worden toegekend bij heraanmelding.
+    
+    Returns:
+        True als scheidsrechter zich eerder heeft afgemeld
+    """
+    if wed_id not in wedstrijden:
+        return False
+    
+    wed = wedstrijden[wed_id]
+    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
+    
+    return nbb_nummer in afgemelde_nbbs
+
+def verwijder_afmelding(wed_id: str, nbb_nummer: str, wedstrijden: dict) -> bool:
+    """
+    Verwijder een afmelding wanneer iemand zich heraanmeldt.
+    Wordt aangeroepen wanneer TC of de speler zelf zich heraanmeldt.
+    
+    Returns:
+        True bij succes
+    """
+    if wed_id not in wedstrijden:
+        return False
+    
+    wed = wedstrijden[wed_id]
+    afgemeld_door = wed.get("afgemeld_door", [])
+    
+    # Filter de afmelding van deze scheidsrechter eruit
+    wed["afgemeld_door"] = [
+        a for a in afgemeld_door 
+        if (a.get("nbb") if isinstance(a, dict) else a) != nbb_nummer
+    ]
+    
+    return True
+
+def get_afmeldingen_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> list:
+    """
+    Haal lijst van afmeldingen op voor een wedstrijd, met namen.
+    Voor TC weergave.
+    
+    Returns:
+        Lijst van dicts met nbb, naam, positie, afgemeld_op
+    """
+    if wed_id not in wedstrijden:
+        return []
+    
+    wed = wedstrijden[wed_id]
+    afgemeld_door = wed.get("afgemeld_door", [])
+    
+    resultaat = []
+    for afmelding in afgemeld_door:
+        if isinstance(afmelding, dict):
+            nbb = afmelding.get("nbb")
+            positie = afmelding.get("positie", "onbekend")
+            afgemeld_op = afmelding.get("afgemeld_op", "")
+        else:
+            nbb = afmelding
+            positie = "onbekend"
+            afgemeld_op = ""
+        
+        naam = scheidsrechters.get(nbb, {}).get("naam", f"NBB {nbb}")
+        resultaat.append({
+            "nbb": nbb,
+            "naam": naam,
+            "positie": positie,
+            "afgemeld_op": afgemeld_op
+        })
+    
+    return resultaat
 
 def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict, bron: str = "zelf") -> dict:
     """
@@ -1603,12 +1743,15 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
               - "vervanging": Via vervangingsverzoek van afmelder
               - "tc": Handmatig toegewezen door TC
               - "uitnodiging": Via MSE begeleidingsuitnodiging
+              - "heraanmelding": Speler die zich eerder had afgemeld meldt zich opnieuw aan
     
     Returns:
         dict met punten_info bij succes, None bij fout (positie al bezet)
     
     De punten worden BEREKEND en OPGESLAGEN bij de wedstrijd, maar NIET toegekend aan de speler.
     Punten worden pas toegekend wanneer de TC de wedstrijd bevestigt als "gefloten".
+    
+    BELANGRIJK: Bij heraanmelding (speler had zich eerder afgemeld) wordt GEEN bonus gegeven.
     """
     # KRITIEKE FIX: Laad verse data uit database om race conditions te voorkomen
     verse_wedstrijden = laad_wedstrijden()
@@ -1625,9 +1768,21 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
         huidige_naam = scheidsrechters.get(huidige_scheids, {}).get("naam", f"NBB {huidige_scheids}")
         return {"error": "bezet", "huidige_scheids": huidige_scheids, "huidige_naam": huidige_naam}
     
+    # NIEUW: Check of dit een heraanmelding is (speler had zich eerder afgemeld)
+    was_eerder_afgemeld = is_eerder_afgemeld(wed_id, nbb_nummer, verse_wedstrijden)
+    
+    # Bij heraanmelding: gebruik bron "heraanmelding" om geen bonus te geven
+    effectieve_bron = "heraanmelding" if was_eerder_afgemeld else bron
+    
     # Positie is vrij of al van deze speler - ga door met inschrijving
     # Gebruik verse data voor punten berekening
-    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, verse_wedstrijden, scheidsrechters, bron)
+    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, verse_wedstrijden, scheidsrechters, effectieve_bron)
+    
+    # Markeer in de punten_info dat dit een heraanmelding is
+    if was_eerder_afgemeld:
+        punten_info["is_heraanmelding"] = True
+        punten_info["berekening"]["is_heraanmelding"] = True
+        punten_info["berekening"]["heraanmelding_info"] = "Geen bonus bij heraanmelding na eerdere afmelding"
     
     # Bepaal punten kolom naam
     punten_kolom = "scheids_1_punten_berekend" if positie == "scheids_1" else "scheids_2_punten_berekend"
@@ -1638,6 +1793,24 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     verse_wed[punten_kolom] = punten_info["totaal"]
     verse_wed[details_kolom] = punten_info  # Volledige details voor transparantie
     
+    # Bij heraanmelding: verwijder uit afgemeld_door lijst (zodat pool-berekening weer klopt)
+    # Maar behoud de afmelding info voor TC logging (in een apart veld)
+    if was_eerder_afgemeld:
+        # Bewaar info over heraanmelding voor logging
+        if "heraanmeldingen" not in verse_wed:
+            verse_wed["heraanmeldingen"] = []
+        verse_wed["heraanmeldingen"].append({
+            "nbb": nbb_nummer,
+            "positie": positie,
+            "heraangemeld_op": datetime.now().isoformat()
+        })
+        # Verwijder uit afgemeld_door
+        afgemeld_door = verse_wed.get("afgemeld_door", [])
+        verse_wed["afgemeld_door"] = [
+            a for a in afgemeld_door 
+            if (a.get("nbb") if isinstance(a, dict) else a) != nbb_nummer
+        ]
+    
     # Sla op naar database
     sla_wedstrijd_op(wed_id, verse_wed)
     
@@ -1647,7 +1820,8 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     # Log de inschrijving voor gedragsanalyse
     try:
         wed_datum = datetime.strptime(verse_wed["datum"], "%Y-%m-%d %H:%M")
-        db.log_registratie(nbb_nummer, wed_id, positie, "inschrijven", wed_datum)
+        actie = "heraanmelden" if was_eerder_afgemeld else "inschrijven"
+        db.log_registratie(nbb_nummer, wed_id, positie, actie, wed_datum)
     except:
         pass  # Logging failure mag inschrijving niet blokkeren
     
@@ -2584,6 +2758,10 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
     wed_niveau = wed.get("niveau", 1)
     
+    # NIEUW: Haal lijst van afgemelde scheidsrechters op
+    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
+    
     kandidaten = []
     for nbb, scheids in scheidsrechters.items():
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
@@ -2691,7 +2869,8 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "min_wedstrijden": min_wed,
             "tekort": tekort,
             "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger,
-            "is_passief": huidig_totaal == 0  # Nog nergens voor ingeschreven
+            "is_passief": huidig_totaal == 0,  # Nog nergens voor ingeschreven
+            "is_eerder_afgemeld": nbb in afgemelde_nbbs  # NIEUW: Heeft zich eerder afgemeld
         })
     
     # Sorteer: 
@@ -2712,6 +2891,9 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
     """
     Bereken het aantal scheidsrechters dat beschikbaar is voor een wedstrijd.
     Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap, al ingeschreven.
+    
+    BELANGRIJK: Scheidsrechters die zich hebben afgemeld worden NIET meegeteld in de pool.
+    Dit voorkomt dat de pool onterecht stijgt na een afmelding.
     """
     if wed_id not in wedstrijden:
         return 0
@@ -2719,6 +2901,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
     wed = wedstrijden[wed_id]
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
     wed_niveau = wed.get("niveau", 1)
+    
+    # Haal lijst van afgemelde scheidsrechters op (die tellen niet mee in pool)
+    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
     
     pool_count = 0
     for nbb, scheids in scheidsrechters.items():
@@ -2728,6 +2914,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
         
         # Check of al toegewezen aan deze wedstrijd
         if wed.get("scheids_1") == nbb or wed.get("scheids_2") == nbb:
+            continue
+        
+        # NIEUW: Check of deze scheidsrechter zich heeft afgemeld - die telt niet mee in pool
+        if nbb in afgemelde_nbbs:
             continue
         
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
@@ -4469,6 +4659,10 @@ def toon_speler_view(nbb_nummer: str):
                                         positie = "scheids_1" if wed["rol"] == "1e scheidsrechter" else "scheids_2"
                                         punten_kolom = f"{positie}_punten_berekend"
                                         details_kolom = f"{positie}_punten_details"
+                                        
+                                        # NIEUW: Registreer afmelding VOORDAT we de scheidsrechter verwijderen
+                                        registreer_afmelding(wed["id"], nbb_nummer, positie, wedstrijden)
+                                        
                                         wedstrijden[wed["id"]][positie] = None
                                         wedstrijden[wed["id"]][punten_kolom] = None
                                         wedstrijden[wed["id"]][details_kolom] = None
@@ -4811,6 +5005,9 @@ def toon_speler_view(nbb_nummer: str):
                                     st.markdown(f"🙋 **1e scheids:** Jij")
                                     # Alleen afmelden tonen voor toekomstige wedstrijden
                                     if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_1e_{wed['id']}"):
+                                        # NIEUW: Registreer afmelding VOORDAT we de scheidsrechter verwijderen
+                                        registreer_afmelding(wed["id"], nbb_nummer, "scheids_1", wedstrijden)
+                                        
                                         wedstrijden[wed["id"]]["scheids_1"] = None
                                         wedstrijden[wed["id"]]["scheids_1_punten_berekend"] = None
                                         wedstrijden[wed["id"]]["scheids_1_punten_details"] = None
@@ -4904,6 +5101,9 @@ def toon_speler_view(nbb_nummer: str):
                                     st.markdown(f"🙋 **2e scheids:** Jij")
                                     # Alleen afmelden tonen voor toekomstige wedstrijden
                                     if item_datum > datetime.now() and st.button("❌ Afmelden", key=f"afmeld_2e_{wed['id']}"):
+                                        # NIEUW: Registreer afmelding VOORDAT we de scheidsrechter verwijderen
+                                        registreer_afmelding(wed["id"], nbb_nummer, "scheids_2", wedstrijden)
+                                        
                                         wedstrijden[wed["id"]]["scheids_2"] = None
                                         wedstrijden[wed["id"]]["scheids_2_punten_berekend"] = None
                                         wedstrijden[wed["id"]]["scheids_2_punten_details"] = None
@@ -6980,6 +7180,11 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                 else:
                     col1, col2, col_beg, col3 = st.columns([2, 2, 2, 1])
                     
+                    # Haal afmeldingen op voor deze wedstrijd
+                    afmeldingen = get_afmeldingen_voor_wedstrijd(wed["id"], wedstrijden, scheidsrechters)
+                    afmeldingen_1e = [a for a in afmeldingen if a.get("positie") == "scheids_1"]
+                    afmeldingen_2e = [a for a in afmeldingen if a.get("positie") == "scheids_2"]
+                    
                     with col1:
                         st.write("**1e Scheidsrechter:**")
                         if wed["scheids_1_naam"]:
@@ -6999,9 +7204,15 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                         else:
+                            # NIEUW: Toon afmeldingen voor deze positie
+                            if afmeldingen_1e:
+                                afm_namen = ", ".join([a["naam"] for a in afmeldingen_1e])
+                                st.caption(f"⚠️ Afgemeld: {afm_namen}")
+                            
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
+                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +  # NIEUW: indicator voor eerder afgemeld
                                     ("😴 " if k.get('is_passief') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" + 
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
@@ -7042,9 +7253,15 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                         else:
+                            # NIEUW: Toon afmeldingen voor deze positie
+                            if afmeldingen_2e:
+                                afm_namen = ", ".join([a["naam"] for a in afmeldingen_2e])
+                                st.caption(f"⚠️ Afgemeld: {afm_namen}")
+                            
                             kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
+                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +  # NIEUW: indicator voor eerder afgemeld
                                     ("😴 " if k.get('is_passief') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" +
                                     (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")

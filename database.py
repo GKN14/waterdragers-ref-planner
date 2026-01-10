@@ -900,7 +900,10 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "scheids_1_punten_berekend": data.get("scheids_1_punten_berekend"),
                 "scheids_2_punten_berekend": data.get("scheids_2_punten_berekend"),
                 "scheids_1_punten_details": data.get("scheids_1_punten_details"),
-                "scheids_2_punten_details": data.get("scheids_2_punten_details")
+                "scheids_2_punten_details": data.get("scheids_2_punten_details"),
+                # Afmeldregistratie kolommen (v1.28.0)
+                "afgemeld_door": data.get("afgemeld_door"),  # Lijst van {nbb, positie, afgemeld_op}
+                "heraanmeldingen": data.get("heraanmeldingen")  # Lijst van {nbb, positie, heraangemeld_op}
             }
             records.append(record)
         
@@ -960,7 +963,10 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "scheids_1_punten_berekend": data.get("scheids_1_punten_berekend"),
             "scheids_2_punten_berekend": data.get("scheids_2_punten_berekend"),
             "scheids_1_punten_details": data.get("scheids_1_punten_details"),
-            "scheids_2_punten_details": data.get("scheids_2_punten_details")
+            "scheids_2_punten_details": data.get("scheids_2_punten_details"),
+            # Afmeldregistratie kolommen (v1.28.0)
+            "afgemeld_door": data.get("afgemeld_door"),  # Lijst van {nbb, positie, afgemeld_op}
+            "heraanmeldingen": data.get("heraanmeldingen")  # Lijst van {nbb, positie, heraangemeld_op}
         }
         supabase.table("wedstrijden").upsert(record).execute()
         
