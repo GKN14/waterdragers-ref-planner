@@ -24,7 +24,7 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.0"
+APP_VERSIE = "1.28.0-debug"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
 ### v1.28.0 (2026-01-10)
@@ -1631,6 +1631,7 @@ def registreer_afmelding(wed_id: str, nbb_nummer: str, positie: str, wedstrijden
         True bij succes
     """
     if wed_id not in wedstrijden:
+        st.warning(f"DEBUG: wed_id {wed_id} niet gevonden in wedstrijden")
         return False
     
     wed = wedstrijden[wed_id]
@@ -1642,6 +1643,7 @@ def registreer_afmelding(wed_id: str, nbb_nummer: str, positie: str, wedstrijden
     # Check of deze scheidsrechter al in de lijst staat
     bestaande_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in wed["afgemeld_door"]]
     if nbb_nummer in bestaande_nbbs:
+        st.info(f"DEBUG: Scheidsrechter {nbb_nummer} al geregistreerd als afgemeld")
         return True  # Al geregistreerd
     
     # Voeg afmelding toe met timestamp en positie
@@ -1651,6 +1653,9 @@ def registreer_afmelding(wed_id: str, nbb_nummer: str, positie: str, wedstrijden
         "afgemeld_op": datetime.now().isoformat()
     }
     wed["afgemeld_door"].append(afmelding)
+    
+    # DEBUG: Toon wat er is toegevoegd
+    st.success(f"DEBUG: Afmelding geregistreerd voor {nbb_nummer} op positie {positie}. afgemeld_door is nu: {wed['afgemeld_door']}")
     
     return True
 
@@ -7184,6 +7189,11 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     afmeldingen = get_afmeldingen_voor_wedstrijd(wed["id"], wedstrijden, scheidsrechters)
                     afmeldingen_1e = [a for a in afmeldingen if a.get("positie") == "scheids_1"]
                     afmeldingen_2e = [a for a in afmeldingen if a.get("positie") == "scheids_2"]
+                    
+                    # DEBUG: Toon ruwe afgemeld_door data
+                    raw_afgemeld = wedstrijden.get(wed["id"], {}).get("afgemeld_door", [])
+                    if raw_afgemeld:
+                        st.caption(f"DEBUG: Raw afgemeld_door voor {wed['id']}: {raw_afgemeld}")
                     
                     with col1:
                         st.write("**1e Scheidsrechter:**")
