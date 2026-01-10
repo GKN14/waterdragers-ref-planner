@@ -1632,48 +1632,16 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
 
 def toon_error_met_scroll(melding: str):
     """
-    Toon een error melding en scroll automatisch naar die melding.
-    Handig wanneer de melding anders buiten beeld zou vallen.
+    Toon een error melding.
+    Note: Auto-scroll is verwijderd omdat het niet goed werkt in Streamlit's container model.
     """
-    import streamlit.components.v1 as components
-    
-    # Toon de error
     st.error(melding)
-    
-    # Scroll een stukje omhoog zodat de error zichtbaar wordt
-    components.html(
-        """
-        <script>
-            try {
-                setTimeout(function() {
-                    window.parent.scrollBy({ top: -200, behavior: 'smooth' });
-                }, 100);
-            } catch(e) { console.log(e); }
-        </script>
-        """,
-        height=0
-    )
 
 def scroll_naar_warning():
     """
-    Scroll naar het laatste warning/alert element op de pagina.
-    Handig na het tonen van een bevestigingsdialoog.
+    Placeholder functie - scroll is uitgeschakeld.
     """
-    import streamlit.components.v1 as components
-    
-    # Scroll een stukje omhoog zodat de warning zichtbaar wordt
-    components.html(
-        """
-        <script>
-            try {
-                setTimeout(function() {
-                    window.parent.scrollBy({ top: -200, behavior: 'smooth' });
-                }, 100);
-            } catch(e) { console.log(e); }
-        </script>
-        """,
-        height=0
-    )
+    pass  # Scroll werkt niet goed in Streamlit, dus uitgeschakeld
 
 # ============================================================
 # AFMELDREGISTRATIE FUNCTIES
