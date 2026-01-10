@@ -1648,7 +1648,7 @@ def toon_error_met_scroll(melding: str):
                 setTimeout(function() {
                     var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
                     if (alerts && alerts.length > 0) {
-                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 }, 150);
             } catch(e) { console.log(e); }
@@ -1671,7 +1671,7 @@ def scroll_naar_warning():
                 setTimeout(function() {
                     var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
                     if (alerts && alerts.length > 0) {
-                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 }, 150);
             } catch(e) { console.log(e); }
