@@ -28,10 +28,10 @@ APP_VERSIE = "1.28.3"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
 ### v1.28.3 (2026-01-10)
-**UX verbetering - Auto-scroll naar foutmeldingen:**
-- 🔄 Scherm scrollt automatisch naar "Positie al bezet" melding
-- ✅ Toegevoegd op alle 6 plekken (speler 1e/2e scheids, TC 1e/2e scheids)
-- 📜 Nieuwe helper functie `toon_error_met_scroll()` voor toekomstig gebruik
+**UX verbetering - Auto-scroll naar meldingen:**
+- 🔄 Scherm scrollt automatisch naar "Positie al bezet" error melding
+- 🔄 Scherm scrollt automatisch naar waarschuwing bij lager niveau inschrijving
+- 📜 Nieuwe helper functies `toon_error_met_scroll()` en `scroll_naar_warning()`
 
 ### v1.28.2 (2026-01-10)
 **Bugfix - Race condition melding en None handling:**
@@ -1635,22 +1635,46 @@ def toon_error_met_scroll(melding: str):
     Toon een error melding en scroll automatisch naar die melding.
     Handig wanneer de melding anders buiten beeld zou vallen.
     """
-    # Unieke ID voor dit error element
-    error_id = f"error_{hash(melding) % 10000}"
+    import streamlit.components.v1 as components
     
-    # Toon de error met een anchor
-    st.markdown(f'<div id="{error_id}"></div>', unsafe_allow_html=True)
+    # Toon de error
     st.error(melding)
     
-    # JavaScript om naar het element te scrollen
-    st.markdown(f"""
-    <script>
-        var element = document.getElementById('{error_id}');
-        if (element) {{
-            element.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-        }}
-    </script>
-    """, unsafe_allow_html=True)
+    # JavaScript om naar boven te scrollen via iframe component
+    # Dit werkt betrouwbaarder dan st.markdown met script tags
+    components.html(
+        """
+        <script>
+            // Scroll naar het laatste error element op de pagina
+            window.parent.document.querySelectorAll('[data-testid="stAlert"]').forEach(function(el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        </script>
+        """,
+        height=0
+    )
+
+def scroll_naar_warning():
+    """
+    Scroll naar het laatste warning/alert element op de pagina.
+    Handig na het tonen van een bevestigingsdialoog.
+    """
+    import streamlit.components.v1 as components
+    
+    components.html(
+        """
+        <script>
+            // Kleine vertraging om te wachten tot DOM is bijgewerkt
+            setTimeout(function() {
+                var alerts = window.parent.document.querySelectorAll('[data-testid="stAlert"]');
+                if (alerts.length > 0) {
+                    alerts[alerts.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 100);
+        </script>
+        """,
+        height=0
+    )
 
 # ============================================================
 # AFMELDREGISTRATIE FUNCTIES
@@ -5114,6 +5138,9 @@ def toon_speler_view(nbb_nummer: str):
                                             if st.button("❌ Annuleren", key=f"bevestig_nee_1e_{wed['id']}"):
                                                 del st.session_state[bevestig_key]
                                                 st.rerun()
+                                        
+                                        # Scroll naar deze waarschuwing
+                                        scroll_naar_warning()
                                     else:
                                         # Normale knop, maar bij laag niveau eerst bevestiging vragen
                                     
@@ -5219,6 +5246,9 @@ def toon_speler_view(nbb_nummer: str):
                                             if st.button("❌ Annuleren", key=f"bevestig_nee_2e_{wed['id']}"):
                                                 del st.session_state[bevestig_key]
                                                 st.rerun()
+                                        
+                                        # Scroll naar deze waarschuwing
+                                        scroll_naar_warning()
                                     else:
                                         # Normale knop, maar bij laag niveau eerst bevestiging vragen
                                     
