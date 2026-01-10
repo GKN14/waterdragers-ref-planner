@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.1"
+APP_VERSIE = "1.28.2"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
+### v1.28.2 (2026-01-10)
+**Bugfix - Race condition melding werkt nu correct:**
+- 🐛 Fix: Foutmelding "Positie al bezet" werd niet getoond door sessie-cache
+- 🔄 Nieuwe functie `laad_wedstrijd_vers()` haalt data direct uit database zonder cache
+- ✅ Bij gelijktijdige inschrijving krijgt de tweede speler nu correct een melding
+
 ### v1.28.1 (2026-01-10)
 **Bugfix - TypeError bij nieuwe wedstrijden:**
 - 🐛 Fix: TypeError wanneer afgemeld_door kolom None is (bij nieuwe/oude wedstrijden)
@@ -1750,21 +1756,21 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
               - "heraanmelding": Speler die zich eerder had afgemeld meldt zich opnieuw aan
     
     Returns:
-        dict met punten_info bij succes, None bij fout (positie al bezet)
+        dict met punten_info bij succes, {"error": "bezet", ...} bij race condition
     
     De punten worden BEREKEND en OPGESLAGEN bij de wedstrijd, maar NIET toegekend aan de speler.
     Punten worden pas toegekend wanneer de TC de wedstrijd bevestigt als "gefloten".
     
     BELANGRIJK: Bij heraanmelding (speler had zich eerder afgemeld) wordt GEEN bonus gegeven.
     """
-    # KRITIEKE FIX: Laad verse data uit database om race conditions te voorkomen
-    verse_wedstrijden = laad_wedstrijden()
-    verse_wed = verse_wedstrijden.get(wed_id)
+    # KRITIEKE FIX: Laad verse data uit database ZONDER CACHE om race conditions te voorkomen
+    # Dit haalt de actuele staat direct uit Supabase, niet uit de sessie-cache
+    verse_wed = db.laad_wedstrijd_vers(wed_id)
     
     if not verse_wed:
         return None  # Wedstrijd bestaat niet meer
     
-    # Check of positie nog vrij is
+    # Check of positie nog vrij is (met verse data uit database!)
     huidige_scheids = verse_wed.get(positie)
     if huidige_scheids is not None and huidige_scheids != nbb_nummer:
         # Positie is al bezet door iemand anders!
@@ -1773,14 +1779,16 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
         return {"error": "bezet", "huidige_scheids": huidige_scheids, "huidige_naam": huidige_naam}
     
     # NIEUW: Check of dit een heraanmelding is (speler had zich eerder afgemeld)
-    was_eerder_afgemeld = is_eerder_afgemeld(wed_id, nbb_nummer, verse_wedstrijden)
+    # Gebruik verse_wed in een tijdelijke dict voor de is_eerder_afgemeld check
+    temp_wedstrijden = {wed_id: verse_wed}
+    was_eerder_afgemeld = is_eerder_afgemeld(wed_id, nbb_nummer, temp_wedstrijden)
     
     # Bij heraanmelding: gebruik bron "heraanmelding" om geen bonus te geven
     effectieve_bron = "heraanmelding" if was_eerder_afgemeld else bron
     
     # Positie is vrij of al van deze speler - ga door met inschrijving
     # Gebruik verse data voor punten berekening
-    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, verse_wedstrijden, scheidsrechters, effectieve_bron)
+    punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, wed_id, temp_wedstrijden, scheidsrechters, effectieve_bron)
     
     # Markeer in de punten_info dat dit een heraanmelding is
     if was_eerder_afgemeld:

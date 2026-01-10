@@ -825,6 +825,38 @@ def verwijder_scheidsrechter(nbb_nummer: str) -> bool:
 # WEDSTRIJDEN
 # ============================================================
 
+def laad_wedstrijd_vers(wed_id: str) -> dict:
+    """
+    Laad één wedstrijd vers uit de database, ZONDER cache.
+    Specifiek bedoeld voor race condition checks waar verse data essentieel is.
+    
+    Returns:
+        dict met wedstrijd data, of None als niet gevonden
+    """
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("wedstrijden").select("*").eq("wed_id", wed_id).execute()
+        
+        if not response.data:
+            return None
+        
+        row = response.data[0]
+        row.pop("wed_id", None)
+        
+        # Converteer datum terug naar string formaat
+        if row.get("datum"):
+            dt = datetime.fromisoformat(row["datum"].replace("Z", "+00:00"))
+            row["datum"] = dt.strftime("%Y-%m-%d %H:%M")
+        
+        # Verwijder database metadata velden
+        row.pop("created_at", None)
+        row.pop("updated_at", None)
+        
+        return row
+    except Exception as e:
+        st.error(f"Fout bij laden wedstrijd {wed_id}: {e}")
+        return None
+
 def laad_wedstrijden() -> dict:
     """Laad alle wedstrijden uit Supabase (met caching)"""
     cache_key = "_db_cache_wedstrijden"
