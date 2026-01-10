@@ -969,10 +969,6 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "heraanmeldingen": data.get("heraanmeldingen")  # Lijst van {nbb, positie, heraangemeld_op}
         }
         
-        # DEBUG: Toon wat er wordt opgeslagen
-        if data.get("afgemeld_door"):
-            st.info(f"DEBUG DB: Opslaan wedstrijd {wed_id} met afgemeld_door: {data.get('afgemeld_door')}")
-        
         supabase.table("wedstrijden").upsert(record).execute()
         
         # Update cache in-place (sneller dan volledig herladen)
