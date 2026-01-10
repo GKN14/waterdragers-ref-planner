@@ -28,10 +28,11 @@ APP_VERSIE = "1.28.2"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
 ### v1.28.2 (2026-01-10)
-**Bugfix - Race condition melding werkt nu correct:**
+**Bugfix - Race condition melding en None handling:**
 - 🐛 Fix: Foutmelding "Positie al bezet" werd niet getoond door sessie-cache
 - 🔄 Nieuwe functie `laad_wedstrijd_vers()` haalt data direct uit database zonder cache
 - ✅ Bij gelijktijdige inschrijving krijgt de tweede speler nu correct een melding
+- 🐛 Fix: TypeError bij afmelden wanneer afgemeld_door/heraanmeldingen None is
 
 ### v1.28.1 (2026-01-10)
 **Bugfix - TypeError bij nieuwe wedstrijden:**
@@ -1645,8 +1646,8 @@ def registreer_afmelding(wed_id: str, nbb_nummer: str, positie: str, wedstrijden
     
     wed = wedstrijden[wed_id]
     
-    # Initialiseer afgemeld_door lijst als die nog niet bestaat
-    if "afgemeld_door" not in wed:
+    # Initialiseer afgemeld_door lijst als die nog niet bestaat OF None is
+    if not wed.get("afgemeld_door"):
         wed["afgemeld_door"] = []
     
     # Check of deze scheidsrechter al in de lijst staat
@@ -1809,7 +1810,7 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     # Maar behoud de afmelding info voor TC logging (in een apart veld)
     if was_eerder_afgemeld:
         # Bewaar info over heraanmelding voor logging
-        if "heraanmeldingen" not in verse_wed:
+        if not verse_wed.get("heraanmeldingen"):
             verse_wed["heraanmeldingen"] = []
         verse_wed["heraanmeldingen"].append({
             "nbb": nbb_nummer,
