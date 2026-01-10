@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.0"
+APP_VERSIE = "1.28.1"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
+### v1.28.1 (2026-01-10)
+**Bugfix - TypeError bij nieuwe wedstrijden:**
+- 🐛 Fix: TypeError wanneer afgemeld_door kolom None is (bij nieuwe/oude wedstrijden)
+
 ### v1.28.0 (2026-01-10)
 **Pool blijft stabiel na afmelding:**
 - 🎯 Pool stijgt niet meer onterecht wanneer een scheidsrechter zich afmeldt
@@ -1666,7 +1670,7 @@ def is_eerder_afgemeld(wed_id: str, nbb_nummer: str, wedstrijden: dict) -> bool:
         return False
     
     wed = wedstrijden[wed_id]
-    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemeld_door = wed.get("afgemeld_door") or []
     afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
     
     return nbb_nummer in afgemelde_nbbs
@@ -1683,7 +1687,7 @@ def verwijder_afmelding(wed_id: str, nbb_nummer: str, wedstrijden: dict) -> bool
         return False
     
     wed = wedstrijden[wed_id]
-    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemeld_door = wed.get("afgemeld_door") or []
     
     # Filter de afmelding van deze scheidsrechter eruit
     wed["afgemeld_door"] = [
@@ -1705,7 +1709,7 @@ def get_afmeldingen_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechte
         return []
     
     wed = wedstrijden[wed_id]
-    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemeld_door = wed.get("afgemeld_door") or []  # Fix: None wordt ook []
     
     resultaat = []
     for afmelding in afgemeld_door:
@@ -1805,7 +1809,7 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
             "heraangemeld_op": datetime.now().isoformat()
         })
         # Verwijder uit afgemeld_door
-        afgemeld_door = verse_wed.get("afgemeld_door", [])
+        afgemeld_door = verse_wed.get("afgemeld_door") or []
         verse_wed["afgemeld_door"] = [
             a for a in afgemeld_door 
             if (a.get("nbb") if isinstance(a, dict) else a) != nbb_nummer
@@ -2759,7 +2763,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     wed_niveau = wed.get("niveau", 1)
     
     # NIEUW: Haal lijst van afgemelde scheidsrechters op
-    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemeld_door = wed.get("afgemeld_door") or []
     afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
     
     kandidaten = []
@@ -2903,7 +2907,7 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
     wed_niveau = wed.get("niveau", 1)
     
     # Haal lijst van afgemelde scheidsrechters op (die tellen niet mee in pool)
-    afgemeld_door = wed.get("afgemeld_door", [])
+    afgemeld_door = wed.get("afgemeld_door") or []
     afgemelde_nbbs = [a.get("nbb") if isinstance(a, dict) else a for a in afgemeld_door]
     
     pool_count = 0
