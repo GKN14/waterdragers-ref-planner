@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.3"
+APP_VERSIE = "1.28.4"
 APP_VERSIE_DATUM = "2026-01-10"
 APP_CHANGELOG = """
+### v1.28.4 (2026-01-10)
+**Synchronisatie verbeteringen:**
+- 📅 Alleen toekomstige wedstrijden worden gesynchroniseerd (niet meer verleden)
+- ✅ Geannuleerde wedstrijden worden automatisch heractiveerd bij verplaatsing
+- 🔔 Duidelijke indicatie wanneer annulering wordt opgeheven
+- 📊 Success melding toont aantal heractiveerde wedstrijden
+
 ### v1.28.3 (2026-01-10)
 **UX verbetering - Auto-scroll naar meldingen:**
 - 🔄 Scherm scrollt automatisch naar "Positie al bezet" error melding
@@ -9502,7 +9509,16 @@ def toon_synchronisatie_tab():
             st.warning(f"Geen thuiswedstrijden gevonden voor '{club_naam}' op locatie '{thuislocatie}'")
             return
         
-        st.success(f"📊 {len(df_thuis)} thuiswedstrijden gevonden in NBB bestand")
+        # Filter alleen TOEKOMSTIGE wedstrijden (vandaag of later)
+        vandaag = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        df_thuis["datum_parsed"] = pd.to_datetime(df_thuis["Datum"])
+        df_thuis = df_thuis[df_thuis["datum_parsed"] >= vandaag].copy()
+        
+        if len(df_thuis) == 0:
+            st.warning(f"Geen toekomstige thuiswedstrijden gevonden. Alleen wedstrijden vanaf vandaag worden gesynchroniseerd.")
+            return
+        
+        st.success(f"📊 {len(df_thuis)} toekomstige thuiswedstrijden gevonden in NBB bestand")
         
         # Laad bestaande wedstrijden en scheidsrechters
         wedstrijden = laad_wedstrijden()
@@ -9628,7 +9644,7 @@ def toon_synchronisatie_tab():
                 is_geannuleerd = verplaats["is_geannuleerd"]
                 
                 status_icon = "❌" if is_geannuleerd else "📅"
-                status_tekst = " (GEANNULEERD)" if is_geannuleerd else ""
+                status_tekst = " (GEANNULEERD in BOB)" if is_geannuleerd else ""
                 
                 with st.expander(f"{status_icon} {nbb['thuisteam']} vs {nbb['uitteam']}{status_tekst}", expanded=True):
                     col1, col2, col3 = st.columns(3)
@@ -9636,6 +9652,8 @@ def toon_synchronisatie_tab():
                     with col1:
                         st.write("**BOB (huidig):**")
                         st.write(f"📅 {bob['datum']}")
+                        if is_geannuleerd:
+                            st.write("❌ **GEANNULEERD**")
                         if bob.get("scheids_1") or bob.get("scheids_2"):
                             s1 = scheidsrechters.get(bob.get("scheids_1"), {}).get("naam", "-")
                             s2 = scheidsrechters.get(bob.get("scheids_2"), {}).get("naam", "-")
@@ -9660,13 +9678,16 @@ def toon_synchronisatie_tab():
                                 "negeer": "⏭️ Negeer"
                             }[x],
                             key=f"verplaats_actie_{wed_id}",
-                            index=0 if not is_geannuleerd else 0,  # Default: verplaats
+                            index=0,  # Default: verplaats
                             label_visibility="collapsed"
                         )
+                        if is_geannuleerd and actie == "verplaats":
+                            st.caption("✅ Annulering wordt opgeheven")
                         st.session_state["verplaats_selectie"][wed_id] = {
                             "actie": actie,
                             "nbb": nbb,
-                            "bob": bob
+                            "bob": bob,
+                            "is_geannuleerd": is_geannuleerd
                         }
             
             # Verwerk verplaatsingen
@@ -9675,10 +9696,12 @@ def toon_synchronisatie_tab():
                 if st.button("✅ Voer verplaatsingen uit", key="btn_verplaats", type="primary"):
                     aantal_verplaatst = 0
                     aantal_nieuw = 0
+                    aantal_heractiveerd = 0
                     
                     for wed_id, selectie in st.session_state["verplaats_selectie"].items():
                         actie = selectie["actie"]
                         nbb = selectie["nbb"]
+                        was_geannuleerd = selectie.get("is_geannuleerd", False)
                         
                         if actie == "verplaats":
                             # Update bestaande wedstrijd met nieuwe datum
@@ -9690,6 +9713,8 @@ def toon_synchronisatie_tab():
                             if nbb.get("niveau"):
                                 wedstrijden[wed_id]["niveau"] = nbb["niveau"]
                             aantal_verplaatst += 1
+                            if was_geannuleerd:
+                                aantal_heractiveerd += 1
                             
                         elif actie == "nieuw":
                             # Maak nieuwe wedstrijd
@@ -9713,6 +9738,8 @@ def toon_synchronisatie_tab():
                     msg_parts = []
                     if aantal_verplaatst > 0:
                         msg_parts.append(f"{aantal_verplaatst} verplaatst")
+                    if aantal_heractiveerd > 0:
+                        msg_parts.append(f"{aantal_heractiveerd} heractiveerd")
                     if aantal_nieuw > 0:
                         msg_parts.append(f"{aantal_nieuw} nieuw aangemaakt")
                     
