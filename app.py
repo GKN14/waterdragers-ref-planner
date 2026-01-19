@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.4"
-APP_VERSIE_DATUM = "2026-01-10"
+APP_VERSIE = "1.28.5"
+APP_VERSIE_DATUM = "2026-01-19"
 APP_CHANGELOG = """
+### v1.28.5 (2026-01-19)
+**Bugfix - Blokkade conflicten:**
+- 🔒 Bij blokkeren van een dag wordt nu gecheckt of je al bent ingedeeld
+- ✅ Automatisch uitschrijven bij conflicterende toewijzingen
+- ⚠️ Duidelijke melding welke wedstrijden zijn verwijderd
+
 ### v1.28.4 (2026-01-10)
 **Synchronisatie verbeteringen:**
 - 📅 Alleen toekomstige wedstrijden worden gesynchroniseerd (niet meer verleden)
@@ -3768,6 +3774,59 @@ def toon_speler_view(nbb_nummer: str):
                 
                 # Check of er iets is gewijzigd
                 if set(nieuwe_blokkades) != set(huidige_blokkades):
+                    # Check welke dagen nieuw geblokkeerd worden
+                    nieuw_geblokkeerde_dagen = set(nieuwe_blokkades) - set(huidige_blokkades)
+                    
+                    # Check of speler is ingedeeld op een van de nieuw geblokkeerde dagen
+                    conflicten = []
+                    for dag_str in nieuw_geblokkeerde_dagen:
+                        for wed_id, wed in wedstrijden.items():
+                            if wed.get("type", "thuis") != "thuis":
+                                continue
+                            if wed.get("geannuleerd", False):
+                                continue
+                            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                            wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+                            
+                            if wed_dag_str == dag_str:
+                                # Check of speler is ingedeeld voor deze wedstrijd
+                                positie = None
+                                if wed.get("scheids_1") == nbb_nummer:
+                                    positie = "scheids_1"
+                                elif wed.get("scheids_2") == nbb_nummer:
+                                    positie = "scheids_2"
+                                
+                                if positie:
+                                    conflicten.append({
+                                        "wed_id": wed_id,
+                                        "wed": wed,
+                                        "positie": positie,
+                                        "datum": wed["datum"]
+                                    })
+                    
+                    # Als er conflicten zijn: automatisch uitschrijven
+                    if conflicten:
+                        uitgeschreven_wedstrijden = []
+                        for conflict in conflicten:
+                            wed_id = conflict["wed_id"]
+                            positie = conflict["positie"]
+                            wed = conflict["wed"]
+                            
+                            # Registreer afmelding
+                            registreer_afmelding(wed_id, nbb_nummer, positie, wedstrijden)
+                            
+                            # Verwijder toewijzing
+                            wedstrijden[wed_id][positie] = None
+                            wedstrijden[wed_id][f"{positie}_punten_berekend"] = None
+                            wedstrijden[wed_id][f"{positie}_punten_details"] = None
+                            sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+                            
+                            # Log
+                            uitgeschreven_wedstrijden.append(f"{wed['thuisteam']} vs {wed['uitteam']} ({conflict['datum'][:10]})")
+                        
+                        # Toon melding
+                        st.warning(f"⚠️ Je bent automatisch uitgeschreven voor {len(uitgeschreven_wedstrijden)} wedstrijd(en) op geblokkeerde dag(en):\n" + "\n".join([f"• {w}" for w in uitgeschreven_wedstrijden]))
+                    
                     # Update scheidsrechter data
                     scheids["geblokkeerde_dagen"] = nieuwe_blokkades
                     sla_scheidsrechter_op(nbb_nummer, scheids)
