@@ -24,9 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.28.5"
-APP_VERSIE_DATUM = "2026-01-19"
+APP_VERSIE = "1.29.0"
+APP_VERSIE_DATUM = "2026-01-20"
 APP_CHANGELOG = """
+### v1.29.0 (2026-01-20)
+**Scheidsrechter status & Team overzicht:**
+- 🎯 Nieuwe status optie: "Op te leiden" (voor spelers die nog getraind moeten worden)
+- ⏸️ Nieuwe status optie: "Inactief" (voor spelers die gestopt/pauze hebben)
+- 👥 Nieuw: "Scheidsrechters per team" overzicht in beheer
+- 📋 Kopieerbare tekst per team voor WhatsApp (om te delen met coaches)
+- 🔍 Extra filter op scheidsrechter status
+
 ### v1.28.5 (2026-01-19)
 **Bugfix - Blokkade conflicten:**
 - 🔒 Bij blokkeren van een dag wordt nu gecheckt of je al bent ingedeeld
@@ -894,6 +902,13 @@ BEGELEIDING_REDENEN = [
     "Ik wil richting BS2 diploma",
     "Ik wil beter worden in fluiten",
     "Samen fluiten is gezelliger"
+]
+
+# Status opties voor scheidsrechters
+SCHEIDSRECHTER_STATUS_OPTIES = [
+    "Actief",           # Kan zelfstandig worden ingepland
+    "Op te leiden",     # Moet nog getraind worden door TC-support
+    "Inactief"          # Niet beschikbaar (gestopt, pauze, etc.)
 ]
 
 def team_match(volledig_team: str, eigen_team: str) -> bool:
@@ -7583,7 +7598,7 @@ def toon_scheidsrechters_beheer():
     
     # Filters
     st.write("**Filters:**")
-    col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
+    col_filter1, col_filter2, col_filter3, col_filter4, col_filter5 = st.columns(5)
     
     with col_filter1:
         niveau_filter = st.selectbox(
@@ -7594,19 +7609,26 @@ def toon_scheidsrechters_beheer():
     
     with col_filter2:
         status_filter = st.selectbox(
-            "Filter op status",
+            "Filter op wedstrijden",
             options=["Alle", "Voldoet niet aan minimum", "Voldoet aan minimum"],
             key="scheids_status_filter"
         )
     
     with col_filter3:
+        scheids_status_filter = st.selectbox(
+            "Filter op status",
+            options=["Alle", "🎯 Op te leiden", "✅ Actief", "⏸️ Inactief"],
+            key="scheids_scheids_status_filter"
+        )
+    
+    with col_filter4:
         bs2_filter = st.selectbox(
             "Filter op BS2",
             options=["Alle", "Met BS2 diploma", "Zonder BS2 diploma"],
             key="scheids_bs2_filter"
         )
     
-    with col_filter4:
+    with col_filter5:
         begeleiding_filter = st.selectbox(
             "Filter op begeleiding",
             options=["Alle", "🎓 Open voor begeleiding", "Niet open"],
@@ -7634,6 +7656,16 @@ def toon_scheidsrechters_beheer():
         if begeleiding_filter == "Niet open" and scheids.get("open_voor_begeleiding", False):
             continue
         
+        # Scheidsrechter status filter
+        if scheids_status_filter != "Alle":
+            scheids_status = scheids.get("scheids_status", "Actief")
+            if scheids_status_filter == "🎯 Op te leiden" and scheids_status != "Op te leiden":
+                continue
+            if scheids_status_filter == "✅ Actief" and scheids_status != "Actief":
+                continue
+            if scheids_status_filter == "⏸️ Inactief" and scheids_status != "Inactief":
+                continue
+        
         # Status filter (moet na niveau check want we gebruiken niveau_stats)
         if status_filter != "Alle":
             niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
@@ -7660,6 +7692,10 @@ def toon_scheidsrechters_beheer():
         niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
         speler_stats = get_speler_stats(nbb)
         
+        # Status icoon bepalen
+        status = scheids.get("scheids_status", "Actief")
+        status_icon = {"Actief": "", "Op te leiden": "🎯", "Inactief": "⏸️"}.get(status, "")
+        
         overzicht_data.append({
             "Naam": scheids.get("naam", "?"),
             "Niveau": scheids.get("niveau_1e_scheids", 1),
@@ -7671,6 +7707,7 @@ def toon_scheidsrechters_beheer():
             "🎓": "✓" if scheids.get("open_voor_begeleiding", False) else "",
             "🤕": "✓" if scheids.get("geblesseerd_tm") else "",
             "🧪": "✓" if scheids.get("uitgesloten_van_pool", False) else "",
+            "🎯": status_icon,
         })
     
     if overzicht_data:
@@ -7696,11 +7733,17 @@ def toon_scheidsrechters_beheer():
         
         st.dataframe(df, use_container_width=True, hide_index=True)
         
-        # Tel spelers open voor begeleiding
+        # Tel spelers per categorie
         open_voor_begeleiding_count = sum(1 for d in overzicht_data if d["🎓"] == "✓")
         geblesseerd_count = sum(1 for d in overzicht_data if d["🤕"] == "✓")
         uitgesloten_count = sum(1 for d in overzicht_data if d["🧪"] == "✓")
+        op_te_leiden_count = sum(1 for d in overzicht_data if d["🎯"] == "🎯")
+        inactief_count = sum(1 for d in overzicht_data if d["🎯"] == "⏸️")
         legenda_items = []
+        if op_te_leiden_count > 0:
+            legenda_items.append(f"🎯 = Op te leiden ({op_te_leiden_count})")
+        if inactief_count > 0:
+            legenda_items.append(f"⏸️ = Inactief ({inactief_count})")
         if open_voor_begeleiding_count > 0:
             legenda_items.append(f"🎓 = Open voor begeleiding ({open_voor_begeleiding_count})")
         if geblesseerd_count > 0:
@@ -7751,6 +7794,20 @@ def toon_scheidsrechters_beheer():
                     col1, col2 = st.columns(2)
                     with col1:
                         nieuwe_naam = st.text_input("Naam", value=str(scheids.get("naam", "") or ""), key=f"naam_{nbb}")
+                        
+                        # Status van scheidsrechter
+                        huidige_status = scheids.get("scheids_status", "Actief")
+                        if huidige_status not in SCHEIDSRECHTER_STATUS_OPTIES:
+                            huidige_status = "Actief"
+                        status_idx = SCHEIDSRECHTER_STATUS_OPTIES.index(huidige_status)
+                        scheids_status = st.selectbox(
+                            "Status",
+                            options=SCHEIDSRECHTER_STATUS_OPTIES,
+                            index=status_idx,
+                            key=f"status_{nbb}",
+                            help="Op te leiden = moet nog getraind worden door TC-support"
+                        )
+                        
                         bs2_diploma = st.checkbox("BS2 diploma", value=bool(scheids.get("bs2_diploma", False)), key=f"bs2_{nbb}")
                         niet_op_zondag = st.checkbox("Niet op zondag", value=bool(scheids.get("niet_op_zondag", False)), key=f"zondag_{nbb}")
                         uitgesloten_van_pool = st.checkbox(
@@ -7837,6 +7894,7 @@ def toon_scheidsrechters_beheer():
                             blessure_waarde = "" if geblesseerd_tm == "Niet geblesseerd" else geblesseerd_tm
                             scheidsrechters[nbb] = {
                                 "naam": nieuwe_naam,
+                                "scheids_status": scheids_status,
                                 "bs2_diploma": bs2_diploma,
                                 "niet_op_zondag": niet_op_zondag,
                                 "uitgesloten_van_pool": uitgesloten_van_pool,
@@ -7870,6 +7928,11 @@ def toon_scheidsrechters_beheer():
                 
                 with col1:
                     st.write(f"**NBB-nummer:** {nbb}")
+                    # Status tonen met icoon
+                    status = scheids.get("scheids_status", "Actief")
+                    status_icon = {"Actief": "✅", "Op te leiden": "🎯", "Inactief": "⏸️"}.get(status, "")
+                    if status != "Actief":
+                        st.write(f"**Status:** {status_icon} {status}")
                     st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
                     st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
                     if scheids.get("uitgesloten_van_pool"):
@@ -7902,6 +7965,78 @@ def toon_scheidsrechters_beheer():
                 
                 # Link voor inschrijving
                 st.code(f"?nbb={nbb}")
+    
+    st.divider()
+    
+    # Scheidsrechters per team overzicht
+    st.subheader("👥 Scheidsrechters per team")
+    st.caption("Overzicht welke scheidsrechters per team in BOB staan - handig om te delen met coaches/captains")
+    
+    # Groepeer scheidsrechters per team
+    scheids_per_team = {}
+    for team in SCHEIDSRECHTER_TEAMS:
+        scheids_per_team[team] = []
+    
+    for nbb, scheids in scheidsrechters.items():
+        eigen_teams = scheids.get("eigen_teams", [])
+        for team in eigen_teams:
+            if team in scheids_per_team:
+                scheids_per_team[team].append({
+                    "nbb": nbb,
+                    "naam": scheids.get("naam", "?"),
+                    "niveau": scheids.get("niveau_1e_scheids", 1),
+                    "bs2": scheids.get("bs2_diploma", False),
+                    "status": scheids.get("scheids_status", "Actief")
+                })
+    
+    # Filter: alleen teams met scheidsrechters
+    teams_met_scheids = {team: spelers for team, spelers in scheids_per_team.items() if spelers}
+    
+    if teams_met_scheids:
+        # Team selectie
+        geselecteerd_team = st.selectbox(
+            "Selecteer team",
+            options=["Alle teams"] + list(teams_met_scheids.keys()),
+            key="team_overzicht_selectie"
+        )
+        
+        # Toon tabel per team
+        if geselecteerd_team == "Alle teams":
+            teams_to_show = teams_met_scheids
+        else:
+            teams_to_show = {geselecteerd_team: teams_met_scheids[geselecteerd_team]}
+        
+        for team, spelers in teams_to_show.items():
+            with st.expander(f"**{team}** ({len(spelers)} scheidsrechter{'s' if len(spelers) != 1 else ''})", expanded=(geselecteerd_team != "Alle teams")):
+                # Sorteer op naam
+                spelers_sorted = sorted(spelers, key=lambda x: x["naam"])
+                
+                # Maak tabel data
+                team_data = []
+                for sp in spelers_sorted:
+                    status_icon = {"Actief": "", "Op te leiden": "🎯", "Inactief": "⏸️"}.get(sp["status"], "")
+                    team_data.append({
+                        "Naam": sp["naam"],
+                        "Niveau": sp["niveau"],
+                        "BS2": "✓" if sp["bs2"] else "",
+                        "Status": status_icon
+                    })
+                
+                if team_data:
+                    import pandas as pd
+                    df_team = pd.DataFrame(team_data)
+                    st.dataframe(df_team, use_container_width=True, hide_index=True)
+                    
+                    # Kopieerbare tekst voor WhatsApp
+                    namen_lijst = ", ".join([sp["naam"] for sp in spelers_sorted])
+                    st.text_area(
+                        "📋 Kopieer voor WhatsApp:",
+                        f"Scheidsrechters {team} in BOB: {namen_lijst}",
+                        height=68,
+                        key=f"copy_team_{team}"
+                    )
+    else:
+        st.info("Nog geen scheidsrechters gekoppeld aan teams.")
     
     st.divider()
     
