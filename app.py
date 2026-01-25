@@ -24,9 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.29.0"
-APP_VERSIE_DATUM = "2026-01-20"
+APP_VERSIE = "1.30.0"
+APP_VERSIE_DATUM = "2026-01-25"
 APP_CHANGELOG = """
+### v1.30.0 (2026-01-25)
+**Koppeling met Competitie Planner:**
+- 🔗 Nieuwe synchronisatie met Competitie Planner database
+- 📥 Import wedstrijden direct uit CP (zonder Excel export)
+- 🔄 Detecteert nieuwe, gewijzigde en verwijderde wedstrijden
+- 👥 Behoudt scheidsrechters bij het bijwerken van wedstrijden
+- 🔑 Match op NBB wedstrijdnummer voor robuuste koppeling
+
 ### v1.29.0 (2026-01-20)
 **Scheidsrechter status & Team overzicht:**
 - 🎯 Nieuwe status optie: "Op te leiden" (voor spelers die nog getraind moeten worden)
@@ -9657,7 +9665,221 @@ def bepaal_niveau_uit_competitie(competitie: str) -> int:
 
 
 def toon_synchronisatie_tab():
-    """Synchronisatie tab: completeren en vergelijken van wedstrijden met NBB data."""
+    """Synchronisatie tab: synchroniseer wedstrijden met Competitie Planner en NBB data."""
+    
+    # ==========================================================================
+    # SECTIE 1: SYNCHRONISATIE MET COMPETITIE PLANNER
+    # ==========================================================================
+    import cp_sync
+    
+    st.write("**🔄 Synchronisatie met Competitie Planner**")
+    
+    # Check connectie
+    if not cp_sync.is_cp_connected():
+        st.warning("⚠️ Geen verbinding met Competitie Planner database. Controleer de credentials in Streamlit secrets.")
+    else:
+        st.success("✅ Verbonden met Competitie Planner")
+        
+        # Seizoen selectie
+        seizoenen = cp_sync.get_beschikbare_seizoenen()
+        
+        if not seizoenen:
+            st.info("Geen seizoenen gevonden in Competitie Planner.")
+        else:
+            col_cp1, col_cp2 = st.columns(2)
+            
+            with col_cp1:
+                geselecteerd_seizoen = st.selectbox(
+                    "Seizoen",
+                    seizoenen,
+                    key="cp_sync_seizoen"
+                )
+            
+            with col_cp2:
+                seizoenshelften = cp_sync.get_beschikbare_seizoenshelften(geselecteerd_seizoen)
+                seizoenshelft_opties = ["Alle"] + seizoenshelften
+                geselecteerde_helft = st.selectbox(
+                    "Seizoenshelft",
+                    seizoenshelft_opties,
+                    key="cp_sync_helft"
+                )
+            
+            # Vergelijk knop
+            if st.button("🔍 Vergelijk met Competitie Planner", key="cp_vergelijk_btn"):
+                helft_filter = None if geselecteerde_helft == "Alle" else geselecteerde_helft
+                
+                with st.spinner("Wedstrijden ophalen uit Competitie Planner..."):
+                    cp_wedstrijden = cp_sync.get_wedstrijden_van_cp(geselecteerd_seizoen, helft_filter)
+                
+                if not cp_wedstrijden:
+                    st.warning("Geen wedstrijden gevonden in Competitie Planner voor deze selectie.")
+                else:
+                    st.info(f"📊 {len(cp_wedstrijden)} wedstrijden gevonden in Competitie Planner")
+                    
+                    # Laad BOB wedstrijden
+                    bob_wedstrijden_dict = laad_wedstrijden()
+                    bob_wedstrijden_list = [
+                        {**wed, 'wed_id': wed_id} 
+                        for wed_id, wed in bob_wedstrijden_dict.items()
+                        if wed.get('type', 'thuis') == 'thuis'
+                    ]
+                    
+                    # Vergelijk
+                    resultaat = cp_sync.vergelijk_wedstrijden(cp_wedstrijden, bob_wedstrijden_list)
+                    
+                    # Opslaan in session state voor verwerking
+                    st.session_state['cp_sync_resultaat'] = resultaat
+                    st.session_state['cp_sync_uitgevoerd'] = True
+            
+            # Toon resultaten als vergelijking is uitgevoerd
+            if st.session_state.get('cp_sync_uitgevoerd') and 'cp_sync_resultaat' in st.session_state:
+                resultaat = st.session_state['cp_sync_resultaat']
+                
+                # Samenvatting
+                st.divider()
+                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1.metric("✅ Ongewijzigd", len(resultaat['ongewijzigd']))
+                col_s2.metric("➕ Nieuw", len(resultaat['nieuw']))
+                col_s3.metric("✏️ Gewijzigd", len(resultaat['gewijzigd']))
+                col_s4.metric("❌ Niet in CP", len(resultaat['verwijderd']))
+                
+                # NIEUWE WEDSTRIJDEN
+                if resultaat['nieuw']:
+                    st.subheader(f"➕ Nieuwe wedstrijden ({len(resultaat['nieuw'])})")
+                    st.write("Deze wedstrijden staan in CP maar nog niet in BOB.")
+                    
+                    # Selectie voor toevoegen
+                    if 'cp_nieuw_selectie' not in st.session_state:
+                        st.session_state['cp_nieuw_selectie'] = [True] * len(resultaat['nieuw'])
+                    
+                    for i, item in enumerate(resultaat['nieuw']):
+                        bob_fmt = item['bob_format']
+                        datum_str = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else 'Onbekend'
+                        
+                        col_check, col_info = st.columns([1, 11])
+                        with col_check:
+                            st.session_state['cp_nieuw_selectie'][i] = st.checkbox(
+                                "Toevoegen",
+                                value=st.session_state['cp_nieuw_selectie'][i],
+                                key=f"cp_nieuw_{i}",
+                                label_visibility="collapsed"
+                            )
+                        with col_info:
+                            st.write(f"📅 **{datum_str}** | {bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} | Niveau {bob_fmt.get('niveau', '?')} | Veld {bob_fmt.get('veld', '-')}")
+                    
+                    # Toevoegen knop
+                    geselecteerd_nieuw = sum(st.session_state['cp_nieuw_selectie'])
+                    if geselecteerd_nieuw > 0:
+                        if st.button(f"➕ Voeg {geselecteerd_nieuw} wedstrijden toe aan BOB", key="cp_add_btn"):
+                            toegevoegd = 0
+                            for i, item in enumerate(resultaat['nieuw']):
+                                if st.session_state['cp_nieuw_selectie'][i]:
+                                    bob_fmt = item['bob_format']
+                                    # Genereer wed_id
+                                    nbb_nr = bob_fmt.get('nbb_wedstrijd_nr', '')
+                                    wed_id = f"cp_{nbb_nr}" if nbb_nr else f"cp_{datetime.now().timestamp()}"
+                                    
+                                    # Verwijder interne velden
+                                    wed_data = {k: v for k, v in bob_fmt.items() if not k.startswith('_')}
+                                    wed_data['type'] = 'thuis'
+                                    
+                                    # Opslaan
+                                    try:
+                                        sla_wedstrijd_op(wed_id, wed_data)
+                                        toegevoegd += 1
+                                    except Exception as e:
+                                        st.error(f"Fout bij toevoegen: {e}")
+                            
+                            if toegevoegd > 0:
+                                st.success(f"✅ {toegevoegd} wedstrijden toegevoegd!")
+                                # Reset state
+                                del st.session_state['cp_sync_resultaat']
+                                del st.session_state['cp_sync_uitgevoerd']
+                                st.rerun()
+                
+                # GEWIJZIGDE WEDSTRIJDEN
+                if resultaat['gewijzigd']:
+                    st.subheader(f"✏️ Gewijzigde wedstrijden ({len(resultaat['gewijzigd'])})")
+                    st.write("Deze wedstrijden hebben verschillen tussen CP en BOB.")
+                    
+                    if 'cp_wijzig_selectie' not in st.session_state:
+                        st.session_state['cp_wijzig_selectie'] = [False] * len(resultaat['gewijzigd'])
+                    
+                    for i, item in enumerate(resultaat['gewijzigd']):
+                        bob = item['bob']
+                        bob_fmt = item['bob_format']
+                        wijzigingen = item['wijzigingen']
+                        
+                        with st.expander(f"📅 {bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}", expanded=False):
+                            # Toon wijzigingen
+                            for wijz in wijzigingen:
+                                st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")
+                            
+                            # Scheidsrechters info
+                            scheids_info = []
+                            if bob.get('scheids_1'):
+                                scheids_info.append(f"1e: {bob['scheids_1']}")
+                            if bob.get('scheids_2'):
+                                scheids_info.append(f"2e: {bob['scheids_2']}")
+                            if scheids_info:
+                                st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)}")
+                            
+                            st.session_state['cp_wijzig_selectie'][i] = st.checkbox(
+                                "CP waarden overnemen (scheidsrechters blijven behouden)",
+                                value=st.session_state['cp_wijzig_selectie'][i],
+                                key=f"cp_wijzig_{i}"
+                            )
+                    
+                    # Bijwerken knop
+                    geselecteerd_wijzig = sum(st.session_state['cp_wijzig_selectie'])
+                    if geselecteerd_wijzig > 0:
+                        if st.button(f"✏️ Werk {geselecteerd_wijzig} wedstrijden bij", key="cp_update_btn"):
+                            bijgewerkt = 0
+                            for i, item in enumerate(resultaat['gewijzigd']):
+                                if st.session_state['cp_wijzig_selectie'][i]:
+                                    bob = item['bob']
+                                    bob_fmt = item['bob_format']
+                                    wed_id = bob.get('wed_id')
+                                    
+                                    if wed_id:
+                                        # Update alleen de gewijzigde velden
+                                        update_data = {}
+                                        for wijz in item['wijzigingen']:
+                                            veld = wijz['veld']
+                                            update_data[veld] = bob_fmt.get(veld)
+                                        
+                                        # Voeg nbb_wedstrijd_nr toe als die nog niet gezet is
+                                        if bob_fmt.get('nbb_wedstrijd_nr') and not bob.get('nbb_wedstrijd_nr'):
+                                            update_data['nbb_wedstrijd_nr'] = bob_fmt['nbb_wedstrijd_nr']
+                                        
+                                        try:
+                                            sla_wedstrijd_op(wed_id, update_data)
+                                            bijgewerkt += 1
+                                        except Exception as e:
+                                            st.error(f"Fout bij bijwerken: {e}")
+                            
+                            if bijgewerkt > 0:
+                                st.success(f"✅ {bijgewerkt} wedstrijden bijgewerkt!")
+                                del st.session_state['cp_sync_resultaat']
+                                del st.session_state['cp_sync_uitgevoerd']
+                                st.rerun()
+                
+                # VERWIJDERDE WEDSTRIJDEN (in BOB maar niet in CP)
+                if resultaat['verwijderd']:
+                    st.subheader(f"❌ Niet meer in CP ({len(resultaat['verwijderd'])})")
+                    st.write("Deze wedstrijden staan in BOB maar niet (meer) in CP. Mogelijk geannuleerd of verplaatst.")
+                    
+                    for item in resultaat['verwijderd']:
+                        bob = item['bob']
+                        st.write(f"• 📅 {bob.get('datum', '?')[:16]} | {bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}")
+                    
+                    st.info("💡 Deze wedstrijden worden niet automatisch verwijderd. Controleer handmatig of ze geannuleerd moeten worden.")
+    
+    st.divider()
+    
+    # ==========================================================================
+    # SECTIE 2: SYNCHRONISATIE MET NBB (bestaande functionaliteit)
+    # ==========================================================================
     st.write("**🔄 Synchronisatie met NBB**")
     st.write("Upload een NBB export om bestaande wedstrijden te completeren of verschillen te detecteren.")
     
@@ -10138,18 +10360,6 @@ def toon_synchronisatie_tab():
 
 def toon_import_export():
     """Import/export functionaliteit."""
-    
-    # === TIJDELIJKE CP CONNECTIE TEST ===
-    import cp_sync
-    st.subheader("🔌 CP Connectie Test")
-    if cp_sync.is_cp_connected():
-        st.success("✅ Verbonden met Competitie Planner database")
-        seizoenen = cp_sync.get_beschikbare_seizoenen()
-        st.write(f"Beschikbare seizoenen: {seizoenen}")
-    else:
-        st.error("❌ Geen verbinding met Competitie Planner database")
-    st.divider()
-    # === EINDE TEST ===
     st.subheader("Import / Export")
     
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "🔄 Synchronisatie", "📤 Export"])

@@ -293,15 +293,17 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
     
     Returns:
         Lijst met wijzigingen, elk met 'veld', 'cp_waarde', 'bob_waarde'
+    
+    Let op: 'niveau' wordt NIET vergeleken omdat dit alleen in BOB wordt beheerd.
     """
     wijzigingen = []
     
     # Velden om te vergelijken
+    # NB: 'niveau' staat hier NIET bij - dat wordt alleen in BOB beheerd
     velden = [
         ('datum', 'Datum/tijd'),
         ('uitteam', 'Uitteam'),
         ('veld', 'Veld'),
-        ('niveau', 'Niveau'),
     ]
     
     for veld, label in velden:
