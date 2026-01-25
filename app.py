@@ -10137,20 +10137,19 @@ def toon_synchronisatie_tab():
 
 
 def toon_import_export():
-# === TIJDELIJKE CP CONNECTIE TEST ===
-import cp_sync
-st.subheader("🔌 CP Connectie Test")
-if cp_sync.is_cp_connected():
-    st.success("✅ Verbonden met Competitie Planner database")
-    seizoenen = cp_sync.get_beschikbare_seizoenen()
-    st.write(f"Beschikbare seizoenen: {seizoenen}")
-else:
-    st.error("❌ Geen verbinding met Competitie Planner database")
-st.divider()
-# === EINDE TEST ===
-
-  
     """Import/export functionaliteit."""
+    
+    # === TIJDELIJKE CP CONNECTIE TEST ===
+    import cp_sync
+    st.subheader("🔌 CP Connectie Test")
+    if cp_sync.is_cp_connected():
+        st.success("✅ Verbonden met Competitie Planner database")
+        seizoenen = cp_sync.get_beschikbare_seizoenen()
+        st.write(f"Beschikbare seizoenen: {seizoenen}")
+    else:
+        st.error("❌ Geen verbinding met Competitie Planner database")
+    st.divider()
+    # === EINDE TEST ===
     st.subheader("Import / Export")
     
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📥 NBB Wedstrijden", "📥 NBB Scheidsrechters", "📥 Ledengegevens", "📥 CSV Scheidsrechters", "📥 CSV Wedstrijden", "🔄 Synchronisatie", "📤 Export"])
