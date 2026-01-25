@@ -10137,6 +10137,19 @@ def toon_synchronisatie_tab():
 
 
 def toon_import_export():
+# === TIJDELIJKE CP CONNECTIE TEST ===
+import cp_sync
+st.subheader("🔌 CP Connectie Test")
+if cp_sync.is_cp_connected():
+    st.success("✅ Verbonden met Competitie Planner database")
+    seizoenen = cp_sync.get_beschikbare_seizoenen()
+    st.write(f"Beschikbare seizoenen: {seizoenen}")
+else:
+    st.error("❌ Geen verbinding met Competitie Planner database")
+st.divider()
+# === EINDE TEST ===
+
+  
     """Import/export functionaliteit."""
     st.subheader("Import / Export")
     
