@@ -74,7 +74,7 @@ def get_beschikbare_seizoenshelften(seizoen: str) -> list[str]:
 
 def get_wedstrijden_van_cp(seizoen: str, seizoenshelft: Optional[str] = None) -> list[dict]:
     """
-    Haal wedstrijden op uit Competitie Planner.
+    Haal alle Waterdragers wedstrijden op uit Competitie Planner (thuis én uit).
     
     Args:
         seizoen: Bijv. "2025-2026"
@@ -88,17 +88,33 @@ def get_wedstrijden_van_cp(seizoen: str, seizoenshelft: Optional[str] = None) ->
         return []
     
     try:
-        query = client.table('matches').select('*').eq('seizoen', seizoen)
-        
+        # Haal thuiswedstrijden op
+        query_thuis = client.table('matches').select('*').eq('seizoen', seizoen)
         if seizoenshelft:
-            query = query.eq('seizoenshelft', seizoenshelft)
+            query_thuis = query_thuis.eq('seizoenshelft', seizoenshelft)
+        query_thuis = query_thuis.ilike('home_team_name', 'Waterdragers%')
+        query_thuis = query_thuis.not_.is_('scheduled_date', 'null')
+        query_thuis = query_thuis.not_.is_('scheduled_time', 'null')
         
-        # Alleen wedstrijden met geplande datum/tijd
-        query = query.not_.is_('scheduled_date', 'null')
-        query = query.not_.is_('scheduled_time', 'null')
+        response_thuis = query_thuis.order('scheduled_date').order('scheduled_time').execute()
+        thuis_wedstrijden = response_thuis.data or []
         
-        response = query.order('scheduled_date').order('scheduled_time').execute()
-        return response.data or []
+        # Haal uitwedstrijden op
+        query_uit = client.table('matches').select('*').eq('seizoen', seizoen)
+        if seizoenshelft:
+            query_uit = query_uit.eq('seizoenshelft', seizoenshelft)
+        query_uit = query_uit.ilike('away_team_name', 'Waterdragers%')
+        query_uit = query_uit.not_.is_('scheduled_date', 'null')
+        query_uit = query_uit.not_.is_('scheduled_time', 'null')
+        
+        response_uit = query_uit.order('scheduled_date').order('scheduled_time').execute()
+        uit_wedstrijden = response_uit.data or []
+        
+        # Combineer en sorteer
+        alle_wedstrijden = thuis_wedstrijden + uit_wedstrijden
+        alle_wedstrijden.sort(key=lambda x: (x.get('scheduled_date', ''), x.get('scheduled_time', '')))
+        
+        return alle_wedstrijden
     except Exception as e:
         st.error(f"Fout bij ophalen CP wedstrijden: {e}")
         return []
@@ -164,16 +180,28 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     """
     Map een wedstrijd van CP-formaat naar BOB-formaat.
     
+    Bepaalt automatisch of het een thuis- of uitwedstrijd is op basis
+    van waar "Waterdragers" in de teamnaam staat.
+    
     Args:
         cp_wedstrijd: Wedstrijd dict uit Competitie Planner
     
     Returns:
         Wedstrijd dict in BOB-formaat
     """
-    # Behoud volledige teamnaam voor matching met BOB
-    thuisteam_volledig = cp_wedstrijd.get('home_team_name', '')
-    # Extract teamcode alleen voor niveau bepaling
-    thuisteam_code = extract_team_code(thuisteam_volledig)
+    home_team = cp_wedstrijd.get('home_team_name', '')
+    away_team = cp_wedstrijd.get('away_team_name', '')
+    
+    # Bepaal of het een thuis- of uitwedstrijd is
+    is_thuiswedstrijd = home_team.lower().startswith('waterdragers')
+    
+    # Voor BOB: thuisteam en uitteam komen direct uit CP
+    thuisteam = home_team
+    uitteam = away_team
+    
+    # Bepaal het eigen team (Waterdragers team) voor niveau bepaling
+    eigen_team = home_team if is_thuiswedstrijd else away_team
+    eigen_team_code = extract_team_code(eigen_team)
     
     # Combineer datum en tijd
     datum_str = cp_wedstrijd.get('scheduled_date', '')
@@ -192,25 +220,26 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
         except:
             datum = None
     
-    # Veld nummer naar string
+    # Veld nummer naar string (alleen relevant voor thuiswedstrijden)
     veld = cp_wedstrijd.get('field_number')
     veld_str = str(veld) if veld else None
     
     return {
         'nbb_wedstrijd_nr': cp_wedstrijd.get('nbb_id'),
         'datum': datum.isoformat() if datum else None,
-        'thuisteam': thuisteam_volledig,  # Volledige naam voor matching
-        'thuisteam_code': thuisteam_code,  # Teamcode voor weergave
-        'uitteam': cp_wedstrijd.get('away_team_name', ''),
-        'niveau': bepaal_niveau(thuisteam_code),
-        'vereist_bs2': bepaal_bs2_vereist(thuisteam_code),
+        'thuisteam': thuisteam,
+        'uitteam': uitteam,
+        'eigen_team_code': eigen_team_code,  # Voor weergave
+        'niveau': bepaal_niveau(eigen_team_code),
+        'vereist_bs2': bepaal_bs2_vereist(eigen_team_code),
         'veld': veld_str,
-        'type': 'thuis',
+        'type': 'thuis' if is_thuiswedstrijd else 'uit',
         # Extra velden voor weergave/debugging
         '_cp_id': cp_wedstrijd.get('id'),
         '_cp_poule': cp_wedstrijd.get('poule'),
         '_cp_competitie': cp_wedstrijd.get('competitie'),
         '_cp_accommodatie': cp_wedstrijd.get('accommodatie'),
+        '_is_thuiswedstrijd': is_thuiswedstrijd,
     }
 
 
