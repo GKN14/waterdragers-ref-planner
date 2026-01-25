@@ -170,8 +170,10 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     Returns:
         Wedstrijd dict in BOB-formaat
     """
-    # Extract team code
-    thuisteam = extract_team_code(cp_wedstrijd.get('home_team_name', ''))
+    # Behoud volledige teamnaam voor matching met BOB
+    thuisteam_volledig = cp_wedstrijd.get('home_team_name', '')
+    # Extract teamcode alleen voor niveau bepaling
+    thuisteam_code = extract_team_code(thuisteam_volledig)
     
     # Combineer datum en tijd
     datum_str = cp_wedstrijd.get('scheduled_date', '')
@@ -197,10 +199,11 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     return {
         'nbb_wedstrijd_nr': cp_wedstrijd.get('nbb_id'),
         'datum': datum.isoformat() if datum else None,
-        'thuisteam': thuisteam,
+        'thuisteam': thuisteam_volledig,  # Volledige naam voor matching
+        'thuisteam_code': thuisteam_code,  # Teamcode voor weergave
         'uitteam': cp_wedstrijd.get('away_team_name', ''),
-        'niveau': bepaal_niveau(thuisteam),
-        'vereist_bs2': bepaal_bs2_vereist(thuisteam),
+        'niveau': bepaal_niveau(thuisteam_code),
+        'vereist_bs2': bepaal_bs2_vereist(thuisteam_code),
         'veld': veld_str,
         'type': 'thuis',
         # Extra velden voor weergave/debugging
@@ -219,6 +222,10 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
     """
     Vergelijk wedstrijden tussen CP en BOB.
     
+    Matching strategie:
+    1. Eerst op nbb_wedstrijd_nr (meest betrouwbaar)
+    2. Fallback op datum/tijd + teamnamen (voor wedstrijden zonder nbb_nr)
+    
     Returns:
         Dict met categorieën: nieuw, gewijzigd, ongewijzigd, verwijderd
     """
@@ -229,39 +236,62 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
         'verwijderd': [],
     }
     
-    # Maak lookup dict voor BOB wedstrijden op nbb_wedstrijd_nr
-    bob_lookup = {}
-    bob_zonder_nbb = []
+    # Maak lookup dicts voor BOB wedstrijden
+    bob_lookup_nbb = {}  # op nbb_wedstrijd_nr
+    bob_lookup_key = {}  # op datum + teams (fallback)
+    
+    def maak_match_key(datum_str: str, thuisteam: str, uitteam: str) -> str:
+        """Maak een unieke sleutel voor matching op datum/teams."""
+        # Normaliseer datum (alleen datum + tijd, zonder timezone)
+        datum_norm = datum_str[:16] if datum_str else ''
+        # Normaliseer teamnamen (lowercase, strip)
+        thuis_norm = str(thuisteam).strip().lower()
+        uit_norm = str(uitteam).strip().lower()
+        return f"{datum_norm}|{thuis_norm}|{uit_norm}"
     
     for wed in bob_wedstrijden:
         nbb_nr = wed.get('nbb_wedstrijd_nr')
         if nbb_nr:
-            bob_lookup[nbb_nr] = wed
-        else:
-            bob_zonder_nbb.append(wed)
+            bob_lookup_nbb[nbb_nr] = wed
+        
+        # Altijd ook key-based lookup maken
+        key = maak_match_key(
+            wed.get('datum', ''),
+            wed.get('thuisteam', ''),
+            wed.get('uitteam', '')
+        )
+        bob_lookup_key[key] = wed
     
     # Track welke BOB wedstrijden we gezien hebben
-    gezien_nbb_nrs = set()
+    gezien_bob_ids = set()
     
     # Loop door CP wedstrijden
     for cp_wed in cp_wedstrijden:
         bob_format = map_cp_naar_bob(cp_wed)
         nbb_nr = bob_format['nbb_wedstrijd_nr']
         
-        if not nbb_nr:
-            continue
+        # Probeer eerst te matchen op nbb_wedstrijd_nr
+        bob_wed = None
+        if nbb_nr and nbb_nr in bob_lookup_nbb:
+            bob_wed = bob_lookup_nbb[nbb_nr]
         
-        gezien_nbb_nrs.add(nbb_nr)
+        # Fallback: match op datum + teams (gebruik volledige namen uit CP)
+        if not bob_wed:
+            cp_key = maak_match_key(
+                bob_format.get('datum', ''),
+                bob_format.get('thuisteam', ''),  # Volledige naam
+                bob_format.get('uitteam', '')
+            )
+            if cp_key in bob_lookup_key:
+                bob_wed = bob_lookup_key[cp_key]
         
-        if nbb_nr not in bob_lookup:
-            # Nieuwe wedstrijd
-            resultaat['nieuw'].append({
-                'cp': cp_wed,
-                'bob_format': bob_format,
-            })
-        else:
-            # Bestaande wedstrijd - check op wijzigingen
-            bob_wed = bob_lookup[nbb_nr]
+        if bob_wed:
+            # Gevonden in BOB
+            wed_id = bob_wed.get('wed_id')
+            if wed_id:
+                gezien_bob_ids.add(wed_id)
+            
+            # Check op wijzigingen
             wijzigingen = detecteer_wijzigingen(bob_format, bob_wed)
             
             if wijzigingen:
@@ -276,12 +306,19 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
                     'cp': cp_wed,
                     'bob': bob_wed,
                 })
+        else:
+            # Nieuwe wedstrijd
+            resultaat['nieuw'].append({
+                'cp': cp_wed,
+                'bob_format': bob_format,
+            })
     
     # Check voor verwijderde wedstrijden (in BOB maar niet meer in CP)
-    for nbb_nr, bob_wed in bob_lookup.items():
-        if nbb_nr not in gezien_nbb_nrs:
+    for wed in bob_wedstrijden:
+        wed_id = wed.get('wed_id')
+        if wed_id and wed_id not in gezien_bob_ids:
             resultaat['verwijderd'].append({
-                'bob': bob_wed,
+                'bob': wed,
             })
     
     return resultaat

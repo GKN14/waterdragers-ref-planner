@@ -9716,6 +9716,13 @@ def toon_synchronisatie_tab():
                 else:
                     st.info(f"📊 {len(cp_wedstrijden)} wedstrijden gevonden in Competitie Planner")
                     
+                    # Debug: toon eerste paar wedstrijden uit CP
+                    with st.expander("🔧 Debug info (CP data)", expanded=False):
+                        for i, cp_wed in enumerate(cp_wedstrijden[:3]):
+                            st.write(f"**CP #{i+1}:** {cp_wed.get('home_team_name')} vs {cp_wed.get('away_team_name')}")
+                            st.write(f"  Datum: {cp_wed.get('scheduled_date')} {cp_wed.get('scheduled_time')}")
+                            st.write(f"  Seizoenshelft: {cp_wed.get('seizoenshelft')}")
+                    
                     # Laad BOB wedstrijden
                     bob_wedstrijden_dict = laad_wedstrijden()
                     bob_wedstrijden_list = [
@@ -9723,6 +9730,13 @@ def toon_synchronisatie_tab():
                         for wed_id, wed in bob_wedstrijden_dict.items()
                         if wed.get('type', 'thuis') == 'thuis'
                     ]
+                    
+                    # Debug: toon eerste paar wedstrijden uit BOB
+                    with st.expander("🔧 Debug info (BOB data)", expanded=False):
+                        for i, bob_wed in enumerate(bob_wedstrijden_list[:3]):
+                            st.write(f"**BOB #{i+1}:** {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
+                            st.write(f"  Datum: {bob_wed.get('datum')}")
+                            st.write(f"  NBB nr: {bob_wed.get('nbb_wedstrijd_nr')}")
                     
                     # Vergelijk
                     resultaat = cp_sync.vergelijk_wedstrijden(cp_wedstrijden, bob_wedstrijden_list)
@@ -9755,6 +9769,8 @@ def toon_synchronisatie_tab():
                     for i, item in enumerate(resultaat['nieuw']):
                         bob_fmt = item['bob_format']
                         datum_str = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else 'Onbekend'
+                        # Gebruik thuisteam_code voor weergave (korter), fallback naar thuisteam
+                        thuisteam_display = bob_fmt.get('thuisteam_code') or bob_fmt.get('thuisteam', '?')
                         
                         col_check, col_info = st.columns([1, 11])
                         with col_check:
@@ -9765,7 +9781,7 @@ def toon_synchronisatie_tab():
                                 label_visibility="collapsed"
                             )
                         with col_info:
-                            st.write(f"📅 **{datum_str}** | {bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} | Niveau {bob_fmt.get('niveau', '?')} | Veld {bob_fmt.get('veld', '-')}")
+                            st.write(f"📅 **{datum_str}** | {thuisteam_display} vs {bob_fmt.get('uitteam', '?')} | Niveau {bob_fmt.get('niveau', '?')} | Veld {bob_fmt.get('veld', '-')}")
                     
                     # Toevoegen knop
                     geselecteerd_nieuw = sum(st.session_state['cp_nieuw_selectie'])
