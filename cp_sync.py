@@ -4,7 +4,7 @@ cp_sync.py - Koppeling BOB ↔ Competitie Planner
 Synchroniseert wedstrijden vanuit de Competitie Planner database naar BOB,
 zodat scheidsrechters zich kunnen inschrijven op thuiswedstrijden.
 
-Versie: 1.32.0
+Versie: 1.32.1
 Datum: 2026-01-26
 """
 
@@ -14,7 +14,7 @@ from datetime import datetime, date, time
 from typing import Optional
 
 # Module versie (synchroon met app.py)
-CP_SYNC_VERSIE = "1.32.0"
+CP_SYNC_VERSIE = "1.32.1"
 
 
 # =============================================================================
@@ -431,6 +431,23 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
             
             # Maak wijzigingen lijst - vul teamnamen aan
             wijzigingen = []
+            
+            # Toon datum als bevestiging (niet als wijziging, maar ter info)
+            bob_datum = bob_wed.get('datum', '')[:16].replace('T', ' ') if bob_wed.get('datum') else ''
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(bob_datum, '%Y-%m-%d %H:%M')
+                datum_display = dt.strftime('%d-%m-%Y %H:%M')
+            except:
+                datum_display = bob_datum
+            
+            wijzigingen.append({
+                'veld': '_datum_info',  # Underscore = niet updaten, alleen tonen
+                'label': 'Datum',
+                'cp_waarde': datum_display,
+                'bob_waarde': datum_display,
+                '_info_only': True,  # Markeer als info-only
+            })
             
             # Thuisteam toevoegen
             if not bob_wed.get('thuisteam', '').strip():

@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.0"
+APP_VERSIE = "1.32.1"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.1 (2026-01-26)
+**UI verbetering:**
+- ✓ Toon datum als "behouden" bij incomplete records (duidelijker overzicht)
+- 📋 Onderscheid tussen info-velden en echte wijzigingen
+
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
 - 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
@@ -9999,7 +10004,12 @@ def toon_synchronisatie_tab():
                         with st.expander(f"{type_icoon} {wijzig_label}{team_display}", expanded=expanded):
                             # Toon wijzigingen
                             for wijz in wijzigingen:
-                                st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")
+                                if wijz.get('_info_only'):
+                                    # Info veld - toon als behouden
+                                    st.write(f"**{wijz['label']}:** ✓ {wijz['cp_waarde']} (behouden)")
+                                else:
+                                    # Echte wijziging
+                                    st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")
                             
                             # Scheidsrechters info
                             scheids_info = []
@@ -10028,9 +10038,12 @@ def toon_synchronisatie_tab():
                                     wed_id = bob.get('wed_id')
                                     
                                     if wed_id:
-                                        # Update alleen de gewijzigde velden
+                                        # Update alleen de gewijzigde velden (niet info-only velden)
                                         update_data = {}
                                         for wijz in item['wijzigingen']:
+                                            # Skip info-only velden (beginnen met _)
+                                            if wijz.get('_info_only') or wijz['veld'].startswith('_'):
+                                                continue
                                             veld = wijz['veld']
                                             update_data[veld] = bob_fmt.get(veld)
                                         
