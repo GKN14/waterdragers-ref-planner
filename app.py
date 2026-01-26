@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.3"
+APP_VERSIE = "1.32.4"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.4 (2026-01-26)
+**BUGFIX - Data verlies bij sync:**
+- 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
+- 💾 Alle bestaande BOB waarden worden nu behouden bij sync
+- 🔧 Alleen gewijzigde velden worden overschreven met CP waarden
+
 ### v1.32.3 (2026-01-26)
 **Bugfix - Error handling:**
 - 🛑 Foutmeldingen blijven nu zichtbaar (geen automatische rerun bij fouten)
@@ -10115,17 +10121,17 @@ def toon_synchronisatie_tab():
                                     wed_info = f"{bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} ({bob_fmt.get('datum', '?')[:16]})"
                                     
                                     if wed_id:
-                                        # Vergelijk alle relevante velden en update waar nodig
-                                        update_data = {}
+                                        # BELANGRIJK: Start met ALLE bestaande BOB waarden
+                                        # De sla_wedstrijd_op functie doet een volledige UPSERT
+                                        # dus we moeten alles meegeven om data verlies te voorkomen
+                                        update_data = dict(bob)  # Kopie van alle bestaande waarden
+                                        
+                                        # Overschrijf met CP waarden waar ze verschillen en CP een waarde heeft
                                         sync_velden = ['datum', 'thuisteam', 'uitteam', 'type', 'niveau', 'veld']
                                         
                                         for veld in sync_velden:
-                                            bob_waarde = str(bob.get(veld, '')).strip() if bob.get(veld) else ''
                                             cp_waarde = bob_fmt.get(veld)
-                                            cp_waarde_str = str(cp_waarde).strip() if cp_waarde else ''
-                                            
-                                            # Update als waarden verschillen EN CP een waarde heeft
-                                            if bob_waarde != cp_waarde_str and cp_waarde_str:
+                                            if cp_waarde is not None and str(cp_waarde).strip():
                                                 update_data[veld] = cp_waarde
                                         
                                         # Voeg nbb_wedstrijd_nr toe als die nog niet gezet is
@@ -10133,12 +10139,8 @@ def toon_synchronisatie_tab():
                                             update_data['nbb_wedstrijd_nr'] = bob_fmt['nbb_wedstrijd_nr']
                                         
                                         try:
-                                            if update_data:
-                                                sla_wedstrijd_op(wed_id, update_data)
-                                                bijgewerkt += 1
-                                            else:
-                                                # Geen wijzigingen nodig
-                                                bijgewerkt += 1
+                                            sla_wedstrijd_op(wed_id, update_data)
+                                            bijgewerkt += 1
                                         except Exception as e:
                                             fouten.append(f"❌ {wed_info}: {str(e)}")
                                     else:
