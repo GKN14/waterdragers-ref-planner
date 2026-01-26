@@ -922,6 +922,8 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "geannuleerd": data.get("geannuleerd", False),
                 "veld": data.get("veld", ""),
                 "updated_at": datetime.now().isoformat(),
+                # NBB wedstrijdnummer voor CP sync (v1.32.6)
+                "nbb_wedstrijd_nr": data.get("nbb_wedstrijd_nr"),
                 # Kolommen voor punten en status
                 "scheids_1_status": data.get("scheids_1_status"),
                 "scheids_2_status": data.get("scheids_2_status"),
@@ -985,6 +987,8 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "geannuleerd": data.get("geannuleerd", False),
             "veld": data.get("veld", ""),
             "updated_at": datetime.now().isoformat(),
+            # NBB wedstrijdnummer voor CP sync (v1.32.6)
+            "nbb_wedstrijd_nr": data.get("nbb_wedstrijd_nr"),
             # Nieuwe kolommen voor punten en status
             "scheids_1_status": data.get("scheids_1_status"),
             "scheids_2_status": data.get("scheids_2_status"),
