@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.7"
+APP_VERSIE = "1.32.8"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.8 (2026-01-26)
+**Diagnostiek & debugging:**
+- 🔧 Database diagnostiek toegevoegd (check NBB kolom)
+- 📊 Progress bar bij NBB nummers toevoegen
+- 📋 Gedetailleerde feedback per wedstrijd
+- 🔄 Cache invalidatie na updates
+
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
 - 🐛 Fix: `nbb_wedstrijd_nr` veld ontbrak in database.py
@@ -41,21 +48,14 @@ APP_CHANGELOG = """
 ### v1.32.5 (2026-01-26)
 **BUGFIX - NBB nummers toevoegen:**
 - 🐛 Fix: NBB nummers toevoegen wiste alle andere wedstrijddata
-- 💾 Alle bestaande BOB waarden worden nu behouden
-- 📋 Verbeterde foutrapportage
 
 ### v1.32.4 (2026-01-26)
 **BUGFIX - Data verlies bij sync:**
 - 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
-- 💾 Alle bestaande BOB waarden worden nu behouden bij sync
-
-### v1.32.3 (2026-01-26)
-**Bugfix - Error handling:**
-- 🛑 Foutmeldingen blijven nu zichtbaar (geen automatische rerun bij fouten)
 
 ### v1.32.2 (2026-01-26)
 **CP Sync - Verbeterde vergelijkingsweergave:**
-- 📊 Tabelweergave met alle velden naast elkaar (BOB huidig vs CP nieuw)
+- 📊 Tabelweergave met alle velden naast elkaar
 
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
@@ -64,15 +64,11 @@ APP_CHANGELOG = """
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
 - 🔄 Automatische detectie van verplaatste wedstrijden
-- 🔢 Bulk toevoegen van NBB nummers aan bestaande wedstrijden
+- 🔢 Bulk toevoegen van NBB nummers
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
 - 🔗 Nieuwe synchronisatie met Competitie Planner database
-
-### v1.29.0 (2026-01-20)
-**Scheidsrechter status & Team overzicht:**
-- 🎯 Nieuwe status optie: "Op te leiden"
 - ⏸️ Nieuwe status optie: "Inactief" (voor spelers die gestopt/pauze hebben)
 - 👥 Nieuw: "Scheidsrechters per team" overzicht in beheer
 - 📋 Kopieerbare tekst per team voor WhatsApp (om te delen met coaches)
@@ -9725,6 +9721,43 @@ def toon_synchronisatie_tab():
     else:
         st.success("✅ Verbonden met Competitie Planner")
         
+        # Diagnostiek expander
+        with st.expander("🔧 Database diagnostiek", expanded=False):
+            if st.button("🔍 Controleer NBB kolom in database", key="cp_diag_btn"):
+                try:
+                    # Direct naar Supabase voor diagnostiek
+                    supabase = db.get_supabase_client()
+                    
+                    # Tel wedstrijden met en zonder NBB nummer
+                    response = supabase.table("wedstrijden").select("wed_id, nbb_wedstrijd_nr, thuisteam").execute()
+                    
+                    if response.data:
+                        totaal = len(response.data)
+                        met_nbb = sum(1 for r in response.data if r.get('nbb_wedstrijd_nr'))
+                        zonder_nbb = totaal - met_nbb
+                        
+                        st.write(f"**Totaal wedstrijden:** {totaal}")
+                        st.write(f"**Met NBB nummer:** {met_nbb}")
+                        st.write(f"**Zonder NBB nummer:** {zonder_nbb}")
+                        
+                        # Toon een paar voorbeelden
+                        st.write("**Voorbeelden met NBB nummer:**")
+                        voorbeelden_met = [r for r in response.data if r.get('nbb_wedstrijd_nr')][:3]
+                        for v in voorbeelden_met:
+                            st.code(f"{v.get('thuisteam')}: {v.get('nbb_wedstrijd_nr')}")
+                        
+                        if niet_met := [r for r in response.data if not r.get('nbb_wedstrijd_nr')][:3]:
+                            st.write("**Voorbeelden zonder NBB nummer:**")
+                            for v in niet_met:
+                                st.code(f"{v.get('thuisteam')}: (leeg)")
+                    else:
+                        st.warning("Geen wedstrijden gevonden in database")
+                        
+                except Exception as e:
+                    st.error(f"Database fout: {e}")
+                    st.write("**Mogelijke oorzaak:** De kolom `nbb_wedstrijd_nr` bestaat niet.")
+                    st.code("ALTER TABLE wedstrijden ADD COLUMN nbb_wedstrijd_nr TEXT;")
+        
         # Seizoen selectie
         seizoenen = cp_sync.get_beschikbare_seizoenen()
         
@@ -9814,11 +9847,19 @@ def toon_synchronisatie_tab():
                             bijgewerkt = 0
                             fouten = []
                             
-                            for item in ongewijzigd_zonder_nbb:
+                            progress_bar = st.progress(0, text="NBB nummers toevoegen...")
+                            status_text = st.empty()
+                            
+                            totaal = len(ongewijzigd_zonder_nbb)
+                            
+                            for idx, item in enumerate(ongewijzigd_zonder_nbb):
                                 bob = item['bob']
                                 cp = item['cp']
                                 wed_id = bob.get('wed_id')
                                 nbb_nr = cp.get('nbb_id')
+                                
+                                wed_info = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
+                                status_text.text(f"Verwerken: {wed_info[:50]}...")
                                 
                                 if wed_id and nbb_nr:
                                     try:
@@ -9827,24 +9868,48 @@ def toon_synchronisatie_tab():
                                         update_data = dict(bob)  # Kopie van alle bestaande waarden
                                         update_data['nbb_wedstrijd_nr'] = nbb_nr  # Voeg NBB nummer toe
                                         
-                                        sla_wedstrijd_op(wed_id, update_data)
-                                        bijgewerkt += 1
+                                        # Roep database functie aan
+                                        result = db.sla_wedstrijd_op(wed_id, update_data)
+                                        
+                                        if result:
+                                            bijgewerkt += 1
+                                        else:
+                                            fouten.append(f"❌ {wed_info}: Opslaan retourneerde False")
+                                            
                                     except Exception as e:
-                                        wed_info = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
                                         fouten.append(f"❌ {wed_info}: {str(e)}")
+                                else:
+                                    if not wed_id:
+                                        fouten.append(f"⚠️ {wed_info}: Geen wed_id")
+                                    if not nbb_nr:
+                                        fouten.append(f"⚠️ {wed_info}: Geen NBB nummer in CP")
+                                
+                                # Update progress
+                                progress_bar.progress((idx + 1) / totaal, text=f"NBB nummers toevoegen... {idx + 1}/{totaal}")
                             
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            # Invalideer cache zodat we verse data krijgen
+                            if "_db_cache_wedstrijden" in st.session_state:
+                                del st.session_state["_db_cache_wedstrijden"]
+                            
+                            # Toon resultaat
                             if bijgewerkt > 0:
-                                st.success(f"✅ {bijgewerkt} wedstrijden voorzien van NBB nummer!")
+                                st.success(f"✅ {bijgewerkt} van {totaal} wedstrijden voorzien van NBB nummer!")
+                            else:
+                                st.warning(f"⚠️ Geen wedstrijden bijgewerkt (0 van {totaal})")
                             
                             if fouten:
-                                st.error(f"⚠️ {len(fouten)} fouten opgetreden:")
-                                for fout in fouten:
+                                st.error(f"⚠️ {len(fouten)} fouten/waarschuwingen:")
+                                for fout in fouten[:10]:  # Toon max 10
                                     st.write(fout)
+                                if len(fouten) > 10:
+                                    st.write(f"... en nog {len(fouten) - 10} andere")
                             
-                            if not fouten:
-                                del st.session_state['cp_sync_resultaat']
-                                del st.session_state['cp_sync_uitgevoerd']
-                                st.rerun()
+                            # Niet automatisch rerun - laat gebruiker resultaat zien
+                            if bijgewerkt > 0:
+                                st.info("🔄 Klik nogmaals op 'Vergelijk met Competitie Planner' om het resultaat te controleren.")
                 
                 # NIEUWE WEDSTRIJDEN
                 if resultaat['nieuw']:
