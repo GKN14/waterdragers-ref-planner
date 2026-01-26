@@ -24,26 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.12"
+APP_VERSIE = "1.32.13"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.13 (2026-01-26)
+**Opschoning CP Sync:**
+- 🧹 Debug functies verwijderd (niet meer nodig)
+- ✨ Schonere interface
+
 ### v1.32.12 (2026-01-26)
 **FIX: NBB nummers opslaan werkt nu:**
-- 🔧 Directe UPDATE ipv sla_wedstrijd_op (bewezen werkend via test)
-- ✅ Update alleen het nbb_wedstrijd_nr veld (geen volledige UPSERT)
-
-### v1.32.11 (2026-01-26)
-**Test & verificatie NBB opslag:**
-- 🧪 Directe test knop om database kolom te testen
-
-### v1.32.10 (2026-01-26)
-**Debug NBB sync:**
-- 🔍 Preview van eerste 3 records met CP én BOB data
-
-### v1.32.9 (2026-01-26)
-**Uitgebreide diagnostiek:**
-- 🔍 Check BOB database
-- 🔍 Check CP database
+- 🔧 Directe UPDATE voor NBB nummers (bewezen werkend)
 
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
@@ -9716,120 +9707,6 @@ def toon_synchronisatie_tab():
     else:
         st.success("✅ Verbonden met Competitie Planner")
         
-        # Diagnostiek expander
-        with st.expander("🔧 Database diagnostiek", expanded=False):
-            col_diag1, col_diag2 = st.columns(2)
-            
-            with col_diag1:
-                if st.button("🔍 Check BOB database", key="cp_diag_btn"):
-                    try:
-                        # Direct naar Supabase voor diagnostiek
-                        supabase = db.get_supabase_client()
-                        
-                        # Tel wedstrijden met en zonder NBB nummer
-                        response = supabase.table("wedstrijden").select("wed_id, nbb_wedstrijd_nr, thuisteam").execute()
-                        
-                        if response.data:
-                            totaal = len(response.data)
-                            met_nbb = sum(1 for r in response.data if r.get('nbb_wedstrijd_nr'))
-                            zonder_nbb = totaal - met_nbb
-                            
-                            st.write(f"**BOB Totaal:** {totaal}")
-                            st.write(f"**Met NBB nr:** {met_nbb}")
-                            st.write(f"**Zonder NBB nr:** {zonder_nbb}")
-                            
-                            if met_nbb > 0:
-                                st.write("**Voorbeeld met NBB:**")
-                                v = [r for r in response.data if r.get('nbb_wedstrijd_nr')][0]
-                                st.code(f"{v.get('thuisteam')}: {v.get('nbb_wedstrijd_nr')}")
-                        else:
-                            st.warning("Geen wedstrijden in BOB")
-                            
-                    except Exception as e:
-                        st.error(f"BOB fout: {e}")
-            
-            with col_diag2:
-                if st.button("🔍 Check CP database", key="cp_diag_cp_btn"):
-                    try:
-                        # Haal 1 wedstrijd op uit CP
-                        cp_client = cp_sync.get_cp_client()
-                        if cp_client:
-                            response = cp_client.table('matches').select('*').limit(1).execute()
-                            
-                            if response.data:
-                                wed = response.data[0]
-                                st.write("**CP veldnamen:**")
-                                
-                                # Zoek naar NBB-achtige velden
-                                nbb_velden = [k for k in wed.keys() if 'nbb' in k.lower() or 'wedstrijd' in k.lower() or 'match' in k.lower() or 'id' in k.lower()]
-                                
-                                st.write("Mogelijk NBB velden:")
-                                for veld in nbb_velden:
-                                    waarde = wed.get(veld)
-                                    st.code(f"{veld}: {waarde}")
-                                
-                                st.write("**Alle velden:**")
-                                st.json(wed)
-                            else:
-                                st.warning("Geen wedstrijden in CP")
-                        else:
-                            st.error("Geen CP verbinding")
-                    except Exception as e:
-                        st.error(f"CP fout: {e}")
-            
-            # Directe test voor NBB opslag
-            st.divider()
-            if st.button("🧪 TEST: Probeer NBB nummer op te slaan", key="cp_test_nbb_btn"):
-                try:
-                    supabase = db.get_supabase_client()
-                    
-                    # Haal eerste wedstrijd zonder NBB nummer
-                    response = supabase.table("wedstrijden").select("wed_id, thuisteam, nbb_wedstrijd_nr").is_("nbb_wedstrijd_nr", "null").limit(1).execute()
-                    
-                    if not response.data:
-                        st.info("Geen wedstrijden zonder NBB nummer gevonden")
-                    else:
-                        wed = response.data[0]
-                        wed_id = wed['wed_id']
-                        test_nbb = "TEST_123456"
-                        
-                        st.write(f"**Test wedstrijd:** {wed['thuisteam']}")
-                        st.write(f"**wed_id:** {wed_id}")
-                        st.write(f"**Huidige nbb_wedstrijd_nr:** {wed.get('nbb_wedstrijd_nr')}")
-                        st.write(f"**Test waarde:** {test_nbb}")
-                        
-                        # Probeer DIRECT in database te schrijven (zonder sla_wedstrijd_op)
-                        st.write("---")
-                        st.write("**Stap 1: Direct UPDATE in database...**")
-                        
-                        update_result = supabase.table("wedstrijden").update({"nbb_wedstrijd_nr": test_nbb}).eq("wed_id", wed_id).execute()
-                        
-                        st.write(f"Update result: {len(update_result.data)} records")
-                        
-                        # Lees terug
-                        st.write("**Stap 2: Teruglezen...**")
-                        check = supabase.table("wedstrijden").select("nbb_wedstrijd_nr").eq("wed_id", wed_id).execute()
-                        
-                        if check.data:
-                            opgeslagen = check.data[0].get('nbb_wedstrijd_nr')
-                            st.write(f"Opgeslagen waarde: `{opgeslagen}`")
-                            
-                            if opgeslagen == test_nbb:
-                                st.success("✅ TEST GESLAAGD! Database kolom werkt correct.")
-                                
-                                # Herstel (verwijder test waarde)
-                                supabase.table("wedstrijden").update({"nbb_wedstrijd_nr": None}).eq("wed_id", wed_id).execute()
-                                st.info("Test waarde weer verwijderd.")
-                            else:
-                                st.error(f"❌ TEST GEFAALD! Verwacht: {test_nbb}, Got: {opgeslagen}")
-                        else:
-                            st.error("❌ Kon record niet teruglezen")
-                            
-                except Exception as e:
-                    st.error(f"Test fout: {e}")
-                    st.write("**Mogelijke oorzaak:** De kolom `nbb_wedstrijd_nr` bestaat niet in de database.")
-                    st.code("ALTER TABLE wedstrijden ADD COLUMN nbb_wedstrijd_nr TEXT;")
-        
         # Seizoen selectie
         seizoenen = cp_sync.get_beschikbare_seizoenen()
         
@@ -9913,40 +9790,11 @@ def toon_synchronisatie_tab():
                 if ongewijzigd_zonder_nbb:
                     with st.expander(f"🔢 NBB nummers toevoegen ({len(ongewijzigd_zonder_nbb)} wedstrijden zonder nummer)", expanded=False):
                         st.write("Deze wedstrijden matchen op datum+teams maar hebben nog geen NBB wedstrijdnummer in BOB.")
-                        
-                        # Debug: toon eerste 3 items om te zien wat er in zit
-                        with st.expander("🔍 Debug: Eerste 3 records", expanded=True):
-                            for i, item in enumerate(ongewijzigd_zonder_nbb[:3]):
-                                st.write(f"**Record {i+1}:**")
-                                cp = item.get('cp', {})
-                                bob = item.get('bob', {})
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write("**CP data:**")
-                                    st.write(f"- nbb_id: `{cp.get('nbb_id')}`")
-                                    st.write(f"- nbb_match_nr: `{cp.get('nbb_match_nr')}`")
-                                    st.write(f"- home_team: `{cp.get('home_team_name')}`")
-                                
-                                with col2:
-                                    st.write("**BOB data:**")
-                                    st.write(f"- wed_id: `{bob.get('wed_id')}`")
-                                    st.write(f"- nbb_wedstrijd_nr: `{bob.get('nbb_wedstrijd_nr')}`")
-                                    st.write(f"- thuisteam: `{bob.get('thuisteam')}`")
-                                
-                                # Check of sync zou werken
-                                nbb_nr = cp.get('nbb_id')
-                                wed_id = bob.get('wed_id')
-                                if wed_id and nbb_nr:
-                                    st.success(f"✅ Kan synchroniseren: wed_id={wed_id}, nbb_id={nbb_nr}")
-                                else:
-                                    st.warning(f"⚠️ Kan NIET synchroniseren: wed_id={wed_id}, nbb_id={nbb_nr}")
-                                st.divider()
+                        st.write("Door het nummer toe te voegen wordt toekomstige matching betrouwbaarder (ook bij datumwijzigingen).")
                         
                         if st.button(f"🔢 Voeg NBB nummers toe aan {len(ongewijzigd_zonder_nbb)} wedstrijden", key="cp_add_nbb_btn"):
                             bijgewerkt = 0
                             fouten = []
-                            overgeslagen = 0
                             
                             progress_bar = st.progress(0, text="NBB nummers toevoegen...")
                             status_text = st.empty()
@@ -9964,8 +9812,7 @@ def toon_synchronisatie_tab():
                                 
                                 if wed_id and nbb_nr:
                                     try:
-                                        # DIRECTE UPDATE - dit werkt bewezen (test was succesvol)
-                                        # We updaten ALLEEN het nbb_wedstrijd_nr veld
+                                        # Directe UPDATE van alleen het nbb_wedstrijd_nr veld
                                         supabase = db.get_supabase_client()
                                         update_result = supabase.table("wedstrijden").update({
                                             "nbb_wedstrijd_nr": nbb_nr
@@ -9978,12 +9825,6 @@ def toon_synchronisatie_tab():
                                             
                                     except Exception as e:
                                         fouten.append(f"❌ {wed_info}: {str(e)}")
-                                else:
-                                    overgeslagen += 1
-                                    if not nbb_nr:
-                                        fouten.append(f"⚠️ {wed_info}: CP nbb_id is leeg/None")
-                                    if not wed_id:
-                                        fouten.append(f"⚠️ {wed_info}: BOB wed_id ontbreekt")
                                 
                                 # Update progress
                                 progress_bar.progress((idx + 1) / totaal, text=f"NBB nummers toevoegen... {idx + 1}/{totaal}")
@@ -9996,29 +9837,18 @@ def toon_synchronisatie_tab():
                                 del st.session_state["_db_cache_wedstrijden"]
                             
                             # Toon resultaat
-                            st.write("---")
-                            st.write("**Resultaat:**")
-                            st.write(f"- ✅ Bijgewerkt: {bijgewerkt}")
-                            st.write(f"- ⏭️ Overgeslagen (geen nbb_id): {overgeslagen}")
-                            st.write(f"- ❌ Fouten: {len(fouten)}")
-                            
                             if bijgewerkt > 0:
-                                st.success(f"✅ {bijgewerkt} van {totaal} wedstrijden voorzien van NBB nummer!")
-                            elif overgeslagen == totaal:
-                                st.error(f"❌ Alle {totaal} wedstrijden overgeslagen! CP records hebben geen nbb_id.")
-                            else:
-                                st.warning(f"⚠️ Geen wedstrijden bijgewerkt (0 van {totaal})")
+                                st.success(f"✅ {bijgewerkt} wedstrijden voorzien van NBB nummer!")
+                                if bijgewerkt == totaal:
+                                    # Alles gelukt - rerun om sync status te verversen
+                                    del st.session_state['cp_sync_resultaat']
+                                    del st.session_state['cp_sync_uitgevoerd']
+                                    st.rerun()
                             
                             if fouten:
-                                with st.expander(f"⚠️ {len(fouten)} fouten/waarschuwingen", expanded=True):
-                                    for fout in fouten[:20]:
-                                        st.write(fout)
-                                    if len(fouten) > 20:
-                                        st.write(f"... en nog {len(fouten) - 20} andere")
-                            
-                            # Niet automatisch rerun - laat gebruiker resultaat zien
-                            if bijgewerkt > 0:
-                                st.info("🔄 Klik nogmaals op 'Vergelijk met Competitie Planner' om het resultaat te controleren.")
+                                st.error(f"⚠️ {len(fouten)} fouten opgetreden")
+                                for fout in fouten[:5]:
+                                    st.write(fout)
                 
                 # NIEUWE WEDSTRIJDEN
                 if resultaat['nieuw']:

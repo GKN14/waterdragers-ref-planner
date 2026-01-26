@@ -2,18 +2,18 @@
 Database module voor Supabase connectie
 Ref Planner - BV Waterdragers
 
-Versie: 1.32.12
+Versie: 1.32.13
 Datum: 2026-01-26
 
 Inclusief:
 - Admin authenticatie (wachtwoord in database)
 - Device verificatie (geboortedatum check)
 - Geofiltering (alleen Nederland)
-- NBB wedstrijdnummer opslag (v1.32.7)
+- NBB wedstrijdnummer opslag
 """
 
 # Module versie
-DB_VERSIE = "1.32.12"
+DB_VERSIE = "1.32.13"
 
 import os
 import streamlit as st
