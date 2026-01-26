@@ -9731,7 +9731,7 @@ def toon_synchronisatie_tab():
                             st.write(f"**CP #{i+1} {type_icon}:** {home} vs {away}")
                             st.write(f"  Datum: {cp_wed.get('scheduled_date')} {cp_wed.get('scheduled_time')}")
                             st.write(f"  → BOB formaat: {bob_fmt.get('thuisteam')} vs {bob_fmt.get('uitteam')}")
-                            st.write(f"  → Match key: `{datum_key}|waterdragers...`")
+                            st.code(f"Key: {datum_key}|{bob_fmt.get('thuisteam', '').lower()}|{bob_fmt.get('uitteam', '').lower()}")
                     
                     # Laad BOB wedstrijden (thuis én uit)
                     bob_wedstrijden_dict = laad_wedstrijden()
@@ -9744,12 +9744,44 @@ def toon_synchronisatie_tab():
                     with st.expander("🔧 Debug info (BOB data)", expanded=False):
                         for i, bob_wed in enumerate(bob_wedstrijden_list[:5]):
                             type_icon = "🏠" if bob_wed.get('type', 'thuis') == 'thuis' else "🚗"
-                            datum_key = bob_wed.get('datum', '')[:16] if bob_wed.get('datum') else ''
+                            datum_key = bob_wed.get('datum', '').replace('T', ' ')[:16] if bob_wed.get('datum') else ''
                             
                             st.write(f"**BOB #{i+1} {type_icon}:** {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
                             st.write(f"  Datum: {bob_wed.get('datum')}")
                             st.write(f"  NBB nr: {bob_wed.get('nbb_wedstrijd_nr')}")
-                            st.write(f"  → Match key: `{datum_key}|{bob_wed.get('thuisteam', '').lower()[:20]}...`")
+                            st.code(f"Key: {datum_key}|{bob_wed.get('thuisteam', '').lower()}|{bob_wed.get('uitteam', '').lower()}")
+                    
+                    # Debug: zoek specifieke match voor eerste CP wedstrijd
+                    with st.expander("🔍 Debug: Match analyse eerste CP wedstrijd", expanded=False):
+                        if cp_wedstrijden:
+                            first_cp = cp_wedstrijden[0]
+                            first_bob_fmt = cp_sync.map_cp_naar_bob(first_cp)
+                            
+                            st.write("**Zoeken naar match voor:**")
+                            st.write(f"  Thuisteam: `{first_bob_fmt.get('thuisteam')}`")
+                            st.write(f"  Uitteam: `{first_bob_fmt.get('uitteam')}`")
+                            st.write(f"  Datum: `{first_bob_fmt.get('datum')}`")
+                            
+                            # Zoek in BOB naar wedstrijden met hetzelfde Waterdragers team
+                            eigen_team = first_bob_fmt.get('thuisteam', '').lower()
+                            st.write(f"\n**BOB wedstrijden met vergelijkbaar eigen team:**")
+                            
+                            found_any = False
+                            for bob_wed in bob_wedstrijden_list:
+                                bob_thuis = bob_wed.get('thuisteam', '').lower()
+                                if eigen_team[:15] in bob_thuis or bob_thuis[:15] in eigen_team:
+                                    found_any = True
+                                    bob_datum = bob_wed.get('datum', '').replace('T', ' ')[:16]
+                                    cp_datum = first_bob_fmt.get('datum', '')[:16]
+                                    datum_match = "✅" if bob_datum == cp_datum else "❌"
+                                    
+                                    st.write(f"  {datum_match} BOB: {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
+                                    st.write(f"      Datum BOB: `{bob_datum}` | Datum CP: `{cp_datum}`")
+                                    st.write(f"      Uitteam BOB: `{bob_wed.get('uitteam', '').lower()}`")
+                                    st.write(f"      Uitteam CP:  `{first_bob_fmt.get('uitteam', '').lower()}`")
+                            
+                            if not found_any:
+                                st.warning(f"Geen BOB wedstrijden gevonden met team '{eigen_team[:20]}...'")
                     
                     # Vergelijk
                     resultaat = cp_sync.vergelijk_wedstrijden(cp_wedstrijden, bob_wedstrijden_list)
