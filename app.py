@@ -9723,8 +9723,15 @@ def toon_synchronisatie_tab():
                             away = cp_wed.get('away_team_name', '')
                             is_thuis = home.lower().startswith('waterdragers')
                             type_icon = "🏠" if is_thuis else "🚗"
+                            
+                            # Toon hoe de match key eruit ziet
+                            bob_fmt = cp_sync.map_cp_naar_bob(cp_wed)
+                            datum_key = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else ''
+                            
                             st.write(f"**CP #{i+1} {type_icon}:** {home} vs {away}")
                             st.write(f"  Datum: {cp_wed.get('scheduled_date')} {cp_wed.get('scheduled_time')}")
+                            st.write(f"  → BOB formaat: {bob_fmt.get('thuisteam')} vs {bob_fmt.get('uitteam')}")
+                            st.write(f"  → Match key: `{datum_key}|waterdragers...`")
                     
                     # Laad BOB wedstrijden (thuis én uit)
                     bob_wedstrijden_dict = laad_wedstrijden()
@@ -9737,9 +9744,12 @@ def toon_synchronisatie_tab():
                     with st.expander("🔧 Debug info (BOB data)", expanded=False):
                         for i, bob_wed in enumerate(bob_wedstrijden_list[:5]):
                             type_icon = "🏠" if bob_wed.get('type', 'thuis') == 'thuis' else "🚗"
+                            datum_key = bob_wed.get('datum', '')[:16] if bob_wed.get('datum') else ''
+                            
                             st.write(f"**BOB #{i+1} {type_icon}:** {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
                             st.write(f"  Datum: {bob_wed.get('datum')}")
                             st.write(f"  NBB nr: {bob_wed.get('nbb_wedstrijd_nr')}")
+                            st.write(f"  → Match key: `{datum_key}|{bob_wed.get('thuisteam', '').lower()[:20]}...`")
                     
                     # Vergelijk
                     resultaat = cp_sync.vergelijk_wedstrijden(cp_wedstrijden, bob_wedstrijden_list)

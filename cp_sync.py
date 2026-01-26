@@ -180,8 +180,9 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     """
     Map een wedstrijd van CP-formaat naar BOB-formaat.
     
-    Bepaalt automatisch of het een thuis- of uitwedstrijd is op basis
-    van waar "Waterdragers" in de teamnaam staat.
+    BELANGRIJK: BOB slaat ALLE wedstrijden op met Waterdragers in het 'thuisteam' veld,
+    ongeacht of het een thuis- of uitwedstrijd is. Het 'type' veld bepaalt of het 
+    thuis ('thuis') of uit ('uit') is.
     
     Args:
         cp_wedstrijd: Wedstrijd dict uit Competitie Planner
@@ -195,9 +196,14 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     # Bepaal of het een thuis- of uitwedstrijd is
     is_thuiswedstrijd = home_team.lower().startswith('waterdragers')
     
-    # Voor BOB: thuisteam en uitteam komen direct uit CP
-    thuisteam = home_team
-    uitteam = away_team
+    # BOB formaat: Waterdragers altijd in 'thuisteam' veld
+    if is_thuiswedstrijd:
+        bob_thuisteam = home_team
+        bob_uitteam = away_team
+    else:
+        # Uitwedstrijd: wissel de teams om voor BOB
+        bob_thuisteam = away_team  # Waterdragers
+        bob_uitteam = home_team    # Tegenstander
     
     # Bepaal het eigen team (Waterdragers team) voor niveau bepaling
     eigen_team = home_team if is_thuiswedstrijd else away_team
@@ -227,8 +233,8 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     return {
         'nbb_wedstrijd_nr': cp_wedstrijd.get('nbb_id'),
         'datum': datum.isoformat() if datum else None,
-        'thuisteam': thuisteam,
-        'uitteam': uitteam,
+        'thuisteam': bob_thuisteam,  # In BOB altijd Waterdragers
+        'uitteam': bob_uitteam,       # In BOB altijd tegenstander
         'eigen_team_code': eigen_team_code,  # Voor weergave
         'niveau': bepaal_niveau(eigen_team_code),
         'vereist_bs2': bepaal_bs2_vereist(eigen_team_code),
@@ -251,9 +257,12 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
     """
     Vergelijk wedstrijden tussen CP en BOB.
     
+    Let op: BOB slaat ALLE wedstrijden op met Waterdragers in het 'thuisteam' veld,
+    ook uitwedstrijden. Het 'type' veld bepaalt of het thuis of uit is.
+    
     Matching strategie:
     1. Eerst op nbb_wedstrijd_nr (meest betrouwbaar)
-    2. Fallback op datum/tijd + teamnamen (voor wedstrijden zonder nbb_nr)
+    2. Fallback op datum/tijd + genormaliseerde teams
     
     Returns:
         Dict met categorieën: nieuw, gewijzigd, ongewijzigd, verwijderd
@@ -269,21 +278,38 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
     bob_lookup_nbb = {}  # op nbb_wedstrijd_nr
     bob_lookup_key = {}  # op datum + teams (fallback)
     
-    def maak_match_key(datum_str: str, thuisteam: str, uitteam: str) -> str:
+    def normaliseer_teams(team1: str, team2: str) -> tuple[str, str]:
+        """
+        Normaliseer teams zodat Waterdragers altijd eerst staat.
+        Dit matcht hoe BOB wedstrijden opslaat.
+        """
+        t1 = str(team1).strip().lower()
+        t2 = str(team2).strip().lower()
+        
+        # Waterdragers altijd eerst
+        if t1.startswith('waterdragers'):
+            return (t1, t2)
+        elif t2.startswith('waterdragers'):
+            return (t2, t1)
+        else:
+            # Geen Waterdragers gevonden, sorteer alfabetisch
+            return (t1, t2) if t1 < t2 else (t2, t1)
+    
+    def maak_match_key(datum_str: str, team1: str, team2: str) -> str:
         """Maak een unieke sleutel voor matching op datum/teams."""
         # Normaliseer datum (alleen datum + tijd, zonder timezone)
-        datum_norm = datum_str[:16] if datum_str else ''
-        # Normaliseer teamnamen (lowercase, strip)
-        thuis_norm = str(thuisteam).strip().lower()
-        uit_norm = str(uitteam).strip().lower()
-        return f"{datum_norm}|{thuis_norm}|{uit_norm}"
+        # Verwijder T separator en neem eerste 16 karakters
+        datum_norm = datum_str.replace('T', ' ')[:16] if datum_str else ''
+        # Normaliseer teams (Waterdragers altijd eerst)
+        t1_norm, t2_norm = normaliseer_teams(team1, team2)
+        return f"{datum_norm}|{t1_norm}|{t2_norm}"
     
     for wed in bob_wedstrijden:
         nbb_nr = wed.get('nbb_wedstrijd_nr')
         if nbb_nr:
             bob_lookup_nbb[nbb_nr] = wed
         
-        # Altijd ook key-based lookup maken
+        # Key-based lookup met genormaliseerde teams
         key = maak_match_key(
             wed.get('datum', ''),
             wed.get('thuisteam', ''),
@@ -304,12 +330,13 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
         if nbb_nr and nbb_nr in bob_lookup_nbb:
             bob_wed = bob_lookup_nbb[nbb_nr]
         
-        # Fallback: match op datum + teams (gebruik volledige namen uit CP)
+        # Fallback: match op datum + genormaliseerde teams
         if not bob_wed:
+            # Gebruik originele CP teamnamen voor key
             cp_key = maak_match_key(
                 bob_format.get('datum', ''),
-                bob_format.get('thuisteam', ''),  # Volledige naam
-                bob_format.get('uitteam', '')
+                cp_wed.get('home_team_name', ''),
+                cp_wed.get('away_team_name', '')
             )
             if cp_key in bob_lookup_key:
                 bob_wed = bob_lookup_key[cp_key]
@@ -360,15 +387,16 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
     Returns:
         Lijst met wijzigingen, elk met 'veld', 'cp_waarde', 'bob_waarde'
     
-    Let op: 'niveau' wordt NIET vergeleken omdat dit alleen in BOB wordt beheerd.
+    Let op: 
+    - 'niveau' wordt NIET vergeleken (alleen in BOB beheerd)
+    - 'thuisteam'/'uitteam' worden NIET vergeleken (matching is al op teams gebaseerd)
     """
     wijzigingen = []
     
     # Velden om te vergelijken
-    # NB: 'niveau' staat hier NIET bij - dat wordt alleen in BOB beheerd
+    # NB: niveau en teams staan hier NIET bij
     velden = [
         ('datum', 'Datum/tijd'),
-        ('uitteam', 'Uitteam'),
         ('veld', 'Veld'),
     ]
     
@@ -381,16 +409,25 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
             if cp_waarde and bob_waarde:
                 # Normaliseer naar vergelijkbaar formaat
                 try:
-                    if isinstance(bob_waarde, str):
-                        # Parse BOB datum
-                        bob_dt = datetime.fromisoformat(bob_waarde.replace('Z', '+00:00'))
-                    else:
-                        bob_dt = bob_waarde
+                    def parse_datum(val):
+                        """Parse datum string naar datetime, ongeacht formaat."""
+                        if isinstance(val, datetime):
+                            return val
+                        if isinstance(val, str):
+                            # Normaliseer: vervang T door spatie, verwijder timezone
+                            val_clean = val.replace('T', ' ').replace('Z', '').split('+')[0]
+                            # Probeer verschillende formaten
+                            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                                try:
+                                    return datetime.strptime(val_clean[:len(fmt.replace('%', ''))], fmt)
+                                except:
+                                    continue
+                        return None
                     
-                    cp_dt = datetime.fromisoformat(cp_waarde) if isinstance(cp_waarde, str) else cp_waarde
+                    bob_dt = parse_datum(bob_waarde)
+                    cp_dt = parse_datum(cp_waarde)
                     
-                    # Vergelijk zonder timezone info voor eenvoud
-                    if cp_dt.replace(tzinfo=None) != bob_dt.replace(tzinfo=None):
+                    if bob_dt and cp_dt and bob_dt != cp_dt:
                         wijzigingen.append({
                             'veld': veld,
                             'label': label,
