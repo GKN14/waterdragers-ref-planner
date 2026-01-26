@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.2"
+APP_VERSIE = "1.32.3"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.3 (2026-01-26)
+**Bugfix - Error handling:**
+- 🛑 Foutmeldingen blijven nu zichtbaar (geen automatische rerun bij fouten)
+- 📋 Duidelijke foutrapportage per wedstrijd
+- ✅ Alleen rerun als alle updates succesvol zijn
+
 ### v1.32.2 (2026-01-26)
 **CP Sync - Verbeterde vergelijkingsweergave:**
 - 📊 Tabelweergave met alle velden naast elkaar (BOB huidig vs CP nieuw)
@@ -10097,11 +10103,16 @@ def toon_synchronisatie_tab():
                     if geselecteerd_wijzig > 0:
                         if st.button(f"✏️ Werk {geselecteerd_wijzig} wedstrijden bij", key="cp_update_btn"):
                             bijgewerkt = 0
+                            fouten = []
+                            
                             for i, item in enumerate(resultaat['gewijzigd']):
                                 if st.session_state['cp_wijzig_selectie'][i]:
                                     bob = item['bob']
                                     bob_fmt = item['bob_format']
                                     wed_id = bob.get('wed_id')
+                                    
+                                    # Identificatie voor foutmelding
+                                    wed_info = f"{bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} ({bob_fmt.get('datum', '?')[:16]})"
                                     
                                     if wed_id:
                                         # Vergelijk alle relevante velden en update waar nodig
@@ -10122,13 +10133,28 @@ def toon_synchronisatie_tab():
                                             update_data['nbb_wedstrijd_nr'] = bob_fmt['nbb_wedstrijd_nr']
                                         
                                         try:
-                                            sla_wedstrijd_op(wed_id, update_data)
-                                            bijgewerkt += 1
+                                            if update_data:
+                                                sla_wedstrijd_op(wed_id, update_data)
+                                                bijgewerkt += 1
+                                            else:
+                                                # Geen wijzigingen nodig
+                                                bijgewerkt += 1
                                         except Exception as e:
-                                            st.error(f"Fout bij bijwerken: {e}")
+                                            fouten.append(f"❌ {wed_info}: {str(e)}")
+                                    else:
+                                        fouten.append(f"❌ {wed_info}: Geen wed_id gevonden")
                             
+                            # Toon resultaat
                             if bijgewerkt > 0:
                                 st.success(f"✅ {bijgewerkt} wedstrijden bijgewerkt!")
+                            
+                            if fouten:
+                                st.error(f"⚠️ {len(fouten)} fouten opgetreden:")
+                                for fout in fouten:
+                                    st.write(fout)
+                                st.warning("Los de fouten op en probeer opnieuw. De sync wordt NIET automatisch herstart.")
+                            else:
+                                # Alleen rerun als er geen fouten zijn
                                 del st.session_state['cp_sync_resultaat']
                                 del st.session_state['cp_sync_uitgevoerd']
                                 st.rerun()
