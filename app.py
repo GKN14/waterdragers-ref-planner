@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.5"
+APP_VERSIE = "1.32.6"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.6 (2026-01-26)
+**CP Sync opschoning:**
+- 🎉 Duidelijke "Alles in sync!" melding als er geen wijzigingen zijn
+- 🧹 Debug secties verwijderd (niet meer nodig)
+
 ### v1.32.5 (2026-01-26)
 **BUGFIX - NBB nummers toevoegen:**
 - 🐛 Fix: NBB nummers toevoegen wiste alle andere wedstrijddata
@@ -43,39 +48,29 @@ APP_CHANGELOG = """
 **Bugfix - Error handling:**
 - 🛑 Foutmeldingen blijven nu zichtbaar (geen automatische rerun bij fouten)
 - 📋 Duidelijke foutrapportage per wedstrijd
-- ✅ Alleen rerun als alle updates succesvol zijn
 
 ### v1.32.2 (2026-01-26)
 **CP Sync - Verbeterde vergelijkingsweergave:**
 - 📊 Tabelweergave met alle velden naast elkaar (BOB huidig vs CP nieuw)
 - ✓➕✏️ Duidelijke iconen voor status per veld
-- 🔄 Synchroniseert nu ALLE gewijzigde velden (datum, teams, type, niveau, veld)
-
-### v1.32.1 (2026-01-26)
-**UI verbetering:**
-- ✓ Toon datum als "behouden" bij incomplete records (duidelijker overzicht)
-- 📋 Onderscheid tussen info-velden en echte wijzigingen
 
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
 - 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
-- 📅 Matching op datum voor incomplete records (naast matching op teams)
-- 🏠🚗 Correcte thuis/uit weergave voor alle typen wijzigingen
-- 📊 Duidelijke samenvatting: incompleet / verplaatst / andere wijzigingen
+- 📅 Matching op datum voor incomplete records
 
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
-- 🔄 Automatische detectie van verplaatste wedstrijden (zelfde teams, andere datum)
+- 🔄 Automatische detectie van verplaatste wedstrijden
 - 🔢 Bulk toevoegen van NBB nummers aan bestaande wedstrijden
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
 - 🔗 Nieuwe synchronisatie met Competitie Planner database
-- 📥 Import wedstrijden direct uit CP (zonder Excel export)
 
 ### v1.29.0 (2026-01-20)
 **Scheidsrechter status & Team overzicht:**
-- 🎯 Nieuwe status optie: "Op te leiden" (voor spelers die nog getraind moeten worden)
+- 🎯 Nieuwe status optie: "Op te leiden"
 - ⏸️ Nieuwe status optie: "Inactief" (voor spelers die gestopt/pauze hebben)
 - 👥 Nieuw: "Scheidsrechters per team" overzicht in beheer
 - 📋 Kopieerbare tekst per team voor WhatsApp (om te delen met coaches)
@@ -9764,78 +9759,12 @@ def toon_synchronisatie_tab():
                 else:
                     st.info(f"📊 {len(cp_wedstrijden)} wedstrijden gevonden in Competitie Planner")
                     
-                    # Debug: toon eerste paar wedstrijden uit CP
-                    with st.expander("🔧 Debug info (CP data)", expanded=False):
-                        for i, cp_wed in enumerate(cp_wedstrijden[:5]):
-                            home = cp_wed.get('home_team_name', '')
-                            away = cp_wed.get('away_team_name', '')
-                            is_thuis = home.lower().startswith('waterdragers')
-                            type_icon = "🏠" if is_thuis else "🚗"
-                            
-                            # Toon hoe de match key eruit ziet
-                            bob_fmt = cp_sync.map_cp_naar_bob(cp_wed)
-                            datum_key = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else ''
-                            # Genormaliseerde key (zonder sterretjes)
-                            thuis_norm = bob_fmt.get('thuisteam', '').lower().replace('*', '')
-                            uit_norm = bob_fmt.get('uitteam', '').lower().replace('*', '')
-                            
-                            st.write(f"**CP #{i+1} {type_icon}:** {home} vs {away}")
-                            st.write(f"  Datum: {cp_wed.get('scheduled_date')} {cp_wed.get('scheduled_time')}")
-                            st.write(f"  → BOB formaat: {bob_fmt.get('thuisteam')} vs {bob_fmt.get('uitteam')}")
-                            st.code(f"Key: {datum_key}|{thuis_norm}|{uit_norm}")
-                    
                     # Laad BOB wedstrijden (thuis én uit)
                     bob_wedstrijden_dict = laad_wedstrijden()
                     bob_wedstrijden_list = [
                         {**wed, 'wed_id': wed_id} 
                         for wed_id, wed in bob_wedstrijden_dict.items()
                     ]
-                    
-                    # Debug: toon eerste paar wedstrijden uit BOB
-                    with st.expander("🔧 Debug info (BOB data)", expanded=False):
-                        for i, bob_wed in enumerate(bob_wedstrijden_list[:5]):
-                            type_icon = "🏠" if bob_wed.get('type', 'thuis') == 'thuis' else "🚗"
-                            datum_key = bob_wed.get('datum', '').replace('T', ' ')[:16] if bob_wed.get('datum') else ''
-                            # Genormaliseerde key (zonder sterretjes)
-                            thuis_norm = bob_wed.get('thuisteam', '').lower().replace('*', '')
-                            uit_norm = bob_wed.get('uitteam', '').lower().replace('*', '')
-                            
-                            st.write(f"**BOB #{i+1} {type_icon}:** {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
-                            st.write(f"  Datum: {bob_wed.get('datum')}")
-                            st.write(f"  NBB nr: {bob_wed.get('nbb_wedstrijd_nr')}")
-                            st.code(f"Key: {datum_key}|{thuis_norm}|{uit_norm}")
-                    
-                    # Debug: zoek specifieke match voor eerste CP wedstrijd
-                    with st.expander("🔍 Debug: Match analyse eerste CP wedstrijd", expanded=False):
-                        if cp_wedstrijden:
-                            first_cp = cp_wedstrijden[0]
-                            first_bob_fmt = cp_sync.map_cp_naar_bob(first_cp)
-                            
-                            st.write("**Zoeken naar match voor:**")
-                            st.write(f"  Thuisteam: `{first_bob_fmt.get('thuisteam')}`")
-                            st.write(f"  Uitteam: `{first_bob_fmt.get('uitteam')}`")
-                            st.write(f"  Datum: `{first_bob_fmt.get('datum')}`")
-                            
-                            # Zoek in BOB naar wedstrijden met hetzelfde Waterdragers team
-                            eigen_team = first_bob_fmt.get('thuisteam', '').lower()
-                            st.write(f"\n**BOB wedstrijden met vergelijkbaar eigen team:**")
-                            
-                            found_any = False
-                            for bob_wed in bob_wedstrijden_list:
-                                bob_thuis = bob_wed.get('thuisteam', '').lower()
-                                if eigen_team[:15] in bob_thuis or bob_thuis[:15] in eigen_team:
-                                    found_any = True
-                                    bob_datum = bob_wed.get('datum', '').replace('T', ' ')[:16]
-                                    cp_datum = first_bob_fmt.get('datum', '')[:16]
-                                    datum_match = "✅" if bob_datum == cp_datum else "❌"
-                                    
-                                    st.write(f"  {datum_match} BOB: {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
-                                    st.write(f"      Datum BOB: `{bob_datum}` | Datum CP: `{cp_datum}`")
-                                    st.write(f"      Uitteam BOB: `{bob_wed.get('uitteam', '').lower()}`")
-                                    st.write(f"      Uitteam CP:  `{first_bob_fmt.get('uitteam', '').lower()}`")
-                            
-                            if not found_any:
-                                st.warning(f"Geen BOB wedstrijden gevonden met team '{eigen_team[:20]}...'")
                     
                     # Vergelijk
                     resultaat = cp_sync.vergelijk_wedstrijden(cp_wedstrijden, bob_wedstrijden_list)
@@ -9861,6 +9790,17 @@ def toon_synchronisatie_tab():
                     item for item in resultaat['ongewijzigd']
                     if not item['bob'].get('nbb_wedstrijd_nr')
                 ]
+                
+                # Check of alles in sync is
+                alles_in_sync = (
+                    len(resultaat['nieuw']) == 0 and 
+                    len(resultaat['gewijzigd']) == 0 and 
+                    len(resultaat['verwijderd']) == 0 and
+                    len(ongewijzigd_zonder_nbb) == 0
+                )
+                
+                if alles_in_sync:
+                    st.success(f"🎉 **Alles in sync!** Alle {len(resultaat['ongewijzigd'])} wedstrijden komen overeen tussen CP en BOB.")
                 
                 # Optie om NBB nummers toe te voegen aan ongewijzigde wedstrijden
                 if ongewijzigd_zonder_nbb:
