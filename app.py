@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.6"
+APP_VERSIE = "1.32.7"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.7 (2026-01-26)
+**BUGFIX - NBB nummers werden niet opgeslagen:**
+- 🐛 Fix: `nbb_wedstrijd_nr` veld ontbrak in database.py
+- 💾 Veld toegevoegd aan zowel `sla_wedstrijd_op` als `sla_wedstrijden_op`
+- 📋 Versiebeheer toegevoegd aan database.py
+
 ### v1.32.6 (2026-01-26)
 **CP Sync opschoning:**
 - 🎉 Duidelijke "Alles in sync!" melding als er geen wijzigingen zijn
@@ -42,22 +48,18 @@ APP_CHANGELOG = """
 **BUGFIX - Data verlies bij sync:**
 - 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
 - 💾 Alle bestaande BOB waarden worden nu behouden bij sync
-- 🔧 Alleen gewijzigde velden worden overschreven met CP waarden
 
 ### v1.32.3 (2026-01-26)
 **Bugfix - Error handling:**
 - 🛑 Foutmeldingen blijven nu zichtbaar (geen automatische rerun bij fouten)
-- 📋 Duidelijke foutrapportage per wedstrijd
 
 ### v1.32.2 (2026-01-26)
 **CP Sync - Verbeterde vergelijkingsweergave:**
 - 📊 Tabelweergave met alle velden naast elkaar (BOB huidig vs CP nieuw)
-- ✓➕✏️ Duidelijke iconen voor status per veld
 
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
 - 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
-- 📅 Matching op datum voor incomplete records
 
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
