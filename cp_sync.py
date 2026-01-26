@@ -232,7 +232,7 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     
     return {
         'nbb_wedstrijd_nr': cp_wedstrijd.get('nbb_id'),
-        'datum': datum.isoformat() if datum else None,
+        'datum': datum.strftime('%Y-%m-%d %H:%M') if datum else None,  # Spatie formaat zoals BOB
         'thuisteam': bob_thuisteam,  # In BOB altijd Waterdragers
         'uitteam': bob_uitteam,       # In BOB altijd tegenstander
         'eigen_team_code': eigen_team_code,  # Voor weergave
