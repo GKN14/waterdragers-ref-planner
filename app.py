@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.31.0"
+APP_VERSIE = "1.32.0"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.0 (2026-01-26)
+**CP Sync - Incomplete records reparatie:**
+- 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
+- 📅 Matching op datum voor incomplete records (naast matching op teams)
+- 🏠🚗 Correcte thuis/uit weergave voor alle typen wijzigingen
+- 📊 Duidelijke samenvatting: incompleet / verplaatst / andere wijzigingen
+
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
 - 🔄 Automatische detectie van verplaatste wedstrijden (zelfde teams, andere datum)
@@ -9925,13 +9932,23 @@ def toon_synchronisatie_tab():
                 
                 # GEWIJZIGDE WEDSTRIJDEN
                 if resultaat['gewijzigd']:
-                    # Tel verplaatste vs reguliere wijzigingen
+                    # Tel verschillende typen wijzigingen
                     verplaatst_count = sum(1 for item in resultaat['gewijzigd'] if item.get('_verplaatst'))
-                    regulier_count = len(resultaat['gewijzigd']) - verplaatst_count
+                    incomplete_count = sum(1 for item in resultaat['gewijzigd'] if item.get('_incomplete'))
+                    regulier_count = len(resultaat['gewijzigd']) - verplaatst_count - incomplete_count
                     
                     st.subheader(f"✏️ Gewijzigde wedstrijden ({len(resultaat['gewijzigd'])})")
+                    
+                    # Toon samenvatting van typen
+                    samenvatting_delen = []
+                    if incomplete_count > 0:
+                        samenvatting_delen.append(f"🔧 {incomplete_count} incompleet (teamnamen ontbreken)")
                     if verplaatst_count > 0:
-                        st.write(f"🔄 {verplaatst_count} verplaatst (datum gewijzigd) | ✏️ {regulier_count} andere wijzigingen")
+                        samenvatting_delen.append(f"🔄 {verplaatst_count} verplaatst")
+                    if regulier_count > 0:
+                        samenvatting_delen.append(f"✏️ {regulier_count} andere")
+                    if samenvatting_delen:
+                        st.write(" | ".join(samenvatting_delen))
                     else:
                         st.write("Deze wedstrijden hebben verschillen tussen CP en BOB.")
                     
@@ -9944,24 +9961,42 @@ def toon_synchronisatie_tab():
                         bob_fmt = item['bob_format']
                         wijzigingen = item['wijzigingen']
                         is_verplaatst = item.get('_verplaatst', False)
+                        is_incomplete = item.get('_incomplete', False)
                         
                         # Bepaal type en correcte weergave
                         wed_type = bob_fmt.get('type', bob.get('type', 'thuis'))
                         is_thuis = wed_type == 'thuis'
                         
+                        # Bij incomplete records: gebruik teamnamen uit CP (bob_fmt)
+                        # Anders: gebruik teamnamen uit BOB
+                        if is_incomplete:
+                            thuisteam = bob_fmt.get('thuisteam', '?')
+                            uitteam = bob_fmt.get('uitteam', '?')
+                        else:
+                            thuisteam = bob.get('thuisteam', '?')
+                            uitteam = bob.get('uitteam', '?')
+                        
                         # Bij thuiswedstrijd: Waterdragers vs Tegenstander
                         # Bij uitwedstrijd: Tegenstander vs Waterdragers
                         if is_thuis:
-                            team_display = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
+                            team_display = f"{thuisteam} vs {uitteam}"
                             type_icoon = "🏠"
                         else:
-                            team_display = f"{bob.get('uitteam', '?')} vs {bob.get('thuisteam', '?')}"
+                            team_display = f"{uitteam} vs {thuisteam}"
                             type_icoon = "🚗"
                         
-                        # Kies icoon op basis van type wijziging
-                        verplaatst_label = "VERPLAATST: " if is_verplaatst else ""
+                        # Kies label op basis van type wijziging
+                        if is_incomplete:
+                            wijzig_label = "INCOMPLEET: "
+                            expanded = True
+                        elif is_verplaatst:
+                            wijzig_label = "VERPLAATST: "
+                            expanded = True
+                        else:
+                            wijzig_label = ""
+                            expanded = False
                         
-                        with st.expander(f"{type_icoon} {verplaatst_label}{team_display}", expanded=is_verplaatst):
+                        with st.expander(f"{type_icoon} {wijzig_label}{team_display}", expanded=expanded):
                             # Toon wijzigingen
                             for wijz in wijzigingen:
                                 st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")

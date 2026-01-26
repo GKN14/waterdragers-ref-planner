@@ -4,7 +4,7 @@ cp_sync.py - Koppeling BOB ↔ Competitie Planner
 Synchroniseert wedstrijden vanuit de Competitie Planner database naar BOB,
 zodat scheidsrechters zich kunnen inschrijven op thuiswedstrijden.
 
-Versie: 1.31.0
+Versie: 1.32.0
 Datum: 2026-01-26
 """
 
@@ -14,7 +14,7 @@ from datetime import datetime, date, time
 from typing import Optional
 
 # Module versie (synchroon met app.py)
-CP_SYNC_VERSIE = "1.31.0"
+CP_SYNC_VERSIE = "1.32.0"
 
 
 # =============================================================================
@@ -396,20 +396,116 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
         t1, t2 = normaliseer_teams(team1, team2)
         return f"{t1}|{t2}"
     
-    # Bouw lookup voor verwijderde wedstrijden op teams
-    verwijderd_lookup = {}
+    def is_incomplete_bob_record(bob: dict) -> bool:
+        """Check of een BOB record lege/ontbrekende teamnamen heeft."""
+        thuisteam = bob.get('thuisteam', '').strip()
+        uitteam = bob.get('uitteam', '').strip()
+        return not thuisteam or not uitteam
+    
+    # ==========================================================================
+    # PASS 1: Match incomplete BOB records (lege teamnamen) op datum
+    # ==========================================================================
+    # Dit zijn corrupte records die we kunnen repareren door de teamnamen uit CP te halen
+    
+    # Bouw lookup voor incomplete verwijderde wedstrijden op datum
+    incomplete_lookup = {}
     for item in resultaat['verwijderd']:
         bob = item['bob']
-        team_key = maak_team_key(bob.get('thuisteam', ''), bob.get('uitteam', ''))
-        # Kan meerdere wedstrijden zijn met zelfde teams (thuis/uit), sla als lijst op
-        if team_key not in verwijderd_lookup:
-            verwijderd_lookup[team_key] = []
-        verwijderd_lookup[team_key].append(item)
+        if is_incomplete_bob_record(bob):
+            bob_datum = bob.get('datum', '')[:16].replace('T', ' ') if bob.get('datum') else ''
+            if bob_datum:
+                incomplete_lookup[bob_datum] = item
     
-    # Check nieuwe wedstrijden tegen verwijderde
     nieuwe_te_verwijderen = []
     verwijderde_te_verwijderen = []
     
+    # Match nieuwe CP wedstrijden met incomplete BOB records op datum
+    for i, nieuw_item in enumerate(resultaat['nieuw']):
+        bob_fmt = nieuw_item['bob_format']
+        cp_datum = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else ''
+        
+        if cp_datum in incomplete_lookup:
+            # Gevonden! Dit is een incomplete BOB record die we kunnen aanvullen
+            verwijderd_item = incomplete_lookup.pop(cp_datum)
+            bob_wed = verwijderd_item['bob']
+            
+            # Maak wijzigingen lijst - vul teamnamen aan
+            wijzigingen = []
+            
+            # Thuisteam toevoegen
+            if not bob_wed.get('thuisteam', '').strip():
+                wijzigingen.append({
+                    'veld': 'thuisteam',
+                    'label': 'Thuisteam',
+                    'cp_waarde': bob_fmt.get('thuisteam', ''),
+                    'bob_waarde': '(leeg)',
+                })
+            
+            # Uitteam toevoegen
+            if not bob_wed.get('uitteam', '').strip():
+                wijzigingen.append({
+                    'veld': 'uitteam',
+                    'label': 'Uitteam',
+                    'cp_waarde': bob_fmt.get('uitteam', ''),
+                    'bob_waarde': '(leeg)',
+                })
+            
+            # Type toevoegen als die ontbreekt
+            if not bob_wed.get('type'):
+                wijzigingen.append({
+                    'veld': 'type',
+                    'label': 'Type',
+                    'cp_waarde': bob_fmt.get('type', 'thuis'),
+                    'bob_waarde': '(leeg)',
+                })
+            
+            # Niveau toevoegen als die ontbreekt
+            if not bob_wed.get('niveau'):
+                wijzigingen.append({
+                    'veld': 'niveau',
+                    'label': 'Niveau',
+                    'cp_waarde': bob_fmt.get('niveau', 1),
+                    'bob_waarde': '(leeg)',
+                })
+            
+            # Voeg toe aan gewijzigd met speciale markering
+            resultaat['gewijzigd'].append({
+                'cp': nieuw_item['cp'],
+                'bob': bob_wed,
+                'bob_format': bob_fmt,
+                'wijzigingen': wijzigingen,
+                '_incomplete': True,  # Markeer als incomplete record reparatie
+            })
+            
+            nieuwe_te_verwijderen.append(i)
+            verwijderde_te_verwijderen.append(verwijderd_item)
+    
+    # Verwijder gematche items
+    for i in sorted(nieuwe_te_verwijderen, reverse=True):
+        resultaat['nieuw'].pop(i)
+    
+    for item in verwijderde_te_verwijderen:
+        if item in resultaat['verwijderd']:
+            resultaat['verwijderd'].remove(item)
+    
+    # ==========================================================================
+    # PASS 2: Match complete BOB records op teams (verplaatste wedstrijden)
+    # ==========================================================================
+    
+    # Bouw lookup voor complete verwijderde wedstrijden op teams
+    verwijderd_lookup = {}
+    for item in resultaat['verwijderd']:
+        bob = item['bob']
+        if not is_incomplete_bob_record(bob):  # Alleen complete records
+            team_key = maak_team_key(bob.get('thuisteam', ''), bob.get('uitteam', ''))
+            if team_key not in verwijderd_lookup:
+                verwijderd_lookup[team_key] = []
+            verwijderd_lookup[team_key].append(item)
+    
+    nieuwe_te_verwijderen = []
+    verwijderde_te_verwijderen = []
+    
+    # Check nieuwe wedstrijden tegen verwijderde op teams
     for i, nieuw_item in enumerate(resultaat['nieuw']):
         bob_fmt = nieuw_item['bob_format']
         team_key = maak_team_key(bob_fmt.get('thuisteam', ''), bob_fmt.get('uitteam', ''))
@@ -465,7 +561,6 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
                 '_verplaatst': True,  # Markeer als verplaatste wedstrijd
             })
             
-            # Markeer voor verwijdering uit originele lijsten
             nieuwe_te_verwijderen.append(i)
             verwijderde_te_verwijderen.append(verwijderd_item)
     
