@@ -391,19 +391,24 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
     Let op: 
     - 'niveau' wordt NIET vergeleken (alleen in BOB beheerd)
     - 'thuisteam'/'uitteam' worden NIET vergeleken (matching is al op teams gebaseerd)
+    - Lege CP veld waarden overschrijven BOB niet (uitwedstrijden hebben geen veld)
     """
     wijzigingen = []
     
     # Velden om te vergelijken
     # NB: niveau en teams staan hier NIET bij
     velden = [
-        ('datum', 'Datum/tijd'),
-        ('veld', 'Veld'),
+        ('datum', 'Datum/tijd', True),   # altijd vergelijken
+        ('veld', 'Veld', False),          # alleen als CP waarde heeft
     ]
     
-    for veld, label in velden:
+    for veld, label, altijd_vergelijken in velden:
         cp_waarde = cp_bob_format.get(veld)
         bob_waarde = bob_wed.get(veld)
+        
+        # Skip als CP waarde leeg is en dit veld niet altijd vergeleken hoeft te worden
+        if not altijd_vergelijken and not cp_waarde:
+            continue
         
         # Speciale vergelijking voor datum (string vs datetime)
         if veld == 'datum':

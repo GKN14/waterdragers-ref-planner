@@ -9813,8 +9813,8 @@ def toon_synchronisatie_tab():
                     st.subheader(f"➕ Nieuwe wedstrijden ({len(resultaat['nieuw'])})")
                     st.write("Deze wedstrijden staan in CP maar nog niet in BOB.")
                     
-                    # Selectie voor toevoegen
-                    if 'cp_nieuw_selectie' not in st.session_state:
+                    # Selectie voor toevoegen - reset als lengte niet klopt
+                    if 'cp_nieuw_selectie' not in st.session_state or len(st.session_state['cp_nieuw_selectie']) != len(resultaat['nieuw']):
                         st.session_state['cp_nieuw_selectie'] = [True] * len(resultaat['nieuw'])
                     
                     for i, item in enumerate(resultaat['nieuw']):
@@ -9871,7 +9871,8 @@ def toon_synchronisatie_tab():
                     st.subheader(f"✏️ Gewijzigde wedstrijden ({len(resultaat['gewijzigd'])})")
                     st.write("Deze wedstrijden hebben verschillen tussen CP en BOB.")
                     
-                    if 'cp_wijzig_selectie' not in st.session_state:
+                    # Reset selectie als lengte niet klopt
+                    if 'cp_wijzig_selectie' not in st.session_state or len(st.session_state['cp_wijzig_selectie']) != len(resultaat['gewijzigd']):
                         st.session_state['cp_wijzig_selectie'] = [False] * len(resultaat['gewijzigd'])
                     
                     for i, item in enumerate(resultaat['gewijzigd']):
