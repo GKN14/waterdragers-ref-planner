@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.4"
+APP_VERSIE = "1.32.5"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.5 (2026-01-26)
+**BUGFIX - NBB nummers toevoegen:**
+- 🐛 Fix: NBB nummers toevoegen wiste alle andere wedstrijddata
+- 💾 Alle bestaande BOB waarden worden nu behouden
+- 📋 Verbeterde foutrapportage
+
 ### v1.32.4 (2026-01-26)
 **BUGFIX - Data verlies bij sync:**
 - 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
@@ -60,18 +66,12 @@ APP_CHANGELOG = """
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
 - 🔄 Automatische detectie van verplaatste wedstrijden (zelfde teams, andere datum)
-- 🏠🚗 Correcte thuis/uit weergave (Tegenstander vs Waterdragers bij uitwedstrijden)
 - 🔢 Bulk toevoegen van NBB nummers aan bestaande wedstrijden
-- ⭐ Sterretjes (*) in teamnamen worden nu correct genegeerd bij matching
-- 🛡️ Robuustere foutafhandeling bij ontbrekende wedstrijdvelden
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
 - 🔗 Nieuwe synchronisatie met Competitie Planner database
 - 📥 Import wedstrijden direct uit CP (zonder Excel export)
-- 🔄 Detecteert nieuwe, gewijzigde en verwijderde wedstrijden
-- 👥 Behoudt scheidsrechters bij het bijwerken van wedstrijden
-- 🔑 Match op NBB wedstrijdnummer voor robuuste koppeling
 
 ### v1.29.0 (2026-01-20)
 **Scheidsrechter status & Team overzicht:**
@@ -9870,6 +9870,8 @@ def toon_synchronisatie_tab():
                         
                         if st.button(f"🔢 Voeg NBB nummers toe aan {len(ongewijzigd_zonder_nbb)} wedstrijden", key="cp_add_nbb_btn"):
                             bijgewerkt = 0
+                            fouten = []
+                            
                             for item in ongewijzigd_zonder_nbb:
                                 bob = item['bob']
                                 cp = item['cp']
@@ -9878,13 +9880,26 @@ def toon_synchronisatie_tab():
                                 
                                 if wed_id and nbb_nr:
                                     try:
-                                        sla_wedstrijd_op(wed_id, {'nbb_wedstrijd_nr': nbb_nr})
+                                        # BELANGRIJK: Behoud alle bestaande waarden!
+                                        # sla_wedstrijd_op doet een volledige UPSERT
+                                        update_data = dict(bob)  # Kopie van alle bestaande waarden
+                                        update_data['nbb_wedstrijd_nr'] = nbb_nr  # Voeg NBB nummer toe
+                                        
+                                        sla_wedstrijd_op(wed_id, update_data)
                                         bijgewerkt += 1
                                     except Exception as e:
-                                        st.error(f"Fout bij bijwerken: {e}")
+                                        wed_info = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
+                                        fouten.append(f"❌ {wed_info}: {str(e)}")
                             
                             if bijgewerkt > 0:
                                 st.success(f"✅ {bijgewerkt} wedstrijden voorzien van NBB nummer!")
+                            
+                            if fouten:
+                                st.error(f"⚠️ {len(fouten)} fouten opgetreden:")
+                                for fout in fouten:
+                                    st.write(fout)
+                            
+                            if not fouten:
                                 del st.session_state['cp_sync_resultaat']
                                 del st.session_state['cp_sync_uitgevoerd']
                                 st.rerun()
