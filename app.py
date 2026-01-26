@@ -9727,11 +9727,14 @@ def toon_synchronisatie_tab():
                             # Toon hoe de match key eruit ziet
                             bob_fmt = cp_sync.map_cp_naar_bob(cp_wed)
                             datum_key = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else ''
+                            # Genormaliseerde key (zonder sterretjes)
+                            thuis_norm = bob_fmt.get('thuisteam', '').lower().replace('*', '')
+                            uit_norm = bob_fmt.get('uitteam', '').lower().replace('*', '')
                             
                             st.write(f"**CP #{i+1} {type_icon}:** {home} vs {away}")
                             st.write(f"  Datum: {cp_wed.get('scheduled_date')} {cp_wed.get('scheduled_time')}")
                             st.write(f"  → BOB formaat: {bob_fmt.get('thuisteam')} vs {bob_fmt.get('uitteam')}")
-                            st.code(f"Key: {datum_key}|{bob_fmt.get('thuisteam', '').lower()}|{bob_fmt.get('uitteam', '').lower()}")
+                            st.code(f"Key: {datum_key}|{thuis_norm}|{uit_norm}")
                     
                     # Laad BOB wedstrijden (thuis én uit)
                     bob_wedstrijden_dict = laad_wedstrijden()
@@ -9745,11 +9748,14 @@ def toon_synchronisatie_tab():
                         for i, bob_wed in enumerate(bob_wedstrijden_list[:5]):
                             type_icon = "🏠" if bob_wed.get('type', 'thuis') == 'thuis' else "🚗"
                             datum_key = bob_wed.get('datum', '').replace('T', ' ')[:16] if bob_wed.get('datum') else ''
+                            # Genormaliseerde key (zonder sterretjes)
+                            thuis_norm = bob_wed.get('thuisteam', '').lower().replace('*', '')
+                            uit_norm = bob_wed.get('uitteam', '').lower().replace('*', '')
                             
                             st.write(f"**BOB #{i+1} {type_icon}:** {bob_wed.get('thuisteam')} vs {bob_wed.get('uitteam')}")
                             st.write(f"  Datum: {bob_wed.get('datum')}")
                             st.write(f"  NBB nr: {bob_wed.get('nbb_wedstrijd_nr')}")
-                            st.code(f"Key: {datum_key}|{bob_wed.get('thuisteam', '').lower()}|{bob_wed.get('uitteam', '').lower()}")
+                            st.code(f"Key: {datum_key}|{thuis_norm}|{uit_norm}")
                     
                     # Debug: zoek specifieke match voor eerste CP wedstrijd
                     with st.expander("🔍 Debug: Match analyse eerste CP wedstrijd", expanded=False):

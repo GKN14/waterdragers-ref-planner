@@ -281,10 +281,11 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
     def normaliseer_teams(team1: str, team2: str) -> tuple[str, str]:
         """
         Normaliseer teams zodat Waterdragers altijd eerst staat.
-        Dit matcht hoe BOB wedstrijden opslaat.
+        Verwijdert ook sterretjes (*) die in BOB worden gebruikt voor markering.
         """
-        t1 = str(team1).strip().lower()
-        t2 = str(team2).strip().lower()
+        # Verwijder sterretjes en normaliseer
+        t1 = str(team1).strip().lower().replace('*', '')
+        t2 = str(team2).strip().lower().replace('*', '')
         
         # Waterdragers altijd eerst
         if t1.startswith('waterdragers'):
