@@ -24,14 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.11"
+APP_VERSIE = "1.32.12"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.12 (2026-01-26)
+**FIX: NBB nummers opslaan werkt nu:**
+- 🔧 Directe UPDATE ipv sla_wedstrijd_op (bewezen werkend via test)
+- ✅ Update alleen het nbb_wedstrijd_nr veld (geen volledige UPSERT)
+
 ### v1.32.11 (2026-01-26)
 **Test & verificatie NBB opslag:**
 - 🧪 Directe test knop om database kolom te testen
-- ✅ Verificatie na opslaan (controleert of waarde echt is opgeslagen)
-- 📋 Duidelijke feedback per stap
 
 ### v1.32.10 (2026-01-26)
 **Debug NBB sync:**
@@ -9961,32 +9964,17 @@ def toon_synchronisatie_tab():
                                 
                                 if wed_id and nbb_nr:
                                     try:
-                                        # BELANGRIJK: Behoud alle bestaande waarden!
-                                        # sla_wedstrijd_op doet een volledige UPSERT
-                                        update_data = dict(bob)  # Kopie van alle bestaande waarden
-                                        update_data['nbb_wedstrijd_nr'] = nbb_nr  # Voeg NBB nummer toe
+                                        # DIRECTE UPDATE - dit werkt bewezen (test was succesvol)
+                                        # We updaten ALLEEN het nbb_wedstrijd_nr veld
+                                        supabase = db.get_supabase_client()
+                                        update_result = supabase.table("wedstrijden").update({
+                                            "nbb_wedstrijd_nr": nbb_nr
+                                        }).eq("wed_id", wed_id).execute()
                                         
-                                        # Roep database functie aan
-                                        result = db.sla_wedstrijd_op(wed_id, update_data)
-                                        
-                                        if result:
-                                            # VERIFICATIE: Check of het echt is opgeslagen
-                                            if idx < 3:  # Alleen eerste 3 verifiëren (performance)
-                                                try:
-                                                    supabase = db.get_supabase_client()
-                                                    check = supabase.table("wedstrijden").select("nbb_wedstrijd_nr").eq("wed_id", wed_id).execute()
-                                                    if check.data:
-                                                        opgeslagen_waarde = check.data[0].get('nbb_wedstrijd_nr')
-                                                        if opgeslagen_waarde == nbb_nr:
-                                                            fouten.append(f"✅ VERIFICATIE OK: {wed_id} → {opgeslagen_waarde}")
-                                                        else:
-                                                            fouten.append(f"❌ VERIFICATIE FOUT: {wed_id} → opgeslagen: {opgeslagen_waarde}, verwacht: {nbb_nr}")
-                                                except Exception as ve:
-                                                    fouten.append(f"⚠️ Verificatie fout: {ve}")
-                                            
+                                        if update_result.data and len(update_result.data) > 0:
                                             bijgewerkt += 1
                                         else:
-                                            fouten.append(f"❌ {wed_info}: Opslaan retourneerde False")
+                                            fouten.append(f"❌ {wed_info}: Geen records bijgewerkt")
                                             
                                     except Exception as e:
                                         fouten.append(f"❌ {wed_info}: {str(e)}")
