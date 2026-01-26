@@ -24,20 +24,23 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.10"
+APP_VERSIE = "1.32.11"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.11 (2026-01-26)
+**Test & verificatie NBB opslag:**
+- 🧪 Directe test knop om database kolom te testen
+- ✅ Verificatie na opslaan (controleert of waarde echt is opgeslagen)
+- 📋 Duidelijke feedback per stap
+
 ### v1.32.10 (2026-01-26)
 **Debug NBB sync:**
 - 🔍 Preview van eerste 3 records met CP én BOB data
-- 📋 Duidelijke tabel met nbb_id waardes
-- ✅❌ Indicator of sync zou werken per record
-- 📊 Gedetailleerd resultaat overzicht
 
 ### v1.32.9 (2026-01-26)
 **Uitgebreide diagnostiek:**
 - 🔍 Check BOB database
-- 🔍 Check CP database (toon alle veldnamen)
+- 🔍 Check CP database
 
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
@@ -46,10 +49,6 @@ APP_CHANGELOG = """
 ### v1.32.6 (2026-01-26)
 **CP Sync opschoning:**
 - 🎉 Duidelijke "Alles in sync!" melding
-
-### v1.32.5 (2026-01-26)
-**BUGFIX - NBB nummers toevoegen:**
-- 🐛 Fix: NBB nummers toevoegen wiste alle andere wedstrijddata
 
 ### v1.32.4 (2026-01-26)
 **BUGFIX - Data verlies bij sync:**
@@ -9774,6 +9773,59 @@ def toon_synchronisatie_tab():
                             st.error("Geen CP verbinding")
                     except Exception as e:
                         st.error(f"CP fout: {e}")
+            
+            # Directe test voor NBB opslag
+            st.divider()
+            if st.button("🧪 TEST: Probeer NBB nummer op te slaan", key="cp_test_nbb_btn"):
+                try:
+                    supabase = db.get_supabase_client()
+                    
+                    # Haal eerste wedstrijd zonder NBB nummer
+                    response = supabase.table("wedstrijden").select("wed_id, thuisteam, nbb_wedstrijd_nr").is_("nbb_wedstrijd_nr", "null").limit(1).execute()
+                    
+                    if not response.data:
+                        st.info("Geen wedstrijden zonder NBB nummer gevonden")
+                    else:
+                        wed = response.data[0]
+                        wed_id = wed['wed_id']
+                        test_nbb = "TEST_123456"
+                        
+                        st.write(f"**Test wedstrijd:** {wed['thuisteam']}")
+                        st.write(f"**wed_id:** {wed_id}")
+                        st.write(f"**Huidige nbb_wedstrijd_nr:** {wed.get('nbb_wedstrijd_nr')}")
+                        st.write(f"**Test waarde:** {test_nbb}")
+                        
+                        # Probeer DIRECT in database te schrijven (zonder sla_wedstrijd_op)
+                        st.write("---")
+                        st.write("**Stap 1: Direct UPDATE in database...**")
+                        
+                        update_result = supabase.table("wedstrijden").update({"nbb_wedstrijd_nr": test_nbb}).eq("wed_id", wed_id).execute()
+                        
+                        st.write(f"Update result: {len(update_result.data)} records")
+                        
+                        # Lees terug
+                        st.write("**Stap 2: Teruglezen...**")
+                        check = supabase.table("wedstrijden").select("nbb_wedstrijd_nr").eq("wed_id", wed_id).execute()
+                        
+                        if check.data:
+                            opgeslagen = check.data[0].get('nbb_wedstrijd_nr')
+                            st.write(f"Opgeslagen waarde: `{opgeslagen}`")
+                            
+                            if opgeslagen == test_nbb:
+                                st.success("✅ TEST GESLAAGD! Database kolom werkt correct.")
+                                
+                                # Herstel (verwijder test waarde)
+                                supabase.table("wedstrijden").update({"nbb_wedstrijd_nr": None}).eq("wed_id", wed_id).execute()
+                                st.info("Test waarde weer verwijderd.")
+                            else:
+                                st.error(f"❌ TEST GEFAALD! Verwacht: {test_nbb}, Got: {opgeslagen}")
+                        else:
+                            st.error("❌ Kon record niet teruglezen")
+                            
+                except Exception as e:
+                    st.error(f"Test fout: {e}")
+                    st.write("**Mogelijke oorzaak:** De kolom `nbb_wedstrijd_nr` bestaat niet in de database.")
+                    st.code("ALTER TABLE wedstrijden ADD COLUMN nbb_wedstrijd_nr TEXT;")
         
         # Seizoen selectie
         seizoenen = cp_sync.get_beschikbare_seizoenen()
@@ -9918,6 +9970,20 @@ def toon_synchronisatie_tab():
                                         result = db.sla_wedstrijd_op(wed_id, update_data)
                                         
                                         if result:
+                                            # VERIFICATIE: Check of het echt is opgeslagen
+                                            if idx < 3:  # Alleen eerste 3 verifiëren (performance)
+                                                try:
+                                                    supabase = db.get_supabase_client()
+                                                    check = supabase.table("wedstrijden").select("nbb_wedstrijd_nr").eq("wed_id", wed_id).execute()
+                                                    if check.data:
+                                                        opgeslagen_waarde = check.data[0].get('nbb_wedstrijd_nr')
+                                                        if opgeslagen_waarde == nbb_nr:
+                                                            fouten.append(f"✅ VERIFICATIE OK: {wed_id} → {opgeslagen_waarde}")
+                                                        else:
+                                                            fouten.append(f"❌ VERIFICATIE FOUT: {wed_id} → opgeslagen: {opgeslagen_waarde}, verwacht: {nbb_nr}")
+                                                except Exception as ve:
+                                                    fouten.append(f"⚠️ Verificatie fout: {ve}")
+                                            
                                             bijgewerkt += 1
                                         else:
                                             fouten.append(f"❌ {wed_info}: Opslaan retourneerde False")
