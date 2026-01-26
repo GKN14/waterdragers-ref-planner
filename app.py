@@ -9823,7 +9823,8 @@ def toon_synchronisatie_tab():
                         # Gebruik eigen_team_code voor weergave
                         eigen_team = bob_fmt.get('eigen_team_code', '?')
                         wed_type = "🏠" if bob_fmt.get('type') == 'thuis' else "🚗"
-                        tegenstander = bob_fmt.get('uitteam') if bob_fmt.get('type') == 'thuis' else bob_fmt.get('thuisteam')
+                        # Tegenstander is ALTIJD in uitteam (na de mapping)
+                        tegenstander = bob_fmt.get('uitteam', '?')
                         
                         col_check, col_info = st.columns([1, 11])
                         with col_check:
@@ -9941,7 +9942,34 @@ def toon_synchronisatie_tab():
                     
                     for item in resultaat['verwijderd']:
                         bob = item['bob']
-                        st.write(f"• 📅 {bob.get('datum', '?')[:16]} | {bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}")
+                        type_icon = "🏠" if bob.get('type', 'thuis') == 'thuis' else "🚗"
+                        st.write(f"• {type_icon} {bob.get('datum', '?')[:16]} | {bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}")
+                    
+                    # Analyse: zijn dit mogelijk verplaatste wedstrijden?
+                    with st.expander("🔍 Analyse: mogelijk verplaatste wedstrijden"):
+                        st.write("Vergelijking met 'nieuwe' wedstrijden op basis van teams:")
+                        
+                        for item_verw in resultaat['verwijderd']:
+                            bob = item_verw['bob']
+                            bob_teams = (bob.get('thuisteam', '').lower().replace('*', ''), 
+                                        bob.get('uitteam', '').lower().replace('*', ''))
+                            
+                            # Zoek nieuwe wedstrijd met zelfde teams
+                            match_gevonden = False
+                            for item_nieuw in resultaat['nieuw']:
+                                nieuw = item_nieuw['bob_format']
+                                nieuw_teams = (nieuw.get('thuisteam', '').lower().replace('*', ''),
+                                              nieuw.get('uitteam', '').lower().replace('*', ''))
+                                
+                                if bob_teams == nieuw_teams:
+                                    st.success(f"🔄 **Mogelijk verplaatst:** {bob.get('thuisteam')} vs {bob.get('uitteam')}")
+                                    st.write(f"  - BOB datum: {bob.get('datum', '?')[:16]}")
+                                    st.write(f"  - CP datum: {nieuw.get('datum', '?')[:16]}")
+                                    match_gevonden = True
+                                    break
+                            
+                            if not match_gevonden:
+                                st.warning(f"❓ Geen match gevonden voor: {bob.get('thuisteam')} vs {bob.get('uitteam')} ({bob.get('datum', '?')[:16]})")
                     
                     st.info("💡 Deze wedstrijden worden niet automatisch verwijderd. Controleer handmatig of ze geannuleerd moeten worden.")
     
