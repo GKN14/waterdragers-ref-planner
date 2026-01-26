@@ -378,6 +378,99 @@ def vergelijk_wedstrijden(cp_wedstrijden: list[dict], bob_wedstrijden: list[dict
                 'bob': wed,
             })
     
+    # ==========================================================================
+    # EXTRA PASS: Detecteer verplaatste wedstrijden
+    # ==========================================================================
+    # Als een wedstrijd in "nieuw" dezelfde teams heeft als een wedstrijd in "verwijderd",
+    # dan is het waarschijnlijk een verplaatste wedstrijd (datum gewijzigd).
+    # Verplaats deze naar "gewijzigd" met de datum als wijziging.
+    
+    def maak_team_key(team1: str, team2: str) -> str:
+        """Maak een key op basis van alleen teams (zonder datum)."""
+        t1, t2 = normaliseer_teams(team1, team2)
+        return f"{t1}|{t2}"
+    
+    # Bouw lookup voor verwijderde wedstrijden op teams
+    verwijderd_lookup = {}
+    for item in resultaat['verwijderd']:
+        bob = item['bob']
+        team_key = maak_team_key(bob.get('thuisteam', ''), bob.get('uitteam', ''))
+        # Kan meerdere wedstrijden zijn met zelfde teams (thuis/uit), sla als lijst op
+        if team_key not in verwijderd_lookup:
+            verwijderd_lookup[team_key] = []
+        verwijderd_lookup[team_key].append(item)
+    
+    # Check nieuwe wedstrijden tegen verwijderde
+    nieuwe_te_verwijderen = []
+    verwijderde_te_verwijderen = []
+    
+    for i, nieuw_item in enumerate(resultaat['nieuw']):
+        bob_fmt = nieuw_item['bob_format']
+        team_key = maak_team_key(bob_fmt.get('thuisteam', ''), bob_fmt.get('uitteam', ''))
+        
+        if team_key in verwijderd_lookup and verwijderd_lookup[team_key]:
+            # Gevonden! Dit is waarschijnlijk een verplaatste wedstrijd
+            verwijderd_item = verwijderd_lookup[team_key].pop(0)  # Neem eerste match
+            bob_wed = verwijderd_item['bob']
+            
+            # Maak wijzigingen lijst (vooral datum)
+            wijzigingen = []
+            
+            # Datum wijziging
+            cp_datum = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else ''
+            bob_datum = bob_wed.get('datum', '')[:16] if bob_wed.get('datum') else ''
+            if cp_datum != bob_datum:
+                # Format voor weergave
+                try:
+                    from datetime import datetime
+                    cp_dt = datetime.strptime(cp_datum, '%Y-%m-%d %H:%M')
+                    bob_dt = datetime.strptime(bob_datum.replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+                    wijzigingen.append({
+                        'veld': 'datum',
+                        'label': 'Datum/tijd',
+                        'cp_waarde': cp_dt.strftime('%d-%m-%Y %H:%M'),
+                        'bob_waarde': bob_dt.strftime('%d-%m-%Y %H:%M'),
+                    })
+                except:
+                    wijzigingen.append({
+                        'veld': 'datum',
+                        'label': 'Datum/tijd',
+                        'cp_waarde': cp_datum,
+                        'bob_waarde': bob_datum,
+                    })
+            
+            # Veld wijziging (alleen als CP een waarde heeft)
+            cp_veld = bob_fmt.get('veld')
+            bob_veld = bob_wed.get('veld')
+            if cp_veld and str(cp_veld) != str(bob_veld or ''):
+                wijzigingen.append({
+                    'veld': 'veld',
+                    'label': 'Veld',
+                    'cp_waarde': cp_veld,
+                    'bob_waarde': bob_veld,
+                })
+            
+            # Voeg toe aan gewijzigd
+            resultaat['gewijzigd'].append({
+                'cp': nieuw_item['cp'],
+                'bob': bob_wed,
+                'bob_format': bob_fmt,
+                'wijzigingen': wijzigingen,
+                '_verplaatst': True,  # Markeer als verplaatste wedstrijd
+            })
+            
+            # Markeer voor verwijdering uit originele lijsten
+            nieuwe_te_verwijderen.append(i)
+            verwijderde_te_verwijderen.append(verwijderd_item)
+    
+    # Verwijder de gematche items uit nieuw en verwijderd (in omgekeerde volgorde)
+    for i in sorted(nieuwe_te_verwijderen, reverse=True):
+        resultaat['nieuw'].pop(i)
+    
+    for item in verwijderde_te_verwijderen:
+        if item in resultaat['verwijderd']:
+            resultaat['verwijderd'].remove(item)
+    
     return resultaat
 
 
