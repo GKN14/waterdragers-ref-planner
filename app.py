@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.1"
+APP_VERSIE = "1.32.2"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.2 (2026-01-26)
+**CP Sync - Verbeterde vergelijkingsweergave:**
+- 📊 Tabelweergave met alle velden naast elkaar (BOB huidig vs CP nieuw)
+- ✓➕✏️ Duidelijke iconen voor status per veld
+- 🔄 Synchroniseert nu ALLE gewijzigde velden (datum, teams, type, niveau, veld)
+
 ### v1.32.1 (2026-01-26)
 **UI verbetering:**
 - ✓ Toon datum als "behouden" bij incomplete records (duidelijker overzicht)
@@ -10002,14 +10008,74 @@ def toon_synchronisatie_tab():
                             expanded = False
                         
                         with st.expander(f"{type_icoon} {wijzig_label}{team_display}", expanded=expanded):
-                            # Toon wijzigingen
-                            for wijz in wijzigingen:
-                                if wijz.get('_info_only'):
-                                    # Info veld - toon als behouden
-                                    st.write(f"**{wijz['label']}:** ✓ {wijz['cp_waarde']} (behouden)")
+                            # Bouw volledige vergelijkingstabel
+                            import pandas as pd
+                            
+                            # Bepaal alle relevante velden voor vergelijking
+                            vergelijk_velden = [
+                                ('datum', 'Datum'),
+                                ('thuisteam', 'Thuisteam'),
+                                ('uitteam', 'Uitteam'),
+                                ('type', 'Type'),
+                                ('niveau', 'Niveau'),
+                                ('veld', 'Veld'),
+                            ]
+                            
+                            tabel_data = []
+                            for veld, label in vergelijk_velden:
+                                # Haal waarden op
+                                bob_waarde = bob.get(veld, '')
+                                cp_waarde = bob_fmt.get(veld, '')
+                                
+                                # Format datum voor weergave
+                                if veld == 'datum':
+                                    try:
+                                        if bob_waarde:
+                                            dt = datetime.strptime(str(bob_waarde).replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+                                            bob_waarde = dt.strftime('%d-%m-%Y %H:%M')
+                                        if cp_waarde:
+                                            dt = datetime.strptime(str(cp_waarde).replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+                                            cp_waarde = dt.strftime('%d-%m-%Y %H:%M')
+                                    except:
+                                        pass
+                                
+                                # Bepaal of dit veld verandert
+                                bob_str = str(bob_waarde).strip() if bob_waarde else ''
+                                cp_str = str(cp_waarde).strip() if cp_waarde else ''
+                                
+                                if not bob_str:
+                                    bob_display = '(leeg)'
                                 else:
-                                    # Echte wijziging
-                                    st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")
+                                    bob_display = bob_str
+                                
+                                if not cp_str:
+                                    cp_display = '(leeg)'
+                                else:
+                                    cp_display = cp_str
+                                
+                                # Markeer wijzigingen
+                                if bob_str == cp_str:
+                                    status = '✓'
+                                elif not bob_str and cp_str:
+                                    status = '➕'  # Nieuw
+                                elif bob_str and not cp_str:
+                                    status = '⚠️'  # Wordt leeg
+                                else:
+                                    status = '✏️'  # Wijziging
+                                
+                                tabel_data.append({
+                                    '': status,
+                                    'Veld': label,
+                                    'BOB (huidig)': bob_display,
+                                    'CP (nieuw)': cp_display,
+                                })
+                            
+                            # Toon als tabel
+                            df = pd.DataFrame(tabel_data)
+                            st.dataframe(df, hide_index=True, use_container_width=True)
+                            
+                            # Legenda
+                            st.caption("✓ = ongewijzigd | ➕ = wordt ingevuld | ✏️ = wordt gewijzigd")
                             
                             # Scheidsrechters info
                             scheids_info = []
@@ -10018,10 +10084,10 @@ def toon_synchronisatie_tab():
                             if bob.get('scheids_2'):
                                 scheids_info.append(f"2e: {bob['scheids_2']}")
                             if scheids_info:
-                                st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)}")
+                                st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)} (blijven behouden)")
                             
                             st.session_state['cp_wijzig_selectie'][i] = st.checkbox(
-                                "CP waarden overnemen (scheidsrechters blijven behouden)",
+                                "CP waarden overnemen",
                                 value=st.session_state['cp_wijzig_selectie'][i],
                                 key=f"cp_wijzig_{i}"
                             )
@@ -10038,14 +10104,18 @@ def toon_synchronisatie_tab():
                                     wed_id = bob.get('wed_id')
                                     
                                     if wed_id:
-                                        # Update alleen de gewijzigde velden (niet info-only velden)
+                                        # Vergelijk alle relevante velden en update waar nodig
                                         update_data = {}
-                                        for wijz in item['wijzigingen']:
-                                            # Skip info-only velden (beginnen met _)
-                                            if wijz.get('_info_only') or wijz['veld'].startswith('_'):
-                                                continue
-                                            veld = wijz['veld']
-                                            update_data[veld] = bob_fmt.get(veld)
+                                        sync_velden = ['datum', 'thuisteam', 'uitteam', 'type', 'niveau', 'veld']
+                                        
+                                        for veld in sync_velden:
+                                            bob_waarde = str(bob.get(veld, '')).strip() if bob.get(veld) else ''
+                                            cp_waarde = bob_fmt.get(veld)
+                                            cp_waarde_str = str(cp_waarde).strip() if cp_waarde else ''
+                                            
+                                            # Update als waarden verschillen EN CP een waarde heeft
+                                            if bob_waarde != cp_waarde_str and cp_waarde_str:
+                                                update_data[veld] = cp_waarde
                                         
                                         # Voeg nbb_wedstrijd_nr toe als die nog niet gezet is
                                         if bob_fmt.get('nbb_wedstrijd_nr') and not bob.get('nbb_wedstrijd_nr'):
