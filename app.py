@@ -9808,6 +9808,39 @@ def toon_synchronisatie_tab():
                 col_s3.metric("✏️ Gewijzigd", len(resultaat['gewijzigd']))
                 col_s4.metric("❌ Niet in CP", len(resultaat['verwijderd']))
                 
+                # Check hoeveel ongewijzigde wedstrijden GEEN NBB nummer hebben
+                ongewijzigd_zonder_nbb = [
+                    item for item in resultaat['ongewijzigd']
+                    if not item['bob'].get('nbb_wedstrijd_nr')
+                ]
+                
+                # Optie om NBB nummers toe te voegen aan ongewijzigde wedstrijden
+                if ongewijzigd_zonder_nbb:
+                    with st.expander(f"🔢 NBB nummers toevoegen ({len(ongewijzigd_zonder_nbb)} wedstrijden zonder nummer)", expanded=False):
+                        st.write("Deze wedstrijden matchen op datum+teams maar hebben nog geen NBB wedstrijdnummer in BOB.")
+                        st.write("Door het nummer toe te voegen wordt toekomstige matching betrouwbaarder (ook bij datumwijzigingen).")
+                        
+                        if st.button(f"🔢 Voeg NBB nummers toe aan {len(ongewijzigd_zonder_nbb)} wedstrijden", key="cp_add_nbb_btn"):
+                            bijgewerkt = 0
+                            for item in ongewijzigd_zonder_nbb:
+                                bob = item['bob']
+                                cp = item['cp']
+                                wed_id = bob.get('wed_id')
+                                nbb_nr = cp.get('nbb_id')
+                                
+                                if wed_id and nbb_nr:
+                                    try:
+                                        sla_wedstrijd_op(wed_id, {'nbb_wedstrijd_nr': nbb_nr})
+                                        bijgewerkt += 1
+                                    except Exception as e:
+                                        st.error(f"Fout bij bijwerken: {e}")
+                            
+                            if bijgewerkt > 0:
+                                st.success(f"✅ {bijgewerkt} wedstrijden voorzien van NBB nummer!")
+                                del st.session_state['cp_sync_resultaat']
+                                del st.session_state['cp_sync_uitgevoerd']
+                                st.rerun()
+                
                 # NIEUWE WEDSTRIJDEN
                 if resultaat['nieuw']:
                     st.subheader(f"➕ Nieuwe wedstrijden ({len(resultaat['nieuw'])})")
@@ -9820,11 +9853,16 @@ def toon_synchronisatie_tab():
                     for i, item in enumerate(resultaat['nieuw']):
                         bob_fmt = item['bob_format']
                         datum_str = bob_fmt.get('datum', '')[:16] if bob_fmt.get('datum') else 'Onbekend'
-                        # Gebruik eigen_team_code voor weergave
-                        eigen_team = bob_fmt.get('eigen_team_code', '?')
-                        wed_type = "🏠" if bob_fmt.get('type') == 'thuis' else "🚗"
-                        # Tegenstander is ALTIJD in uitteam (na de mapping)
-                        tegenstander = bob_fmt.get('uitteam', '?')
+                        is_thuis = bob_fmt.get('type') == 'thuis'
+                        wed_type = "🏠" if is_thuis else "🚗"
+                        
+                        # Correcte volgorde: thuis = Waterdragers vs Tegenstander, uit = Tegenstander vs Waterdragers
+                        thuisteam = bob_fmt.get('thuisteam', '?')
+                        uitteam = bob_fmt.get('uitteam', '?')
+                        if is_thuis:
+                            team_display = f"{thuisteam} vs {uitteam}"
+                        else:
+                            team_display = f"{uitteam} vs {thuisteam}"
                         
                         col_check, col_info = st.columns([1, 11])
                         with col_check:
@@ -9835,7 +9873,7 @@ def toon_synchronisatie_tab():
                                 label_visibility="collapsed"
                             )
                         with col_info:
-                            st.write(f"{wed_type} **{datum_str}** | {eigen_team} vs {tegenstander} | Niveau {bob_fmt.get('niveau', '?')} | Veld {bob_fmt.get('veld', '-')}")
+                            st.write(f"{wed_type} **{datum_str}** | {team_display} | Niveau {bob_fmt.get('niveau', '?')} | Veld {bob_fmt.get('veld') or '-'}")
                     
                     # Toevoegen knop
                     geselecteerd_nieuw = sum(st.session_state['cp_nieuw_selectie'])
@@ -9849,9 +9887,9 @@ def toon_synchronisatie_tab():
                                     nbb_nr = bob_fmt.get('nbb_wedstrijd_nr', '')
                                     wed_id = f"cp_{nbb_nr}" if nbb_nr else f"cp_{datetime.now().timestamp()}"
                                     
-                                    # Verwijder interne velden
+                                    # Verwijder interne velden (die beginnen met _)
                                     wed_data = {k: v for k, v in bob_fmt.items() if not k.startswith('_')}
-                                    wed_data['type'] = 'thuis'
+                                    # Type is al correct in bob_fmt ('thuis' of 'uit')
                                     
                                     # Opslaan
                                     try:
@@ -9889,11 +9927,23 @@ def toon_synchronisatie_tab():
                         wijzigingen = item['wijzigingen']
                         is_verplaatst = item.get('_verplaatst', False)
                         
-                        # Kies icoon op basis van type wijziging
-                        icoon = "🔄" if is_verplaatst else "📅"
-                        label = "VERPLAATST: " if is_verplaatst else ""
+                        # Bepaal type en correcte weergave
+                        wed_type = bob_fmt.get('type', bob.get('type', 'thuis'))
+                        is_thuis = wed_type == 'thuis'
                         
-                        with st.expander(f"{icoon} {label}{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}", expanded=is_verplaatst):
+                        # Bij thuiswedstrijd: Waterdragers vs Tegenstander
+                        # Bij uitwedstrijd: Tegenstander vs Waterdragers
+                        if is_thuis:
+                            team_display = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
+                            type_icoon = "🏠"
+                        else:
+                            team_display = f"{bob.get('uitteam', '?')} vs {bob.get('thuisteam', '?')}"
+                            type_icoon = "🚗"
+                        
+                        # Kies icoon op basis van type wijziging
+                        verplaatst_label = "VERPLAATST: " if is_verplaatst else ""
+                        
+                        with st.expander(f"{type_icoon} {verplaatst_label}{team_display}", expanded=is_verplaatst):
                             # Toon wijzigingen
                             for wijz in wijzigingen:
                                 st.write(f"**{wijz['label']}:** {wijz['bob_waarde']} → {wijz['cp_waarde']}")
@@ -9954,8 +10004,14 @@ def toon_synchronisatie_tab():
                     
                     for item in resultaat['verwijderd']:
                         bob = item['bob']
-                        type_icon = "🏠" if bob.get('type', 'thuis') == 'thuis' else "🚗"
-                        st.write(f"• {type_icon} {bob.get('datum', '?')[:16]} | {bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}")
+                        is_thuis = bob.get('type', 'thuis') == 'thuis'
+                        type_icon = "🏠" if is_thuis else "🚗"
+                        # Correcte volgorde: thuis = Waterdragers vs Tegenstander, uit = Tegenstander vs Waterdragers
+                        if is_thuis:
+                            team_display = f"{bob.get('thuisteam', '?')} vs {bob.get('uitteam', '?')}"
+                        else:
+                            team_display = f"{bob.get('uitteam', '?')} vs {bob.get('thuisteam', '?')}"
+                        st.write(f"• {type_icon} {bob.get('datum', '?')[:16]} | {team_display}")
                     
                     # Analyse: zijn er mogelijk niet-gedetecteerde verplaatsingen?
                     # (Dit zou zeldzaam moeten zijn na de automatische detectie)
