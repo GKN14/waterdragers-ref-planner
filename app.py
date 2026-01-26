@@ -24,26 +24,27 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.8"
+APP_VERSIE = "1.32.9"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.9 (2026-01-26)
+**Uitgebreide diagnostiek:**
+- 🔍 Check BOB database (NBB kolom status)
+- 🔍 Check CP database (toon alle veldnamen)
+- 📋 JSON weergave van CP record structuur
+
 ### v1.32.8 (2026-01-26)
 **Diagnostiek & debugging:**
-- 🔧 Database diagnostiek toegevoegd (check NBB kolom)
+- 🔧 Database diagnostiek toegevoegd
 - 📊 Progress bar bij NBB nummers toevoegen
-- 📋 Gedetailleerde feedback per wedstrijd
-- 🔄 Cache invalidatie na updates
 
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
 - 🐛 Fix: `nbb_wedstrijd_nr` veld ontbrak in database.py
-- 💾 Veld toegevoegd aan zowel `sla_wedstrijd_op` als `sla_wedstrijden_op`
-- 📋 Versiebeheer toegevoegd aan database.py
 
 ### v1.32.6 (2026-01-26)
 **CP Sync opschoning:**
-- 🎉 Duidelijke "Alles in sync!" melding als er geen wijzigingen zijn
-- 🧹 Debug secties verwijderd (niet meer nodig)
+- 🎉 Duidelijke "Alles in sync!" melding
 
 ### v1.32.5 (2026-01-26)
 **BUGFIX - NBB nummers toevoegen:**
@@ -53,10 +54,6 @@ APP_CHANGELOG = """
 **BUGFIX - Data verlies bij sync:**
 - 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
 
-### v1.32.2 (2026-01-26)
-**CP Sync - Verbeterde vergelijkingsweergave:**
-- 📊 Tabelweergave met alle velden naast elkaar
-
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
 - 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
@@ -64,7 +61,6 @@ APP_CHANGELOG = """
 ### v1.31.0 (2026-01-26)
 **CP Sync verbeteringen:**
 - 🔄 Automatische detectie van verplaatste wedstrijden
-- 🔢 Bulk toevoegen van NBB nummers
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -9723,40 +9719,64 @@ def toon_synchronisatie_tab():
         
         # Diagnostiek expander
         with st.expander("🔧 Database diagnostiek", expanded=False):
-            if st.button("🔍 Controleer NBB kolom in database", key="cp_diag_btn"):
-                try:
-                    # Direct naar Supabase voor diagnostiek
-                    supabase = db.get_supabase_client()
-                    
-                    # Tel wedstrijden met en zonder NBB nummer
-                    response = supabase.table("wedstrijden").select("wed_id, nbb_wedstrijd_nr, thuisteam").execute()
-                    
-                    if response.data:
-                        totaal = len(response.data)
-                        met_nbb = sum(1 for r in response.data if r.get('nbb_wedstrijd_nr'))
-                        zonder_nbb = totaal - met_nbb
+            col_diag1, col_diag2 = st.columns(2)
+            
+            with col_diag1:
+                if st.button("🔍 Check BOB database", key="cp_diag_btn"):
+                    try:
+                        # Direct naar Supabase voor diagnostiek
+                        supabase = db.get_supabase_client()
                         
-                        st.write(f"**Totaal wedstrijden:** {totaal}")
-                        st.write(f"**Met NBB nummer:** {met_nbb}")
-                        st.write(f"**Zonder NBB nummer:** {zonder_nbb}")
+                        # Tel wedstrijden met en zonder NBB nummer
+                        response = supabase.table("wedstrijden").select("wed_id, nbb_wedstrijd_nr, thuisteam").execute()
                         
-                        # Toon een paar voorbeelden
-                        st.write("**Voorbeelden met NBB nummer:**")
-                        voorbeelden_met = [r for r in response.data if r.get('nbb_wedstrijd_nr')][:3]
-                        for v in voorbeelden_met:
-                            st.code(f"{v.get('thuisteam')}: {v.get('nbb_wedstrijd_nr')}")
-                        
-                        if niet_met := [r for r in response.data if not r.get('nbb_wedstrijd_nr')][:3]:
-                            st.write("**Voorbeelden zonder NBB nummer:**")
-                            for v in niet_met:
-                                st.code(f"{v.get('thuisteam')}: (leeg)")
-                    else:
-                        st.warning("Geen wedstrijden gevonden in database")
-                        
-                except Exception as e:
-                    st.error(f"Database fout: {e}")
-                    st.write("**Mogelijke oorzaak:** De kolom `nbb_wedstrijd_nr` bestaat niet.")
-                    st.code("ALTER TABLE wedstrijden ADD COLUMN nbb_wedstrijd_nr TEXT;")
+                        if response.data:
+                            totaal = len(response.data)
+                            met_nbb = sum(1 for r in response.data if r.get('nbb_wedstrijd_nr'))
+                            zonder_nbb = totaal - met_nbb
+                            
+                            st.write(f"**BOB Totaal:** {totaal}")
+                            st.write(f"**Met NBB nr:** {met_nbb}")
+                            st.write(f"**Zonder NBB nr:** {zonder_nbb}")
+                            
+                            if met_nbb > 0:
+                                st.write("**Voorbeeld met NBB:**")
+                                v = [r for r in response.data if r.get('nbb_wedstrijd_nr')][0]
+                                st.code(f"{v.get('thuisteam')}: {v.get('nbb_wedstrijd_nr')}")
+                        else:
+                            st.warning("Geen wedstrijden in BOB")
+                            
+                    except Exception as e:
+                        st.error(f"BOB fout: {e}")
+            
+            with col_diag2:
+                if st.button("🔍 Check CP database", key="cp_diag_cp_btn"):
+                    try:
+                        # Haal 1 wedstrijd op uit CP
+                        cp_client = cp_sync.get_cp_client()
+                        if cp_client:
+                            response = cp_client.table('matches').select('*').limit(1).execute()
+                            
+                            if response.data:
+                                wed = response.data[0]
+                                st.write("**CP veldnamen:**")
+                                
+                                # Zoek naar NBB-achtige velden
+                                nbb_velden = [k for k in wed.keys() if 'nbb' in k.lower() or 'wedstrijd' in k.lower() or 'match' in k.lower() or 'id' in k.lower()]
+                                
+                                st.write("Mogelijk NBB velden:")
+                                for veld in nbb_velden:
+                                    waarde = wed.get(veld)
+                                    st.code(f"{veld}: {waarde}")
+                                
+                                st.write("**Alle velden:**")
+                                st.json(wed)
+                            else:
+                                st.warning("Geen wedstrijden in CP")
+                        else:
+                            st.error("Geen CP verbinding")
+                    except Exception as e:
+                        st.error(f"CP fout: {e}")
         
         # Seizoen selectie
         seizoenen = cp_sync.get_beschikbare_seizoenen()
