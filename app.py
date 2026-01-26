@@ -24,19 +24,20 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.9"
+APP_VERSIE = "1.32.10"
 APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.32.10 (2026-01-26)
+**Debug NBB sync:**
+- 🔍 Preview van eerste 3 records met CP én BOB data
+- 📋 Duidelijke tabel met nbb_id waardes
+- ✅❌ Indicator of sync zou werken per record
+- 📊 Gedetailleerd resultaat overzicht
+
 ### v1.32.9 (2026-01-26)
 **Uitgebreide diagnostiek:**
-- 🔍 Check BOB database (NBB kolom status)
+- 🔍 Check BOB database
 - 🔍 Check CP database (toon alle veldnamen)
-- 📋 JSON weergave van CP record structuur
-
-### v1.32.8 (2026-01-26)
-**Diagnostiek & debugging:**
-- 🔧 Database diagnostiek toegevoegd
-- 📊 Progress bar bij NBB nummers toevoegen
 
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
@@ -57,10 +58,6 @@ APP_CHANGELOG = """
 ### v1.32.0 (2026-01-26)
 **CP Sync - Incomplete records reparatie:**
 - 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
-
-### v1.31.0 (2026-01-26)
-**CP Sync verbeteringen:**
-- 🔄 Automatische detectie van verplaatste wedstrijden
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -9861,11 +9858,40 @@ def toon_synchronisatie_tab():
                 if ongewijzigd_zonder_nbb:
                     with st.expander(f"🔢 NBB nummers toevoegen ({len(ongewijzigd_zonder_nbb)} wedstrijden zonder nummer)", expanded=False):
                         st.write("Deze wedstrijden matchen op datum+teams maar hebben nog geen NBB wedstrijdnummer in BOB.")
-                        st.write("Door het nummer toe te voegen wordt toekomstige matching betrouwbaarder (ook bij datumwijzigingen).")
+                        
+                        # Debug: toon eerste 3 items om te zien wat er in zit
+                        with st.expander("🔍 Debug: Eerste 3 records", expanded=True):
+                            for i, item in enumerate(ongewijzigd_zonder_nbb[:3]):
+                                st.write(f"**Record {i+1}:**")
+                                cp = item.get('cp', {})
+                                bob = item.get('bob', {})
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.write("**CP data:**")
+                                    st.write(f"- nbb_id: `{cp.get('nbb_id')}`")
+                                    st.write(f"- nbb_match_nr: `{cp.get('nbb_match_nr')}`")
+                                    st.write(f"- home_team: `{cp.get('home_team_name')}`")
+                                
+                                with col2:
+                                    st.write("**BOB data:**")
+                                    st.write(f"- wed_id: `{bob.get('wed_id')}`")
+                                    st.write(f"- nbb_wedstrijd_nr: `{bob.get('nbb_wedstrijd_nr')}`")
+                                    st.write(f"- thuisteam: `{bob.get('thuisteam')}`")
+                                
+                                # Check of sync zou werken
+                                nbb_nr = cp.get('nbb_id')
+                                wed_id = bob.get('wed_id')
+                                if wed_id and nbb_nr:
+                                    st.success(f"✅ Kan synchroniseren: wed_id={wed_id}, nbb_id={nbb_nr}")
+                                else:
+                                    st.warning(f"⚠️ Kan NIET synchroniseren: wed_id={wed_id}, nbb_id={nbb_nr}")
+                                st.divider()
                         
                         if st.button(f"🔢 Voeg NBB nummers toe aan {len(ongewijzigd_zonder_nbb)} wedstrijden", key="cp_add_nbb_btn"):
                             bijgewerkt = 0
                             fouten = []
+                            overgeslagen = 0
                             
                             progress_bar = st.progress(0, text="NBB nummers toevoegen...")
                             status_text = st.empty()
@@ -9899,10 +9925,11 @@ def toon_synchronisatie_tab():
                                     except Exception as e:
                                         fouten.append(f"❌ {wed_info}: {str(e)}")
                                 else:
-                                    if not wed_id:
-                                        fouten.append(f"⚠️ {wed_info}: Geen wed_id")
+                                    overgeslagen += 1
                                     if not nbb_nr:
-                                        fouten.append(f"⚠️ {wed_info}: Geen NBB nummer in CP")
+                                        fouten.append(f"⚠️ {wed_info}: CP nbb_id is leeg/None")
+                                    if not wed_id:
+                                        fouten.append(f"⚠️ {wed_info}: BOB wed_id ontbreekt")
                                 
                                 # Update progress
                                 progress_bar.progress((idx + 1) / totaal, text=f"NBB nummers toevoegen... {idx + 1}/{totaal}")
@@ -9915,17 +9942,25 @@ def toon_synchronisatie_tab():
                                 del st.session_state["_db_cache_wedstrijden"]
                             
                             # Toon resultaat
+                            st.write("---")
+                            st.write("**Resultaat:**")
+                            st.write(f"- ✅ Bijgewerkt: {bijgewerkt}")
+                            st.write(f"- ⏭️ Overgeslagen (geen nbb_id): {overgeslagen}")
+                            st.write(f"- ❌ Fouten: {len(fouten)}")
+                            
                             if bijgewerkt > 0:
                                 st.success(f"✅ {bijgewerkt} van {totaal} wedstrijden voorzien van NBB nummer!")
+                            elif overgeslagen == totaal:
+                                st.error(f"❌ Alle {totaal} wedstrijden overgeslagen! CP records hebben geen nbb_id.")
                             else:
                                 st.warning(f"⚠️ Geen wedstrijden bijgewerkt (0 van {totaal})")
                             
                             if fouten:
-                                st.error(f"⚠️ {len(fouten)} fouten/waarschuwingen:")
-                                for fout in fouten[:10]:  # Toon max 10
-                                    st.write(fout)
-                                if len(fouten) > 10:
-                                    st.write(f"... en nog {len(fouten) - 10} andere")
+                                with st.expander(f"⚠️ {len(fouten)} fouten/waarschuwingen", expanded=True):
+                                    for fout in fouten[:20]:
+                                        st.write(fout)
+                                    if len(fouten) > 20:
+                                        st.write(f"... en nog {len(fouten) - 20} andere")
                             
                             # Niet automatisch rerun - laat gebruiker resultaat zien
                             if bijgewerkt > 0:
