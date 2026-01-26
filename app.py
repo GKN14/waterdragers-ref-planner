@@ -24,9 +24,17 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.30.0"
-APP_VERSIE_DATUM = "2026-01-25"
+APP_VERSIE = "1.31.0"
+APP_VERSIE_DATUM = "2026-01-26"
 APP_CHANGELOG = """
+### v1.31.0 (2026-01-26)
+**CP Sync verbeteringen:**
+- 🔄 Automatische detectie van verplaatste wedstrijden (zelfde teams, andere datum)
+- 🏠🚗 Correcte thuis/uit weergave (Tegenstander vs Waterdragers bij uitwedstrijden)
+- 🔢 Bulk toevoegen van NBB nummers aan bestaande wedstrijden
+- ⭐ Sterretjes (*) in teamnamen worden nu correct genegeerd bij matching
+- 🛡️ Robuustere foutafhandeling bij ontbrekende wedstrijdvelden
+
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
 - 🔗 Nieuwe synchronisatie met Competitie Planner database
@@ -7206,12 +7214,22 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         if filter_status == "Compleet" and (not compleet or geannuleerd):
             continue
         
+        # Veilig ophalen van verplichte velden
+        thuisteam = wed.get("thuisteam")
+        uitteam = wed.get("uitteam")
+        niveau = wed.get("niveau")
+        datum = wed.get("datum")
+        
+        # Skip incomplete wedstrijden
+        if not thuisteam or not uitteam or not datum:
+            continue
+        
         wed_lijst.append({
             "id": wed_id,
-            "datum": wed["datum"],
-            "thuisteam": wed["thuisteam"],
-            "uitteam": wed["uitteam"],
-            "niveau": wed["niveau"],
+            "datum": datum,
+            "thuisteam": thuisteam,
+            "uitteam": uitteam,
+            "niveau": niveau or 1,
             "scheids_1": wed.get("scheids_1"),
             "scheids_1_naam": scheids_1_naam,
             "scheids_2": wed.get("scheids_2"),
