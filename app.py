@@ -24,9 +24,13 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.15"
+APP_VERSIE = "1.32.16"
 APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.16 (2026-01-27)
+**Fix: Status veldnaam gecorrigeerd:**
+- 🐛 Veldnaam `scheids_status` ipv `status` (consistent met bestaande code)
+
 ### v1.32.15 (2026-01-27)
 **Fix: Status "Op te leiden" wordt nu respecteerd:**
 - 🎯 Scheidsrechters met status "Op te leiden" kunnen niet meer worden toegewezen
@@ -52,10 +56,6 @@ APP_CHANGELOG = """
 ### v1.32.6 (2026-01-26)
 **CP Sync opschoning:**
 - 🎉 Duidelijke "Alles in sync!" melding
-
-### v1.32.4 (2026-01-26)
-**BUGFIX - Data verlies bij sync:**
-- 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -2859,7 +2859,7 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     kandidaten = []
     for nbb, scheids in scheidsrechters.items():
         # Check status - alleen "Actief" mag toewijzen
-        status = scheids.get("status", "Actief")
+        status = scheids.get("scheids_status", "Actief")
         if status != "Actief":
             continue  # "Op te leiden" en "Inactief" worden uitgesloten
         
@@ -3020,7 +3020,7 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
             continue
         
         # Check status - alleen "Actief" telt mee in pool
-        status = scheids.get("status", "Actief")
+        status = scheids.get("scheids_status", "Actief")
         if status != "Actief":
             continue  # "Op te leiden" en "Inactief" worden uitgesloten
         
@@ -3134,7 +3134,7 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
             continue
         
         # Check status - alleen "Actief" telt mee
-        status = scheids.get("status", "Actief")
+        status = scheids.get("scheids_status", "Actief")
         if status != "Actief":
             continue  # "Op te leiden" en "Inactief" worden uitgesloten
         

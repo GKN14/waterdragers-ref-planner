@@ -2,7 +2,7 @@
 Database module voor Supabase connectie
 Ref Planner - BV Waterdragers
 
-Versie: 1.32.15
+Versie: 1.32.16
 Datum: 2026-01-27
 
 Inclusief:
@@ -13,7 +13,7 @@ Inclusief:
 """
 
 # Module versie
-DB_VERSIE = "1.32.15"
+DB_VERSIE = "1.32.16"
 
 import os
 import streamlit as st
