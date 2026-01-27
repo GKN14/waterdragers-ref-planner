@@ -24,19 +24,22 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.19"
+APP_VERSIE = "1.32.21"
 APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.21 (2026-01-27)
+**Verbeterde detectie vrijgekomen posities:**
+- 🔧 Ook oude afmeldingen (zonder positie-veld) worden herkend
+- 📅 Doelmaand berekening vereenvoudigd (geen >15/<15 meer)
+
+### v1.32.20 (2026-01-27)
+**Fix: Vrijgekomen posities altijd zichtbaar:**
+- 👁️ Wedstrijden met vrijgekomen positie worden ALTIJD getoond
+- 🎯 Niet meer gefilterd op doelmaand als iemand zich heeft afgemeld
+
 ### v1.32.19 (2026-01-27)
 **Vereenvoudigde deadline logica:**
 - 📅 Deadline sluit de maand NA de deadline-datum
-- ✅ Voorbeeld: deadline 31 jan → februari gesloten, rest open
-- 🔧 Geen >15/<15 regel meer, veel simpeler
-- 👁️ Wedstrijden blijven zichtbaar, alleen inschrijven geblokkeerd
-
-### v1.32.18 (2026-01-27)
-**Fix: Deadline logica voor eerdere maanden:**
-- 🐛 Maanden vóór de deadline-maand worden niet meer onterecht gesloten
 
 ### v1.32.17 (2026-01-27)
 **Afmelding opent positie voor inschrijving:**
@@ -2209,36 +2212,46 @@ def is_inschrijving_open_voor_wedstrijd(wed_datum: datetime) -> bool:
     - Wedstrijd in januari → OPEN (huidige/eerdere maanden)
     - Wedstrijd in februari → DICHT (maand na deadline)
     - Wedstrijd in maart → OPEN (nog geen deadline voor)
-    
-    Voorbeeld: Deadline 15 februari (vroeg afsluiten)
-    - Wedstrijd in januari/februari → OPEN
-    - Wedstrijd in maart → DICHT (maand na deadline)
-    - Wedstrijd in april → OPEN
     """
-    instellingen = laad_instellingen()
-    deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    nu = datetime.now()
-    
-    # Als we nog voor de deadline zijn, is alles open
-    if nu <= deadline:
-        return True
-    
-    # Bepaal de gesloten maand = maand NA de deadline
-    if deadline.month == 12:
-        gesloten_maand = 1
-        gesloten_jaar = deadline.year + 1
-    else:
-        gesloten_maand = deadline.month + 1
-        gesloten_jaar = deadline.year
-    
-    # Wedstrijd maand en jaar
-    wed_maand = wed_datum.month
-    wed_jaar = wed_datum.year
-    
-    # ALLEEN de gesloten maand is dicht, alle andere maanden blijven open
-    if wed_jaar == gesloten_jaar and wed_maand == gesloten_maand:
-        return False
-    else:
+    try:
+        instellingen = laad_instellingen()
+        deadline_str = instellingen.get("inschrijf_deadline", "2025-01-08")
+        
+        # Probeer verschillende formaten
+        try:
+            deadline = datetime.strptime(deadline_str, "%Y-%m-%d")
+        except ValueError:
+            try:
+                deadline = datetime.strptime(deadline_str, "%Y/%m/%d")
+            except ValueError:
+                # Fallback: alles open
+                return True
+        
+        nu = datetime.now()
+        
+        # Als we nog voor de deadline zijn, is alles open
+        if nu <= deadline:
+            return True
+        
+        # Bepaal de gesloten maand = maand NA de deadline
+        if deadline.month == 12:
+            gesloten_maand = 1
+            gesloten_jaar = deadline.year + 1
+        else:
+            gesloten_maand = deadline.month + 1
+            gesloten_jaar = deadline.year
+        
+        # Wedstrijd maand en jaar
+        wed_maand = wed_datum.month
+        wed_jaar = wed_datum.year
+        
+        # ALLEEN de gesloten maand is dicht, alle andere maanden blijven open
+        if wed_jaar == gesloten_jaar and wed_maand == gesloten_maand:
+            return False
+        else:
+            return True
+    except Exception as e:
+        # Bij fouten: alles open (fail-safe)
         return True
 
 def get_deadline_maand_info() -> dict:
@@ -2295,18 +2308,27 @@ def is_positie_vrijgekomen_door_afmelding(wed: dict, positie: str) -> bool:
     
     Returns: True als de positie:
     - Nu leeg is, EN
-    - Er ooit iemand voor deze positie is afgemeld
+    - Er ooit iemand voor deze positie is afgemeld (of er überhaupt afmeldingen zijn)
     """
     # Positie moet leeg zijn
     if wed.get(positie):
         return False
     
-    # Check of er een afmelding is voor deze positie
+    # Check of er afmeldingen zijn
     afgemeld_door = wed.get("afgemeld_door") or []
+    if not afgemeld_door:
+        return False
+    
+    # Check of er een afmelding is voor deze specifieke positie
     for afmelding in afgemeld_door:
         if isinstance(afmelding, dict):
-            if afmelding.get("positie") == positie:
+            afmelding_positie = afmelding.get("positie")
+            # Match als positie overeenkomt OF als positie niet is opgeslagen (oude data)
+            if afmelding_positie == positie or afmelding_positie is None:
                 return True
+        else:
+            # Oude format (alleen nbb string) - neem aan dat het voor deze positie was
+            return True
     
     return False
 
@@ -4651,17 +4673,14 @@ def toon_speler_view(nbb_nummer: str):
     # ============================================================
     
     # Bereken doelmaand voor filter
+    # Doelmaand = maand NA de deadline (consistent met inschrijf-logica)
     deadline_dt = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
-    if deadline_dt.day <= 15:
-        doel_maand = deadline_dt.month
-        doel_jaar = deadline_dt.year
+    if deadline_dt.month == 12:
+        doel_maand = 1
+        doel_jaar = deadline_dt.year + 1
     else:
-        if deadline_dt.month == 12:
-            doel_maand = 1
-            doel_jaar = deadline_dt.year + 1
-        else:
-            doel_maand = deadline_dt.month + 1
-            doel_jaar = deadline_dt.year
+        doel_maand = deadline_dt.month + 1
+        doel_jaar = deadline_dt.year
     
     maand_namen_kort = ["", "jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
     maand_namen_lang = ["", "januari", "februari", "maart", "april", "mei", "juni", 
@@ -4947,7 +4966,12 @@ def toon_speler_view(nbb_nummer: str):
                 continue
         
             # Filter op doelmaand indien nodig
-            if not filter_hele_overzicht:
+            # UITZONDERING: wedstrijden met vrijgekomen posities altijd tonen
+            heeft_vrijgekomen_positie = (
+                is_positie_vrijgekomen_door_afmelding(wed, "scheids_1") or 
+                is_positie_vrijgekomen_door_afmelding(wed, "scheids_2")
+            )
+            if not filter_hele_overzicht and not heeft_vrijgekomen_positie:
                 if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
                     continue
         
