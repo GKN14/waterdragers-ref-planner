@@ -24,14 +24,23 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.17"
+APP_VERSIE = "1.32.19"
 APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.19 (2026-01-27)
+**Vereenvoudigde deadline logica:**
+- 📅 Deadline sluit de maand NA de deadline-datum
+- ✅ Voorbeeld: deadline 31 jan → februari gesloten, rest open
+- 🔧 Geen >15/<15 regel meer, veel simpeler
+- 👁️ Wedstrijden blijven zichtbaar, alleen inschrijven geblokkeerd
+
+### v1.32.18 (2026-01-27)
+**Fix: Deadline logica voor eerdere maanden:**
+- 🐛 Maanden vóór de deadline-maand worden niet meer onterecht gesloten
+
 ### v1.32.17 (2026-01-27)
 **Afmelding opent positie voor inschrijving:**
 - 🎯 Als iemand zich afmeldt, wordt die specifieke positie weer open voor anderen
-- ⏰ Deadline blijft gelden voor posities die nooit bezet waren
-- 📍 Per positie wordt gecheckt of die open is (scheids_1 apart van scheids_2)
 
 ### v1.32.16 (2026-01-27)
 **Fix: Status veldnaam gecorrigeerd:**
@@ -45,17 +54,9 @@ APP_CHANGELOG = """
 **Wedstrijden beheer - Toekomst filter:**
 - 🔮 Standaard alleen toekomstige wedstrijden tonen
 
-### v1.32.13 (2026-01-26)
-**Opschoning CP Sync:**
-- 🧹 Debug functies verwijderd
-
 ### v1.32.12 (2026-01-26)
 **FIX: NBB nummers opslaan werkt nu:**
 - 🔧 Directe UPDATE voor NBB nummers
-
-### v1.32.7 (2026-01-26)
-**BUGFIX - NBB nummers werden niet opgeslagen:**
-- 🐛 Fix: `nbb_wedstrijd_nr` veld ontbrak in database.py
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -2201,49 +2202,43 @@ def is_inschrijving_open() -> bool:
 def is_inschrijving_open_voor_wedstrijd(wed_datum: datetime) -> bool:
     """
     Check of inschrijving open is voor een specifieke wedstrijd.
-    De deadline sluit alleen de maand waar de deadline voor geldt.
-    Wedstrijden in latere maanden blijven open voor inschrijving.
     
-    Voorbeeld: Deadline 15 januari
-    - Wedstrijd 20 januari → DICHT (zelfde maand)
-    - Wedstrijd 5 februari → OPEN (latere maand)
+    Logica: De deadline sluit de maand NA de deadline-datum.
+    
+    Voorbeeld: Deadline 31 januari
+    - Wedstrijd in januari → OPEN (huidige/eerdere maanden)
+    - Wedstrijd in februari → DICHT (maand na deadline)
+    - Wedstrijd in maart → OPEN (nog geen deadline voor)
+    
+    Voorbeeld: Deadline 15 februari (vroeg afsluiten)
+    - Wedstrijd in januari/februari → OPEN
+    - Wedstrijd in maart → DICHT (maand na deadline)
+    - Wedstrijd in april → OPEN
     """
     instellingen = laad_instellingen()
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     nu = datetime.now()
     
-    # Bepaal de maand waar de deadline betrekking op heeft
-    # Als deadline <= 15e van de maand → geldt voor die maand
-    # Als deadline > 15e van de maand → geldt voor volgende maand
-    if deadline.day <= 15:
-        deadline_maand = deadline.month
-        deadline_jaar = deadline.year
+    # Als we nog voor de deadline zijn, is alles open
+    if nu <= deadline:
+        return True
+    
+    # Bepaal de gesloten maand = maand NA de deadline
+    if deadline.month == 12:
+        gesloten_maand = 1
+        gesloten_jaar = deadline.year + 1
     else:
-        if deadline.month == 12:
-            deadline_maand = 1
-            deadline_jaar = deadline.year + 1
-        else:
-            deadline_maand = deadline.month + 1
-            deadline_jaar = deadline.year
+        gesloten_maand = deadline.month + 1
+        gesloten_jaar = deadline.year
     
     # Wedstrijd maand en jaar
     wed_maand = wed_datum.month
     wed_jaar = wed_datum.year
     
-    # Als we nog voor de deadline zijn, is alles open
-    if nu <= deadline:
-        return True
-    
-    # Na de deadline: check of wedstrijd in de afgesloten maand valt
-    # De afgesloten maand is de deadline_maand/deadline_jaar
-    if wed_jaar == deadline_jaar and wed_maand == deadline_maand:
-        # Wedstrijd valt in de afgesloten maand
-        return False
-    elif wed_jaar < deadline_jaar or (wed_jaar == deadline_jaar and wed_maand < deadline_maand):
-        # Wedstrijd is in het verleden (voor de afgesloten maand)
+    # ALLEEN de gesloten maand is dicht, alle andere maanden blijven open
+    if wed_jaar == gesloten_jaar and wed_maand == gesloten_maand:
         return False
     else:
-        # Wedstrijd is in een latere maand - open voor inschrijving
         return True
 
 def get_deadline_maand_info() -> dict:
@@ -2255,16 +2250,13 @@ def get_deadline_maand_info() -> dict:
     deadline = datetime.strptime(instellingen["inschrijf_deadline"], "%Y-%m-%d")
     nu = datetime.now()
     
-    if deadline.day <= 15:
-        gesloten_maand = deadline.month
-        gesloten_jaar = deadline.year
+    # Gesloten maand = maand NA de deadline
+    if deadline.month == 12:
+        gesloten_maand = 1
+        gesloten_jaar = deadline.year + 1
     else:
-        if deadline.month == 12:
-            gesloten_maand = 1
-            gesloten_jaar = deadline.year + 1
-        else:
-            gesloten_maand = deadline.month + 1
-            gesloten_jaar = deadline.year
+        gesloten_maand = deadline.month + 1
+        gesloten_jaar = deadline.year
     
     return {
         "deadline": deadline,
