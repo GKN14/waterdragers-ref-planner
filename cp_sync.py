@@ -4,8 +4,11 @@ cp_sync.py - Koppeling BOB ↔ Competitie Planner
 Synchroniseert wedstrijden vanuit de Competitie Planner database naar BOB,
 zodat scheidsrechters zich kunnen inschrijven op thuiswedstrijden.
 
-Versie: 1.32.21
+Versie: 1.32.22
 Datum: 2026-01-27
+
+Changelog:
+- 1.32.22: Fix datum parsing bug - lengte berekening was incorrect waardoor datumvergelijking altijd faalde
 """
 
 from supabase import create_client, Client
@@ -14,7 +17,7 @@ from datetime import datetime, date, time
 from typing import Optional
 
 # Module versie (synchroon met app.py)
-CP_SYNC_VERSIE = "1.32.21"
+CP_SYNC_VERSIE = "1.32.22"
 
 
 # =============================================================================
@@ -632,11 +635,16 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
                             return val
                         if isinstance(val, str):
                             # Normaliseer: vervang T door spatie, verwijder timezone
-                            val_clean = val.replace('T', ' ').replace('Z', '').split('+')[0]
-                            # Probeer verschillende formaten
-                            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d']:
+                            val_clean = val.replace('T', ' ').replace('Z', '').split('+')[0].strip()
+                            # Probeer verschillende formaten met correcte lengtes
+                            formats_with_lengths = [
+                                ('%Y-%m-%d %H:%M:%S', 19),  # 2026-01-31 18:00:00
+                                ('%Y-%m-%d %H:%M', 16),     # 2026-01-31 18:00
+                                ('%Y-%m-%d', 10),           # 2026-01-31
+                            ]
+                            for fmt, expected_len in formats_with_lengths:
                                 try:
-                                    return datetime.strptime(val_clean[:len(fmt.replace('%', ''))], fmt)
+                                    return datetime.strptime(val_clean[:expected_len], fmt)
                                 except:
                                     continue
                         return None
@@ -651,8 +659,9 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
                             'cp_waarde': cp_dt.strftime('%d-%m-%Y %H:%M'),
                             'bob_waarde': bob_dt.strftime('%d-%m-%Y %H:%M'),
                         })
-                except:
-                    pass
+                except Exception as e:
+                    # Log fout voor debugging maar ga door
+                    print(f"Datum vergelijking fout: {e} (CP: {cp_waarde}, BOB: {bob_waarde})")
         else:
             # Normale vergelijking
             if str(cp_waarde or '') != str(bob_waarde or ''):
