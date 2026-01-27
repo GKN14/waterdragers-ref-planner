@@ -4,8 +4,8 @@ cp_sync.py - Koppeling BOB ↔ Competitie Planner
 Synchroniseert wedstrijden vanuit de Competitie Planner database naar BOB,
 zodat scheidsrechters zich kunnen inschrijven op thuiswedstrijden.
 
-Versie: 1.32.13
-Datum: 2026-01-26
+Versie: 1.32.14
+Datum: 2026-01-27
 """
 
 from supabase import create_client, Client
@@ -14,7 +14,7 @@ from datetime import datetime, date, time
 from typing import Optional
 
 # Module versie (synchroon met app.py)
-CP_SYNC_VERSIE = "1.32.13"
+CP_SYNC_VERSIE = "1.32.14"
 
 
 # =============================================================================

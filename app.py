@@ -24,17 +24,21 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.13"
-APP_VERSIE_DATUM = "2026-01-26"
+APP_VERSIE = "1.32.14"
+APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.14 (2026-01-27)
+**Wedstrijden beheer - Toekomst filter:**
+- 🔮 Standaard alleen toekomstige wedstrijden tonen
+- 🔄 Toggle om alle wedstrijden te zien
+
 ### v1.32.13 (2026-01-26)
 **Opschoning CP Sync:**
 - 🧹 Debug functies verwijderd (niet meer nodig)
-- ✨ Schonere interface
 
 ### v1.32.12 (2026-01-26)
 **FIX: NBB nummers opslaan werkt nu:**
-- 🔧 Directe UPDATE voor NBB nummers (bewezen werkend)
+- 🔧 Directe UPDATE voor NBB nummers
 
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
@@ -7194,7 +7198,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
     """Toon lijst van wedstrijden gefilterd op type."""
     
     # Filter opties
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([2, 2, 2])
     with col1:
         if type_filter == "thuis":
             filter_status = st.selectbox("Filter", ["Alle", "Nog in te vullen", "Compleet"], key=f"filter_{type_filter}")
@@ -7202,6 +7206,11 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
             filter_status = "Alle"
     with col2:
         sorteer = st.selectbox("Sorteer op", ["Datum", "Niveau"], key=f"sort_{type_filter}")
+    with col3:
+        # Standaard alleen toekomstige wedstrijden tonen
+        alleen_toekomst = st.toggle("Alleen toekomstige", value=True, key=f"toekomst_{type_filter}")
+    
+    vandaag = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     
     # Wedstrijden lijst
     wed_lijst = []
@@ -7209,6 +7218,19 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         # Filter op type (default is thuis voor oude data)
         wed_type = wed.get("type", "thuis")
         if wed_type != type_filter:
+            continue
+        
+        # Veilig ophalen van datum
+        datum = wed.get("datum")
+        if not datum:
+            continue
+            
+        # Filter op toekomstige wedstrijden
+        try:
+            wed_datum = datetime.strptime(datum, "%Y-%m-%d %H:%M")
+            if alleen_toekomst and wed_datum < vandaag:
+                continue
+        except:
             continue
         
         scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
@@ -7227,10 +7249,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         thuisteam = wed.get("thuisteam")
         uitteam = wed.get("uitteam")
         niveau = wed.get("niveau")
-        datum = wed.get("datum")
         
-        # Skip incomplete wedstrijden
-        if not thuisteam or not uitteam or not datum:
+        # Skip incomplete wedstrijden (datum is al eerder gecontroleerd)
+        if not thuisteam or not uitteam:
             continue
         
         wed_lijst.append({
