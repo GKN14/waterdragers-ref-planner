@@ -24,17 +24,22 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.14"
+APP_VERSIE = "1.32.15"
 APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.15 (2026-01-27)
+**Fix: Status "Op te leiden" wordt nu respecteerd:**
+- 🎯 Scheidsrechters met status "Op te leiden" kunnen niet meer worden toegewezen
+- ⏸️ Scheidsrechters met status "Inactief" kunnen niet meer worden toegewezen
+- 📊 Pool-berekening houdt nu rekening met status
+
 ### v1.32.14 (2026-01-27)
 **Wedstrijden beheer - Toekomst filter:**
 - 🔮 Standaard alleen toekomstige wedstrijden tonen
-- 🔄 Toggle om alle wedstrijden te zien
 
 ### v1.32.13 (2026-01-26)
 **Opschoning CP Sync:**
-- 🧹 Debug functies verwijderd (niet meer nodig)
+- 🧹 Debug functies verwijderd
 
 ### v1.32.12 (2026-01-26)
 **FIX: NBB nummers opslaan werkt nu:**
@@ -51,10 +56,6 @@ APP_CHANGELOG = """
 ### v1.32.4 (2026-01-26)
 **BUGFIX - Data verlies bij sync:**
 - 🐛 Fix: Bestaande wedstrijddata werd gewist door partiële updates
-
-### v1.32.0 (2026-01-26)
-**CP Sync - Incomplete records reparatie:**
-- 🔧 Detectie en reparatie van BOB wedstrijden met ontbrekende teamnamen
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -2857,6 +2858,11 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
     
     kandidaten = []
     for nbb, scheids in scheidsrechters.items():
+        # Check status - alleen "Actief" mag toewijzen
+        status = scheids.get("status", "Actief")
+        if status != "Actief":
+            continue  # "Op te leiden" en "Inactief" worden uitgesloten
+        
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         # Voor 2e scheids: standaard max 1 niveau hoger dan eigen niveau
         max_niveau_2e = min(niveau_1e + 1, 5)
@@ -3013,6 +3019,11 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
         if nbb in afgemelde_nbbs:
             continue
         
+        # Check status - alleen "Actief" telt mee in pool
+        status = scheids.get("status", "Actief")
+        if status != "Actief":
+            continue  # "Op te leiden" en "Inactief" worden uitgesloten
+        
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         
         # Check BS2 vereiste
@@ -3121,6 +3132,11 @@ def get_beschikbare_teams_voor_dag(dag_datum: datetime, dag_items: list, wedstri
         # Check of uitgesloten van pool (testgebruikers, reserves)
         if scheids.get("uitgesloten_van_pool", False):
             continue
+        
+        # Check status - alleen "Actief" telt mee
+        status = scheids.get("status", "Actief")
+        if status != "Actief":
+            continue  # "Op te leiden" en "Inactief" worden uitgesloten
         
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         
