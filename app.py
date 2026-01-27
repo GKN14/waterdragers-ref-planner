@@ -24,18 +24,22 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.16"
+APP_VERSIE = "1.32.17"
 APP_VERSIE_DATUM = "2026-01-27"
 APP_CHANGELOG = """
+### v1.32.17 (2026-01-27)
+**Afmelding opent positie voor inschrijving:**
+- 🎯 Als iemand zich afmeldt, wordt die specifieke positie weer open voor anderen
+- ⏰ Deadline blijft gelden voor posities die nooit bezet waren
+- 📍 Per positie wordt gecheckt of die open is (scheids_1 apart van scheids_2)
+
 ### v1.32.16 (2026-01-27)
 **Fix: Status veldnaam gecorrigeerd:**
-- 🐛 Veldnaam `scheids_status` ipv `status` (consistent met bestaande code)
+- 🐛 Veldnaam `scheids_status` ipv `status`
 
 ### v1.32.15 (2026-01-27)
 **Fix: Status "Op te leiden" wordt nu respecteerd:**
 - 🎯 Scheidsrechters met status "Op te leiden" kunnen niet meer worden toegewezen
-- ⏸️ Scheidsrechters met status "Inactief" kunnen niet meer worden toegewezen
-- 📊 Pool-berekening houdt nu rekening met status
 
 ### v1.32.14 (2026-01-27)
 **Wedstrijden beheer - Toekomst filter:**
@@ -52,10 +56,6 @@ APP_CHANGELOG = """
 ### v1.32.7 (2026-01-26)
 **BUGFIX - NBB nummers werden niet opgeslagen:**
 - 🐛 Fix: `nbb_wedstrijd_nr` veld ontbrak in database.py
-
-### v1.32.6 (2026-01-26)
-**CP Sync opschoning:**
-- 🎉 Duidelijke "Alles in sync!" melding
 
 ### v1.30.0 (2026-01-25)
 **Koppeling met Competitie Planner:**
@@ -2297,24 +2297,69 @@ def is_aankomend_weekend(wed_datum: datetime) -> bool:
     dagen_vooruit = (wed_date - vandaag).days
     return dagen_vooruit <= 7
 
-def is_inschrijving_open_incl_weekend(wed_datum: datetime, wed: dict):
+def is_positie_vrijgekomen_door_afmelding(wed: dict, positie: str) -> bool:
     """
-    Check of inschrijving open is, inclusief uitzondering voor aankomend weekend.
+    Check of een specifieke positie (scheids_1 of scheids_2) is vrijgekomen door een afmelding.
     
-    Returns: (is_open, is_weekend_uitzondering)
+    Returns: True als de positie:
+    - Nu leeg is, EN
+    - Er ooit iemand voor deze positie is afgemeld
+    """
+    # Positie moet leeg zijn
+    if wed.get(positie):
+        return False
+    
+    # Check of er een afmelding is voor deze positie
+    afgemeld_door = wed.get("afgemeld_door") or []
+    for afmelding in afgemeld_door:
+        if isinstance(afmelding, dict):
+            if afmelding.get("positie") == positie:
+                return True
+    
+    return False
+
+
+def is_inschrijving_open_incl_weekend(wed_datum: datetime, wed: dict, positie: str = None):
+    """
+    Check of inschrijving open is, inclusief uitzonderingen.
+    
+    Uitzonderingen op de deadline:
+    1. Aankomend weekend met open positie
+    2. Positie die is vrijgekomen door afmelding (iemand heeft zich afgemeld)
+    
+    Args:
+        wed_datum: Datum/tijd van de wedstrijd
+        wed: Wedstrijd dictionary
+        positie: Optioneel - specifieke positie om te checken ("scheids_1" of "scheids_2")
+    
+    Returns: (is_open, is_uitzondering)
     - is_open: True als speler zich mag inschrijven
-    - is_weekend_uitzondering: True als dit via de weekend-uitzondering is (geen bonus)
+    - is_uitzondering: True als dit via een uitzondering is (geen standaard bonus)
     """
     # Eerst normale deadline check
     if is_inschrijving_open_voor_wedstrijd(wed_datum):
         return (True, False)
     
-    # Deadline is voorbij - check weekend uitzondering
-    # Alleen als wedstrijd in aankomend weekend EN er nog een open positie is
+    # Deadline is voorbij - check uitzonderingen
+    
+    # Uitzondering 1: Positie vrijgekomen door afmelding
+    # Als een specifieke positie is meegegeven, check die
+    # Anders check of er überhaupt een vrijgekomen positie is
+    if positie:
+        if is_positie_vrijgekomen_door_afmelding(wed, positie):
+            return (True, True)  # Open via afmelding-uitzondering
+    else:
+        # Check beide posities
+        if is_positie_vrijgekomen_door_afmelding(wed, "scheids_1"):
+            return (True, True)
+        if is_positie_vrijgekomen_door_afmelding(wed, "scheids_2"):
+            return (True, True)
+    
+    # Uitzondering 2: Aankomend weekend met open positie
     if is_aankomend_weekend(wed_datum):
         heeft_open_positie = not wed.get("scheids_1") or not wed.get("scheids_2")
         if heeft_open_positie:
-            return (True, True)  # Open via weekend-uitzondering (geen bonus)
+            return (True, True)  # Open via weekend-uitzondering
     
     return (False, False)
 
@@ -4698,9 +4743,13 @@ def toon_speler_view(nbb_nummer: str):
         wed_niveau = wed.get("niveau", 1)
         is_in_doelmaand = wed_datum.month == doel_maand and wed_datum.year == doel_jaar
         
-        # Check of je kunt inschrijven op deze wedstrijd
-        kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau
-        kan_als_2e = not scheids_2_bezet
+        # Check deadline per positie (normale deadline OF vrijgekomen door afmelding)
+        deadline_open_1e, _ = is_inschrijving_open_incl_weekend(wed_datum, wed, "scheids_1")
+        deadline_open_2e, _ = is_inschrijving_open_incl_weekend(wed_datum, wed, "scheids_2")
+        
+        # Check of je kunt inschrijven op deze wedstrijd (per positie)
+        kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau and deadline_open_1e
+        kan_als_2e = not scheids_2_bezet and deadline_open_2e
         
         if kan_als_2e and wed_niveau > max_niveau_2e:
             # Boven max niveau voor 2e scheids - check of er MSE als 1e is
@@ -4712,11 +4761,6 @@ def toon_speler_view(nbb_nummer: str):
                 kan_als_2e = False  # Geen 1e scheids, niveau te hoog
         
         kan_inschrijven = kan_als_1e or kan_als_2e
-        
-        # Check deadline per maand (met weekend uitzondering)
-        deadline_open, _ = is_inschrijving_open_incl_weekend(wed_datum, wed)
-        if not deadline_open:
-            kan_inschrijven = False
         
         if not kan_inschrijven:
             continue  # Kan niet inschrijven, niet meetellen
@@ -4980,8 +5024,13 @@ def toon_speler_view(nbb_nummer: str):
                     # BS2 vereist maar geen diploma?
                     bs2_blocked = wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False)
                     
-                    kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau
-                    kan_als_2e = not scheids_2_bezet
+                    # Check deadline per positie (normale deadline OF vrijgekomen door afmelding)
+                    deadline_open_1e, uitzondering_1e = is_inschrijving_open_incl_weekend(wed_datum, wed, "scheids_1")
+                    deadline_open_2e, uitzondering_2e = is_inschrijving_open_incl_weekend(wed_datum, wed, "scheids_2")
+                    
+                    # Combineer niveau en deadline checks per positie
+                    kan_als_1e = not scheids_1_bezet and wed_niveau <= eigen_niveau and deadline_open_1e
+                    kan_als_2e = not scheids_2_bezet and deadline_open_2e
                     
                     if kan_als_2e and wed_niveau > max_niveau_2e:
                         # Boven max niveau voor 2e scheids - check of er MSE als 1e is
@@ -4992,9 +5041,11 @@ def toon_speler_view(nbb_nummer: str):
                         else:
                             kan_als_2e = False
                     
-                    # Combineer alle checks inclusief deadline per maand (met weekend uitzondering)
-                    deadline_open, is_weekend_uitzondering = is_inschrijving_open_incl_weekend(wed_datum, wed)
-                    kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked and deadline_open
+                    # Combineer alle checks
+                    kan_inschrijven = (kan_als_1e or kan_als_2e) and not al_ingeschreven and not heeft_eigen and not heeft_overlap and not zondag_blocked and not bs2_blocked
+                    
+                    # Weekend/afmelding uitzondering is True als minstens één positie via uitzondering open is
+                    is_weekend_uitzondering = (kan_als_1e and uitzondering_1e) or (kan_als_2e and uitzondering_2e)
                     
                     # MSE's kunnen ook begeleiden (zonder te fluiten), maar alleen als ze BS2 hebben voor MSE wedstrijden
                     kan_begeleiden = False
