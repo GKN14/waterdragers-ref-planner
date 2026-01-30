@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.32.21"
-APP_VERSIE_DATUM = "2026-01-27"
+APP_VERSIE = "1.33.0"
+APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.33.0 (2026-01-30)
+**Solo-wedstrijden en verbeterde status weergave:**
+- ✅ Nieuw: Wedstrijden markeren als "Solo compleet" (1 scheidsrechter voldoende)
+- 🔍 "Zoekt vervanging" wordt nu als probleem getoond (oranje), niet groen
+- 📊 Solo-wedstrijden tellen mee als compleet in statistieken
+
 ### v1.32.21 (2026-01-27)
 **Verbeterde detectie vrijgekomen posities:**
 - 🔧 Ook oude afmeldingen (zonder positie-veld) worden herkend
@@ -2196,6 +2202,34 @@ def get_ranglijst() -> list:
 # HELPER FUNCTIES
 # ============================================================
 
+def is_wedstrijd_compleet(wed: dict) -> bool:
+    """
+    Bepaal of een wedstrijd volledig is bezet.
+    
+    Een wedstrijd is compleet als:
+    1. Beide scheidsrechters zijn toegewezen, OF
+    2. solo_compleet=True EN scheids_1 is toegewezen
+    
+    Let op: "zoekt_vervanging" telt NIET als compleet!
+    """
+    scheids_1 = wed.get("scheids_1")
+    scheids_2 = wed.get("scheids_2")
+    solo_compleet = wed.get("solo_compleet", False)
+    
+    # Check of iemand nog vervanging zoekt - dan is het NIET compleet
+    zoekt_1 = wed.get("scheids_1_zoekt_vervanging", False)
+    zoekt_2 = wed.get("scheids_2_zoekt_vervanging", False)
+    
+    if zoekt_1 or zoekt_2:
+        return False
+    
+    # Solo compleet: alleen scheids_1 nodig
+    if solo_compleet and scheids_1:
+        return True
+    
+    # Normale situatie: beide scheidsrechters nodig
+    return bool(scheids_1 and scheids_2)
+
 def is_inschrijving_open() -> bool:
     """Check of inschrijfperiode nog loopt (backwards compatible)."""
     instellingen = laad_instellingen()
@@ -2621,6 +2655,11 @@ def bepaal_scheids_status(nbb_nummer: str, wed: dict, scheids: dict, wedstrijden
             return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": f"niveau {wed_niveau} te hoog (max {max_niveau})"}
     else:
         # 2e scheidsrechter: complexere logica
+        
+        # Check of wedstrijd solo_compleet is (geen 2e scheids nodig)
+        if wed.get("solo_compleet", False):
+            return {"ingeschreven_zelf": False, "bezet": False, "naam": "", "beschikbaar": False, "reden": "solo wedstrijd"}
+        
         niveau_1e = scheids.get("niveau_1e_scheids", 1)
         
         # Check of er al een 1e scheids is en of die MSE is
@@ -2708,6 +2747,11 @@ def get_beschikbare_wedstrijden(nbb_nummer: str, als_eerste: bool) -> list:
                 continue
         else:
             # 2e scheidsrechter: complexere logica
+            
+            # Skip solo_compleet wedstrijden (geen 2e scheids nodig)
+            if wed.get("solo_compleet", False):
+                continue
+            
             if wed_niveau > max_niveau_2e:
                 # Check of er een MSE als 1e scheids is (dan geen limiet)
                 eerste_scheids_nbb = wed.get("scheids_1")
@@ -2939,6 +2983,11 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
                 continue
         else:
             # 2e scheidsrechter: complexere logica
+            
+            # Skip solo_compleet wedstrijden (geen 2e scheids nodig)
+            if wed.get("solo_compleet", False):
+                continue
+            
             if wed_niveau > max_niveau_2e:
                 # Check of er een MSE als 1e scheids is (dan geen limiet)
                 eerste_scheids_nbb = wed.get("scheids_1")
@@ -5582,7 +5631,7 @@ def toon_beheerder_view():
         
         # Nog te spelen?
         if wed_datum > nu:
-            is_compleet = wed.get("scheids_1") and wed.get("scheids_2")
+            is_compleet = is_wedstrijd_compleet(wed)
             
             # Totaal
             stats["totaal"]["te_spelen"] += 1
@@ -6522,11 +6571,15 @@ def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheids
             if wed_datum.date() != dag:
                 continue
             
+            # Check solo_compleet status
+            solo_compleet = wed.get("solo_compleet", False)
+            
             # Check open posities en zoekt vervanging status
             open_1e = not wed.get("scheids_1")
-            open_2e = not wed.get("scheids_2")
+            # Bij solo_compleet: 2e scheids is niet nodig
+            open_2e = not wed.get("scheids_2") if not solo_compleet else False
             zoekt_1e = wed.get("scheids_1_zoekt_vervanging", False) and wed.get("scheids_1")
-            zoekt_2e = wed.get("scheids_2_zoekt_vervanging", False) and wed.get("scheids_2")
+            zoekt_2e = wed.get("scheids_2_zoekt_vervanging", False) and wed.get("scheids_2") if not solo_compleet else False
             
             # Toon als er een open positie is OF iemand zoekt vervanging
             if open_1e or open_2e or zoekt_1e or zoekt_2e:
@@ -6928,15 +6981,23 @@ def toon_weekend_overzicht():
             except:
                 continue
             if wed_datum.date() == dag:
+                solo_compleet = wed.get("solo_compleet", False)
+                
+                # Check scheids_1
                 if not wed.get("scheids_1"):
                     open_count += 1
                 elif wed.get("scheids_1_zoekt_vervanging"):
                     zoekt_count += 1
-                if not wed.get("scheids_2"):
-                    open_count += 1
-                elif wed.get("scheids_2_zoekt_vervanging"):
-                    zoekt_count += 1
-                if "**" in wed.get("thuisteam", "") and (not wed.get("scheids_1") or not wed.get("scheids_2")):
+                
+                # Check scheids_2 (alleen als niet solo_compleet)
+                if not solo_compleet:
+                    if not wed.get("scheids_2"):
+                        open_count += 1
+                    elif wed.get("scheids_2_zoekt_vervanging"):
+                        zoekt_count += 1
+                
+                # Kritiek check
+                if "**" in wed.get("thuisteam", "") and not is_wedstrijd_compleet(wed):
                     kritiek_count += 1
     
     totaal_aandacht = open_count + zoekt_count
@@ -7319,7 +7380,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
         scheids_1_naam = scheidsrechters.get(wed.get("scheids_1", ""), {}).get("naam", "")
         scheids_2_naam = scheidsrechters.get(wed.get("scheids_2", ""), {}).get("naam", "")
         
-        compleet = bool(wed.get("scheids_1") and wed.get("scheids_2"))
+        compleet = is_wedstrijd_compleet(wed)
         geannuleerd = wed.get("geannuleerd", False)
         
         # Filter op status
@@ -7350,7 +7411,9 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
             "compleet": compleet,
             "geannuleerd": geannuleerd,
             "reistijd": wed.get("reistijd_minuten", 0),
-            "veld": wed.get("veld", "")
+            "veld": wed.get("veld", ""),
+            "zoekt_vervanging": wed.get("scheids_1_zoekt_vervanging", False) or wed.get("scheids_2_zoekt_vervanging", False),
+            "solo_compleet": wed.get("solo_compleet", False)
         })
     
     if sorteer == "Datum":
@@ -7375,8 +7438,17 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                 status_icon = "❌"
                 label = f"{status_icon} ~~{dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']}~~ **GEANNULEERD**"
             else:
-                status_icon = "✅" if wed["compleet"] else "⚠️"
-                label = f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']})"
+                # Status icoon: ✅ compleet, 🟠 zoekt vervanging, ⚠️ open positie
+                if wed["compleet"]:
+                    status_icon = "✅"
+                elif wed["zoekt_vervanging"]:
+                    status_icon = "🟠"  # Oranje = iemand zoekt vervanging
+                else:
+                    status_icon = "⚠️"  # Open positie
+                
+                # Voeg solo indicator toe als solo_compleet aan staat
+                solo_tekst = " 👤" if wed["solo_compleet"] else ""
+                label = f"{status_icon} {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} - {wed['uitteam']} (Niv. {wed['niveau']}){solo_tekst}"
         else:
             label = f"🚗 {dag} {wed_datum.strftime('%d-%m %H:%M')} | {wed['thuisteam']} @ {wed['uitteam']} ({wed['reistijd']} min reistijd)"
         
@@ -7576,6 +7648,14 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     
                     with col3:
                         st.write("**Acties:**")
+                        
+                        # Solo compleet checkbox
+                        solo_compleet = wed.get("solo_compleet", False)
+                        nieuwe_solo = st.checkbox("Solo", value=solo_compleet, key=f"solo_{wed['id']}", 
+                                                  help="1 scheidsrechter is voldoende voor deze wedstrijd")
+                        if nieuwe_solo != solo_compleet:
+                            wedstrijden[wed["id"]]["solo_compleet"] = nieuwe_solo
+                            sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                         
                         # Bewerk toggle
                         bewerk_key = f"bewerk_{wed['id']}"
