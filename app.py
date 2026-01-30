@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.0"
+APP_VERSIE = "1.35.1"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.35.1 (2026-01-30)
+**Klassement: indicator voor openstaande wedstrijden:**
+- 🏆 Iedereen staat in het klassement met hun punten
+- 📊 Spelers die minimum nog niet hebben gehaald tonen (X) indicator
+- 💡 Voorbeeld: "Jan - 8 pt (2)" = nog 2 wedstrijden op eigen niveau nodig
+- ✅ Geen indicator = gekwalificeerd voor financiële bonus
+
 ### v1.35.0 (2026-01-30)
 **Klassement: alleen gekwalificeerde spelers:**
 - 🏆 Alleen spelers die minimum op eigen niveau hebben gehaald komen in klassement
@@ -1261,18 +1268,16 @@ def get_punten_klassement_met_positie(eigen_nbb: str) -> dict:
     """
     Haal punten klassement op met top 3 en eigen positie.
     
-    BELANGRIJK: Alleen spelers die hun minimum op eigen niveau hebben gehaald
-    komen in aanmerking voor het klassement (en dus de financiële bonus).
+    Alle spelers staan in het klassement, maar spelers die hun minimum op eigen
+    niveau nog niet hebben gehaald krijgen een indicator met het aantal nog
+    te fluiten wedstrijden.
     
-    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "punten": ..., "voldoet_minimum": bool} of None}
+    Returns: {"top3": [...], "eigen": {"positie": N, "naam": ..., "punten": ..., "nog_nodig": int} of None}
     """
     beloningen = laad_beloningen()
     scheidsrechters = laad_scheidsrechters()
-    wedstrijden = laad_wedstrijden()
     
     punten_lijst = []
-    eigen_voldoet = False
-    eigen_punten_data = None
     
     for nbb, data in beloningen.get("spelers", {}).items():
         punten = data.get("punten", 0)
@@ -1281,25 +1286,14 @@ def get_punten_klassement_met_positie(eigen_nbb: str) -> dict:
             
             # Check of minimum op eigen niveau is gehaald
             niveau_stats = tel_wedstrijden_op_eigen_niveau(nbb)
-            voldoet_minimum = niveau_stats["voldaan"]
+            nog_nodig = max(0, niveau_stats["min_wedstrijden"] - niveau_stats["op_niveau"])
             
-            speler_data = {
+            punten_lijst.append({
                 "nbb": nbb, 
                 "naam": naam, 
                 "punten": punten,
-                "voldoet_minimum": voldoet_minimum,
-                "op_niveau": niveau_stats["op_niveau"],
-                "min_wedstrijden": niveau_stats["min_wedstrijden"]
-            }
-            
-            # Alleen toevoegen aan klassement als minimum is gehaald
-            if voldoet_minimum:
-                punten_lijst.append(speler_data)
-            
-            # Bewaar eigen data apart (ook als minimum niet gehaald)
-            if nbb == eigen_nbb:
-                eigen_punten_data = speler_data
-                eigen_voldoet = voldoet_minimum
+                "nog_nodig": nog_nodig  # 0 = gekwalificeerd, >0 = nog X wedstrijden nodig
+            })
     
     # Sorteer op punten (hoogste eerst), dan op naam
     punten_lijst.sort(key=lambda x: (-x["punten"], x["naam"]))
@@ -1309,33 +1303,27 @@ def get_punten_klassement_met_positie(eigen_nbb: str) -> dict:
     
     # Eigen positie zoeken
     eigen = None
-    if eigen_punten_data:
-        if eigen_voldoet:
-            # Zoek positie in de gesorteerde lijst
-            for i, speler in enumerate(punten_lijst):
-                if speler["nbb"] == eigen_nbb:
-                    eigen = {
-                        "positie": i + 1,
-                        **eigen_punten_data
-                    }
-                    break
-        else:
-            # Niet in klassement omdat minimum niet gehaald
+    for i, speler in enumerate(punten_lijst):
+        if speler["nbb"] == eigen_nbb:
             eigen = {
-                "positie": None,  # Geen positie want niet gekwalificeerd
-                **eigen_punten_data
+                "positie": i + 1,
+                **speler
             }
-    elif eigen_nbb in scheidsrechters:
-        # Speler heeft nog geen punten
+            break
+    
+    # Als eigen niet in lijst staat (0 punten), voeg toe
+    if eigen is None and eigen_nbb in scheidsrechters:
         niveau_stats = tel_wedstrijden_op_eigen_niveau(eigen_nbb)
+        nog_nodig = max(0, niveau_stats["min_wedstrijden"] - niveau_stats["op_niveau"])
+        eigen_punten = beloningen.get("spelers", {}).get(eigen_nbb, {}).get("punten", 0)
+        # Tel hoeveel spelers meer punten hebben
+        positie = sum(1 for s in punten_lijst if s["punten"] > eigen_punten) + 1
         eigen = {
-            "positie": None,
+            "positie": positie,
             "nbb": eigen_nbb,
             "naam": scheidsrechters[eigen_nbb].get("naam", "Onbekend"),
-            "punten": 0,
-            "voldoet_minimum": niveau_stats["voldaan"],
-            "op_niveau": niveau_stats["op_niveau"],
-            "min_wedstrijden": niveau_stats["min_wedstrijden"]
+            "punten": eigen_punten,
+            "nog_nodig": nog_nodig
         }
     
     return {"top3": top3, "eigen": eigen}
@@ -3711,7 +3699,7 @@ def toon_speler_view(nbb_nummer: str):
         # KLASSEMENT (NIET SAMENGEVOUWEN)
         # ============================================================
         st.markdown("### 🏆 Klassement")
-        st.caption("*Bonus voor spelers die minimum op eigen niveau hebben gehaald*")
+        st.caption("*(X) = nog X wed op eigen niveau nodig voor bonus*")
         punten_klassement = get_punten_klassement_met_positie(nbb_nummer)
         
         if punten_klassement["top3"]:
@@ -3720,24 +3708,22 @@ def toon_speler_view(nbb_nummer: str):
             
             for i, scheids_info in enumerate(punten_klassement["top3"]):
                 is_eigen = scheids_info["nbb"] == nbb_nummer
+                nog_nodig = scheids_info.get("nog_nodig", 0)
+                indicator = f" ({nog_nodig})" if nog_nodig > 0 else ""
+                
                 if is_eigen:
                     eigen_in_top3 = True
-                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt 👈")
+                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt{indicator} 👈")
                 else:
-                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt")
+                    st.markdown(f"{medailles[i]} **{scheids_info['naam']}** - {scheids_info['punten']} pt{indicator}")
             
             # Toon eigen positie als niet in top 3
             if not eigen_in_top3 and punten_klassement["eigen"]:
                 eigen = punten_klassement["eigen"]
-                if eigen.get("voldoet_minimum", True):
-                    # Gekwalificeerd, toon positie
-                    st.caption("...")
-                    st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']} pt 👈")
-                else:
-                    # Niet gekwalificeerd
-                    st.caption("...")
-                    st.markdown(f"⏳ **{eigen['naam']}** - {eigen['punten']} pt 👈")
-                    st.caption(f"*Nog {eigen['min_wedstrijden'] - eigen['op_niveau']} wed op eigen niveau nodig*")
+                nog_nodig = eigen.get("nog_nodig", 0)
+                indicator = f" ({nog_nodig})" if nog_nodig > 0 else ""
+                st.caption("...")
+                st.markdown(f"**{eigen['positie']}.** {eigen['naam']} - {eigen['punten']} pt{indicator} 👈")
         else:
             st.caption("*Nog geen punten verdiend*")
         
