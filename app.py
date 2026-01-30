@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.33.0"
+APP_VERSIE = "1.33.1"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.33.1 (2026-01-30)
+**Fix: Status update direct zichtbaar:**
+- 🔄 Pagina herlaadt nu automatisch na wijzigen van "Zoekt" of "Solo" checkbox
+- ✅ Status icoon in wedstrijdoverzicht update direct
+
 ### v1.33.0 (2026-01-30)
 **Solo-wedstrijden en verbeterde status weergave:**
 - ✅ Nieuw: Wedstrijden markeren als "Solo compleet" (1 scheidsrechter voldoende)
@@ -7537,6 +7542,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_1 != zoekt_1:
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_1e:
@@ -7586,6 +7592,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_2 != zoekt_2:
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_2e:
@@ -7656,6 +7663,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                         if nieuwe_solo != solo_compleet:
                             wedstrijden[wed["id"]]["solo_compleet"] = nieuwe_solo
                             sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
+                            st.rerun()
                         
                         # Bewerk toggle
                         bewerk_key = f"bewerk_{wed['id']}"
