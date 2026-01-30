@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.34.0"
+APP_VERSIE = "1.34.1"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.34.1 (2026-01-30)
+**Fix: TC checkboxes direct verwerken:**
+- 🔄 "Zoekt" en "Solo" checkboxes updaten nu direct de weergave
+- ✅ Geen vertraging meer bij status wijzigingen
+- 📱 Spelers zien "Zoekt vervanging" status bij hun ingeschreven wedstrijden
+
 ### v1.34.0 (2026-01-30)
 **Nieuw: Zoekt vervanging & Overnemen:**
 - 🔄 Spelers kunnen zelf "Zoekt vervanging" aanzetten bij hun wedstrijden
@@ -7743,7 +7749,8 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_1 != zoekt_1:
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.toast("✅ Opgeslagen" if nieuwe_zoekt_1 else "✅ Opgeslagen")
+                                    st.toast("✅ Zoekt vervanging aan" if nieuwe_zoekt_1 else "✅ Zoekt vervanging uit")
+                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_1e:
@@ -7793,7 +7800,8 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_2 != zoekt_2:
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.toast("✅ Opgeslagen")
+                                    st.toast("✅ Zoekt vervanging aan" if nieuwe_zoekt_2 else "✅ Zoekt vervanging uit")
+                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_2e:
@@ -7864,7 +7872,8 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                         if nieuwe_solo != solo_compleet:
                             wedstrijden[wed["id"]]["solo_compleet"] = nieuwe_solo
                             sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                            st.toast("✅ Solo opgeslagen" if nieuwe_solo else "✅ Solo uitgeschakeld")
+                            st.toast("✅ Solo aan" if nieuwe_solo else "✅ Solo uit")
+                            st.rerun()
                         
                         # Bewerk toggle
                         bewerk_key = f"bewerk_{wed['id']}"
