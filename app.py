@@ -24,9 +24,14 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.34.3"
+APP_VERSIE = "1.34.4"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.34.4 (2026-01-30)
+**Fix: Overnemen zet Zoekt correct uit:**
+- 🐛 Fix: Bij overnemen wordt nu de verse wedstrijd data gebruikt
+- ✅ "Zoekt vervanging" status verdwijnt nu correct na overnemen
+
 ### v1.34.3 (2026-01-30)
 **KRITIEKE FIX: Zoekt vervanging opslaan naar database:**
 - 🐛 Fix: scheids_1/2_zoekt_vervanging werden niet opgeslagen naar Supabase
@@ -5199,17 +5204,17 @@ def toon_speler_view(nbb_nummer: str):
                             punten_kolom = f"{positie_key}_punten_berekend"
                             details_kolom = f"{positie_key}_punten_details"
                             
-                            # 1. Schrijf nieuwe scheids in
-                            wedstrijden[item["id"]][positie_key] = nbb_nummer
-                            wedstrijden[item["id"]][zoekt_key] = False
+                            # 1. Schrijf nieuwe scheids in (gebruik verse data!)
+                            wedstrijden_vers[item["id"]][positie_key] = nbb_nummer
+                            wedstrijden_vers[item["id"]][zoekt_key] = False
                             
                             # 2. Bereken en sla punten op voor nieuwe scheids
-                            punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, item["id"], wedstrijden, scheidsrechters, bron="vervanging")
-                            wedstrijden[item["id"]][punten_kolom] = punten_info["totaal"]
-                            wedstrijden[item["id"]][details_kolom] = punten_info["details"]
+                            punten_info = bereken_punten_voor_wedstrijd(nbb_nummer, item["id"], wedstrijden_vers, scheidsrechters, bron="vervanging")
+                            wedstrijden_vers[item["id"]][punten_kolom] = punten_info["totaal"]
+                            wedstrijden_vers[item["id"]][details_kolom] = punten_info["details"]
                             
                             # 3. Sla wedstrijd op
-                            sla_wedstrijd_op(item["id"], wedstrijden[item["id"]])
+                            sla_wedstrijd_op(item["id"], wedstrijden_vers[item["id"]])
                             
                             # 4. Log de transacties
                             try:
