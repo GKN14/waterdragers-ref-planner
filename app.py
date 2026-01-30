@@ -28,10 +28,9 @@ APP_VERSIE = "1.34.1"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
 ### v1.34.1 (2026-01-30)
-**Fix: TC checkboxes direct verwerken:**
-- 🔄 "Zoekt" en "Solo" checkboxes updaten nu direct de weergave
-- ✅ Geen vertraging meer bij status wijzigingen
-- 📱 Spelers zien "Zoekt vervanging" status bij hun ingeschreven wedstrijden
+**Fix: TC checkboxes opslaan:**
+- ✅ "Zoekt" en "Solo" checkboxes slaan direct op met toast bevestiging
+- 💡 Klik "Data verversen" om de status in het label te zien
 
 ### v1.34.0 (2026-01-30)
 **Nieuw: Zoekt vervanging & Overnemen:**
@@ -7750,7 +7749,6 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                     st.toast("✅ Zoekt vervanging aan" if nieuwe_zoekt_1 else "✅ Zoekt vervanging uit")
-                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_1e:
@@ -7801,7 +7799,6 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                     st.toast("✅ Zoekt vervanging aan" if nieuwe_zoekt_2 else "✅ Zoekt vervanging uit")
-                                    st.rerun()
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_2e:
@@ -7873,7 +7870,6 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                             wedstrijden[wed["id"]]["solo_compleet"] = nieuwe_solo
                             sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                             st.toast("✅ Solo aan" if nieuwe_solo else "✅ Solo uit")
-                            st.rerun()
                         
                         # Bewerk toggle
                         bewerk_key = f"bewerk_{wed['id']}"
