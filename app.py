@@ -28,9 +28,9 @@ APP_VERSIE = "1.33.1"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
 ### v1.33.1 (2026-01-30)
-**Fix: Status update direct zichtbaar:**
-- 🔄 Pagina herlaadt nu automatisch na wijzigen van "Zoekt" of "Solo" checkbox
-- ✅ Status icoon in wedstrijdoverzicht update direct
+**Fix: Checkbox opslaan zonder loop:**
+- 🔄 "Zoekt" en "Solo" checkboxes slaan direct op met toast bevestiging
+- 💡 Tip: Klik "Data verversen" of sluit/open de expander om de status in het label te zien
 
 ### v1.33.0 (2026-01-30)
 **Solo-wedstrijden en verbeterde status weergave:**
@@ -7542,7 +7542,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_1 != zoekt_1:
                                     wedstrijden[wed["id"]]["scheids_1_zoekt_vervanging"] = nieuwe_zoekt_1
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.rerun()
+                                    st.toast("✅ Opgeslagen" if nieuwe_zoekt_1 else "✅ Opgeslagen")
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_1e:
@@ -7592,7 +7592,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 if nieuwe_zoekt_2 != zoekt_2:
                                     wedstrijden[wed["id"]]["scheids_2_zoekt_vervanging"] = nieuwe_zoekt_2
                                     sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                                    st.rerun()
+                                    st.toast("✅ Opgeslagen")
                         else:
                             # NIEUW: Toon afmeldingen voor deze positie
                             if afmeldingen_2e:
@@ -7663,7 +7663,7 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                         if nieuwe_solo != solo_compleet:
                             wedstrijden[wed["id"]]["solo_compleet"] = nieuwe_solo
                             sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
-                            st.rerun()
+                            st.toast("✅ Solo opgeslagen" if nieuwe_solo else "✅ Solo uitgeschakeld")
                         
                         # Bewerk toggle
                         bewerk_key = f"bewerk_{wed['id']}"
