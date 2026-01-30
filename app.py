@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.33.1"
+APP_VERSIE = "1.33.2"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.33.2 (2026-01-30)
+**Fix: Aankomend weekend wedstrijden altijd zichtbaar:**
+- 🗓️ Wedstrijden in het aankomende weekend worden nu ALTIJD getoond
+- 🐛 Fix: wedstrijden van morgen waren onzichtbaar als ze buiten de doelmaand vielen
+- 📊 Wedstrijden onder eigen niveau tellen nu mee in "Mijn niveau" filter
+- ⚡ Urgente wedstrijden niet meer afhankelijk van maandfilter
+
 ### v1.33.1 (2026-01-30)
 **Fix: Checkbox opslaan zonder loop:**
 - 🔄 "Zoekt" en "Solo" checkboxes slaan direct op met toast bevestiging
@@ -4830,11 +4837,19 @@ def toon_speler_view(nbb_nummer: str):
         if not kan_inschrijven:
             continue  # Kan niet inschrijven, niet meetellen
         
-        if is_in_doelmaand:
+        # Aankomend weekend wedstrijden tellen mee als normale wedstrijden (niet als buiten maand)
+        is_aankomend_wknd = is_aankomend_weekend(wed_datum)
+        telt_als_doelmaand = is_in_doelmaand or is_aankomend_wknd
+        
+        if telt_als_doelmaand:
             if wed_niveau == eigen_niveau:
                 aantal_mijn_niveau += 1
             elif wed_niveau > eigen_niveau:
                 aantal_boven_niveau += 1
+            # Wedstrijden onder eigen niveau tellen ook mee bij "Mijn niveau"
+            # (een niveau 5 scheids kan ook niveau 1-4 fluiten)
+            elif wed_niveau < eigen_niveau:
+                aantal_mijn_niveau += 1
         else:
             aantal_buiten_maand += 1
     
@@ -5020,12 +5035,15 @@ def toon_speler_view(nbb_nummer: str):
                 continue
         
             # Filter op doelmaand indien nodig
-            # UITZONDERING: wedstrijden met vrijgekomen posities altijd tonen
+            # UITZONDERINGEN die altijd getoond worden:
+            # 1. Wedstrijden met vrijgekomen posities (iemand afgemeld)
+            # 2. Wedstrijden in het aankomende weekend (urgent)
             heeft_vrijgekomen_positie = (
                 is_positie_vrijgekomen_door_afmelding(wed, "scheids_1") or 
                 is_positie_vrijgekomen_door_afmelding(wed, "scheids_2")
             )
-            if not filter_hele_overzicht and not heeft_vrijgekomen_positie:
+            is_aankomend_wknd = is_aankomend_weekend(wed_datum)
+            if not filter_hele_overzicht and not heeft_vrijgekomen_positie and not is_aankomend_wknd:
                 if wed_datum.month != doel_maand or wed_datum.year != doel_jaar:
                     continue
         
