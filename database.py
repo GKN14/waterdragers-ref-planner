@@ -944,7 +944,11 @@ def sla_wedstrijden_op(wedstrijden: dict) -> bool:
                 "scheids_2_punten_details": data.get("scheids_2_punten_details"),
                 # Afmeldregistratie kolommen (v1.28.0)
                 "afgemeld_door": data.get("afgemeld_door"),  # Lijst van {nbb, positie, afgemeld_op}
-                "heraanmeldingen": data.get("heraanmeldingen")  # Lijst van {nbb, positie, heraangemeld_op}
+                "heraanmeldingen": data.get("heraanmeldingen"),  # Lijst van {nbb, positie, heraangemeld_op}
+                # Zoekt vervanging en solo (v1.34.0)
+                "scheids_1_zoekt_vervanging": data.get("scheids_1_zoekt_vervanging", False),
+                "scheids_2_zoekt_vervanging": data.get("scheids_2_zoekt_vervanging", False),
+                "solo_compleet": data.get("solo_compleet", False)
             }
             records.append(record)
         
@@ -1009,7 +1013,11 @@ def sla_wedstrijd_op(wed_id: str, data: dict) -> bool:
             "scheids_2_punten_details": data.get("scheids_2_punten_details"),
             # Afmeldregistratie kolommen (v1.28.0)
             "afgemeld_door": data.get("afgemeld_door"),  # Lijst van {nbb, positie, afgemeld_op}
-            "heraanmeldingen": data.get("heraanmeldingen")  # Lijst van {nbb, positie, heraangemeld_op}
+            "heraanmeldingen": data.get("heraanmeldingen"),  # Lijst van {nbb, positie, heraangemeld_op}
+            # Zoekt vervanging en solo (v1.34.0)
+            "scheids_1_zoekt_vervanging": data.get("scheids_1_zoekt_vervanging", False),
+            "scheids_2_zoekt_vervanging": data.get("scheids_2_zoekt_vervanging", False),
+            "solo_compleet": data.get("solo_compleet", False)
         }
         
         supabase.table("wedstrijden").upsert(record).execute()

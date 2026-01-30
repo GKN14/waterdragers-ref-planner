@@ -24,9 +24,29 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.34.1"
+APP_VERSIE = "1.34.3"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.34.3 (2026-01-30)
+**KRITIEKE FIX: Zoekt vervanging opslaan naar database:**
+- 🐛 Fix: scheids_1/2_zoekt_vervanging werden niet opgeslagen naar Supabase
+- 🐛 Fix: solo_compleet werd niet opgeslagen naar Supabase
+- 🔄 Correcte cache key voor vers laden wedstrijden
+- ⚠️ VEREIST: 3 nieuwe kolommen in Supabase (zie onder)
+
+**Supabase SQL om uit te voeren:**
+```sql
+ALTER TABLE wedstrijden ADD COLUMN IF NOT EXISTS scheids_1_zoekt_vervanging BOOLEAN DEFAULT FALSE;
+ALTER TABLE wedstrijden ADD COLUMN IF NOT EXISTS scheids_2_zoekt_vervanging BOOLEAN DEFAULT FALSE;
+ALTER TABLE wedstrijden ADD COLUMN IF NOT EXISTS solo_compleet BOOLEAN DEFAULT FALSE;
+```
+
+### v1.34.2 (2026-01-30)
+**Debug: Zoekt vervanging sectie altijd zichtbaar:**
+- 🔍 Sectie toont nu altijd met aantal wedstrijden
+- 📊 Debug info: toont waarom je niet kunt overnemen
+- 🔄 Cache wordt gecleared voor verse data
+
 ### v1.34.1 (2026-01-30)
 **Fix: TC checkboxes opslaan:**
 - ✅ "Zoekt" en "Solo" checkboxes slaan direct op met toast bevestiging
@@ -5057,9 +5077,19 @@ def toon_speler_view(nbb_nummer: str):
         # SECTIE: OVERNEMEN (wedstrijden waar iemand vervanging zoekt)
         # ============================================================
         
+        # Clear wedstrijden cache en laad vers voor actuele "zoekt vervanging" status
+        # NB: database.py gebruikt _db_cache_wedstrijden als key
+        if "_db_cache_wedstrijden" in st.session_state:
+            del st.session_state["_db_cache_wedstrijden"]
+        wedstrijden_vers = laad_wedstrijden()
+        
+        # Debug: tel wedstrijden met zoekt_vervanging
+        zoekt_count = sum(1 for w in wedstrijden_vers.values() 
+                         if w.get("scheids_1_zoekt_vervanging") or w.get("scheids_2_zoekt_vervanging"))
+        
         # Zoek wedstrijden waar iemand vervanging zoekt en waar deze speler kan overnemen
         overneem_wedstrijden = []
-        for wed_id, wed in wedstrijden.items():
+        for wed_id, wed in wedstrijden_vers.items():
             wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
             
             # Skip verleden en geannuleerd
@@ -5143,9 +5173,10 @@ def toon_speler_view(nbb_nummer: str):
                     "punten_info": punten_info
                 })
         
-        # Toon sectie als er wedstrijden zijn om over te nemen
+        # Toon sectie (altijd voor debugging, later alleen als er wedstrijden zijn)
+        st.subheader(f"🔄 Zoekt vervanging ({len(overneem_wedstrijden)})")
+        
         if overneem_wedstrijden:
-            st.subheader(f"🔄 Zoekt vervanging ({len(overneem_wedstrijden)})")
             st.caption("Deze scheidsrechters zoeken vervanging. Neem over en verdien punten!")
             
             for item in sorted(overneem_wedstrijden, key=lambda x: x["wed_datum"]):
@@ -5190,9 +5221,12 @@ def toon_speler_view(nbb_nummer: str):
                             oude_naam = item["huidige_naam"]
                             st.success(f"✅ Overgenomen van {oude_naam}! (+{punten}🏆 na bevestiging TC)")
                             st.rerun()
+        else:
+            if zoekt_count > 0:
+                st.caption(f"*{zoekt_count} wedstrijd(en) met 'zoekt vervanging', maar je kunt geen daarvan overnemen (niveau/beschikbaarheid)*")
+            else:
+                st.caption("*Niemand zoekt momenteel vervanging*")
             
-            st.divider()
-    
         st.divider()
     
         # Verzamel eerst alle items om het aantal te kunnen tonen
