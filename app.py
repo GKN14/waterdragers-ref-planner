@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.1"
+APP_VERSIE = "1.35.2"
 APP_VERSIE_DATUM = "2026-01-30"
 APP_CHANGELOG = """
+### v1.35.2 (2026-01-30)
+**Alert voor TC bij 'zoekt vervanging':**
+- 🔄 Beheerweergave toont nu alert bovenaan als spelers vervanging zoeken
+- 📋 Toont welke wedstrijden en welke scheidsrechters vervanging zoeken
+- ✅ TC kan direct zien dat actie nodig is
+
 ### v1.35.1 (2026-01-30)
 **Klassement: indicator voor openstaande wedstrijden:**
 - 🏆 Iedereen staat in het klassement met hun punten
@@ -5967,6 +5973,46 @@ def toon_beheerder_view():
         else:
             st.metric("📆 Hele seizoen", f"{totaal_pct}% compleet",
                      f"{stats['totaal']['niet_compleet']} open van {stats['totaal']['te_spelen']}")
+    
+    # ============================================================
+    # ALERT: Wedstrijden met "zoekt vervanging" status
+    # ============================================================
+    zoekt_vervanging_wedstrijden = []
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        if wed_datum < nu:
+            continue
+        
+        zoekt_1 = wed.get("scheids_1_zoekt_vervanging", False) and wed.get("scheids_1")
+        zoekt_2 = wed.get("scheids_2_zoekt_vervanging", False) and wed.get("scheids_2")
+        
+        if zoekt_1 or zoekt_2:
+            scheids_1_naam = wed.get("scheids_1_naam", "")
+            scheids_2_naam = wed.get("scheids_2_naam", "")
+            
+            zoekt_namen = []
+            if zoekt_1 and scheids_1_naam:
+                zoekt_namen.append(f"{scheids_1_naam} (1e)")
+            if zoekt_2 and scheids_2_naam:
+                zoekt_namen.append(f"{scheids_2_naam} (2e)")
+            
+            dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+            zoekt_vervanging_wedstrijden.append({
+                "datum": wed_datum,
+                "dag": dag,
+                "thuisteam": wed.get("thuisteam", ""),
+                "uitteam": wed.get("uitteam", ""),
+                "namen": ", ".join(zoekt_namen)
+            })
+    
+    if zoekt_vervanging_wedstrijden:
+        zoekt_vervanging_wedstrijden.sort(key=lambda x: x["datum"])
+        with st.container():
+            st.warning(f"🔄 **{len(zoekt_vervanging_wedstrijden)} wedstrijd(en) met 'zoekt vervanging':**")
+            for wed in zoekt_vervanging_wedstrijden:
+                st.caption(f"• {wed['dag']} {wed['datum'].strftime('%d-%m %H:%M')} - {wed['thuisteam']} vs {wed['uitteam']} → {wed['namen']}")
     
     # Beheerder opties in sidebar
     with st.sidebar:
