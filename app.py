@@ -24,9 +24,156 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.2"
-APP_VERSIE_DATUM = "2026-01-30"
+APP_VERSIE = "1.35.25"
+APP_VERSIE_DATUM = "2026-02-05"
 APP_CHANGELOG = """
+### v1.35.25 (2026-02-05)
+**Waarschuwing bij herberekenen niveaus:**
+- ⚠️ Na herberekening check op scheidsrechters boven hun niveau
+- 📋 Toont lijst met naam, positie, wedstrijd en niveaus
+- ✅ "Begrepen" knop om melding te sluiten
+
+### v1.35.24 (2026-02-05)
+**Niveau-bepaling gebruikt nu je instellingen:**
+- 🔧 De niveau-omschrijvingen in Instellingen worden nu gebruikt bij import
+- ✅ Teams in je niveau-lijst krijgen automatisch het juiste niveau
+- 🔄 Nieuwe knop "Herbereken niveaus" om bestaande wedstrijden te corrigeren
+- 🔄 Fallback naar standaard logica als team niet in instellingen staat
+
+### v1.35.23 (2026-02-04)
+**Weekend overzicht: standaard aankomend weekend:**
+- 📅 Bij openen wordt nu het eerstvolgende weekend geselecteerd (niet het vorige)
+- 🔄 "Huidig" knop om snel terug te springen naar aankomend weekend
+
+### v1.35.22 (2026-02-04)
+**Fix: "Zoekt vervanging" checkboxes tonen nu correct:**
+- 🐛 Fix: Individuele zoekt_vervanging velden ontbraken in wed_lijst
+- ✅ Checkboxes tonen nu correct wie vervanging zoekt
+- 🔄 Warning bovenaan expander toont naam van wie vervanging zoekt
+
+### v1.35.21 (2026-02-04)
+**Duidelijke "zoekt vervanging" melding:**
+- 🔄 Bij openen wedstrijd expander zie je nu direct wie vervanging zoekt
+- Melding toont naam en positie: "Zoekt vervanging: **Jan** (1e)"
+
+### v1.35.20 (2026-02-04)
+**Compactere lay-out punten/strikes aanpassen:**
+- 📊 Punten links, Strikes rechts (logischer gegroepeerd)
+- 📦 Acties in uitklapbare secties (expanders) voor minder scrollwerk
+- 🎯 Historie ook in expander
+
+### v1.35.19 (2026-02-04)
+**Bugfix strikes verwijderen:**
+- 🐛 Fix: verwijder_strike functie was leeg - strikes werden niet correct afgetrokken
+- ✅ Nu werkt het correct: 3 strikes - 2 verwijderd = 1 strike over
+
+### v1.35.18 (2026-02-04)
+**Solo detectie verbeterd:**
+- 🎯 Solo bonus wordt nu automatisch berekend als er maar 1 scheids is
+- 📊 Breakdown toont "2 pt (1 basis + 1 solo)" voor solo wedstrijden
+- 🔄 Herberekening triggert nu ook bij solo wedstrijden zonder extra bonus
+
+### v1.35.17 (2026-02-04)
+**Punten breakdown fix + Externe invaller optie:**
+- 📊 Breakdown herberekent nu als details ontbreken (lost "alleen punten" probleem op)
+- 👤 Nieuwe optie: "No-show met externe invaller" (iemand van buiten de vereniging)
+  - No-show krijgt strikes
+  - Externe krijgt geen punten (staat niet in BOB)
+  - Andere scheids krijgt geen solo bonus (want er was wel een 2e)
+- 🔄 No-show expander heeft nu tabs: "Invaller uit BOB" en "Externe invaller"
+
+### v1.35.16 (2026-02-04)
+**Punten breakdown uitgebreid + Solo bonus bij no-show:**
+- 📊 Breakdown toont nu exacte getallen: "6 pt (1 basis + 5 inval <24u)" ipv "6 pt (basis + inval)"
+- 🎯 Bij no-show zonder invaller krijgt de andere scheids automatisch +1 solo bonus
+- ℹ️ Feedback toont nu ook de solo bonus die aan de andere scheids wordt toegekend
+
+### v1.35.15 (2026-02-04)
+**Bugfix:**
+- 🐛 Fix AttributeError als punten_details een string is ipv dict
+
+### v1.35.14 (2026-02-04)
+**Solo bonus ook bij TC-toewijzing:**
+- 🎯 Solo fluiten geeft ALTIJD +1 extra punt, ook bij TC-toewijzing
+- 🔄 Herbereken detecteert nu ook solo TC-toewijzingen zonder bonus
+
+### v1.35.13 (2026-02-04)
+**Solo bonus correctie:**
+- 🔄 Herbereken detecteert nu ook solo wedstrijden zonder extra bonus
+- 🛠️ Corrigeer knop voegt extra bonus toe aan solo wedstrijden
+
+### v1.35.12 (2026-02-04)
+**Solo fluiten = extra bonus:**
+- 🎯 Solo scheidsrechter krijgt nu ook +1 extra punt
+- 📝 Help tekst aangepast met uitleg over solo bonus
+
+### v1.35.11 (2026-02-04)
+**Fix TC-toewijzing punten:**
+- 🔄 Detecteert TC-toewijzingen met foutieve bonussen (>1 pt)
+- 🛠️ Corrigeert automatisch naar 1 basispunt
+- 📊 Pool berekening consistent voor beide scheidsrechters
+
+### v1.35.10 (2026-02-04)
+**Fix ontbrekende punten:**
+- 🔄 Automatische herberekening van punten voor oude inschrijvingen
+- ⚠️ Waarschuwing in bevestigingsscherm als punten ontbreken
+- 🛠️ Knop om alle ontbrekende punten in één keer te herberekenen
+
+### v1.35.9 (2026-02-04)
+**Zelfregulerend puntensysteem:**
+- 🎯 TC-toewijzing geeft nu alleen basispunten (1 pt)
+- 🏆 Zelf inschrijven of vervanging overnemen geeft alle bonussen
+- 💡 Stimuleert spelers om zelf actie te ondernemen
+
+| Actie | Punten |
+|-------|--------|
+| Zelf inschrijven (kritieke pool) | tot 5 pt |
+| Vervanging overnemen (<24u) | tot 7 pt |
+| TC wijst je toe | 1 pt |
+
+### v1.35.8 (2026-02-04)
+**Bugfixes:**
+- 🐛 Fix AttributeError bij bevestigingsscherm (details was string ipv dict)
+- 🎓 Coach bonus wordt nu automatisch herberekend als coach-status is gewijzigd
+- 🔄 Punten worden bijgewerkt wanneer je het bevestigingsscherm opent
+
+### v1.35.7 (2026-02-04)
+**Verbeteringen puntenlogica en bevestigingen:**
+- 🏷️ "Lastig" hernoemd naar "extra" (apart gekomen/gebleven)
+- 🎓 Coaches krijgen altijd "extra" bonus (fluiten is vrijwillig voor hen)
+- 🔙 Nieuw: Bevestigingen terugdraaien - herstel fouten achteraf
+- ℹ️ Verbeterde uitleg in help sectie
+
+### v1.35.6 (2026-02-04)
+**Punten breakdown zichtbaar:**
+- 🏆 Toon punten opbouw bij bevestigen: "2 pt (basis + lastig)"
+- ℹ️ Uitleg van puntencomponenten in help sectie
+- Duidelijk waarom speler A 1 punt krijgt en speler B 2 punten
+
+### v1.35.5 (2026-02-04)
+**Verbeterde workflow voor bevestigen wedstrijden:**
+- 🗓️ Nieuw: Filter "Laatste weekend" in Wedstrijden Bevestigen
+- ⚠️ Waarschuwing in Recente Mutaties als er nog onbevestigde wedstrijden zijn
+- 📅 Weekend filter (za/zo) voor makkelijk nalopen na speelweekend
+- 🇳🇱 Nederlandse dagnamen in bevestigingsscherm
+
+**Reminder:** Punten worden pas toegekend na bevestiging door TC!
+
+### v1.35.4 (2026-02-04)
+**Nieuw: Recente Mutaties overzicht:**
+- 📅 Nieuwe tab in Beloningen: "Recente Mutaties"
+- 🏆 Overzicht van punten uitgedeeld per dag
+- 🔴 Overzicht van strikes uitgedeeld per dag
+- 📊 Filter op periode (3/7/14/30 dagen) en type (punten/strikes)
+- 📋 Export naar CSV mogelijk
+
+### v1.35.3 (2026-02-03)
+**TC kan geblokkeerde dagen beheren:**
+- 🚫 Nieuw: TC kan geblokkeerde dagen bewerken bij scheidsrechters
+- 🛫 Sneloptie "Rest van seizoen niet beschikbaar" voor langdurige afwezigheid
+- 📅 Multiselect voor specifieke wedstrijddagen blokkeren
+- 🏷️ Verbeterde weergave: toont "Rest van seizoen" of eerste 5 dagen
+
 ### v1.35.2 (2026-01-30)
 **Alert voor TC bij 'zoekt vervanging':**
 - 🔄 Beheerweergave toont nu alert bovenaan als spelers vervanging zoeken
@@ -919,7 +1066,7 @@ HELP_TEKSTEN = {
     "Belonen": {
         "icon": "🏆",
         "onderwerpen": {
-            "Punten verdienen": "Je verdient punten door extra wedstrijden te fluiten (boven je minimum). Bonus voor lastige tijdstippen en last-minute invallen!",
+            "Punten verdienen": "Schrijf je zelf in voor wedstrijden = maximale punten! Bonussen voor apart komen, vervanging overnemen en kritieke wedstrijden. TC-toewijzing geeft alleen 1 basispunt.",
             "Strikes": "Strikes krijg je bij afmelden zonder vervanging: binnen 48u = 1 strike, binnen 24u = 2 strikes, no-show = 5 strikes. Met vervanging = 0 strikes!",
             "Strikes wegwerken": "Klusje doen (-1), extra wedstrijd fluiten (-1), of invallen binnen 48u (-2 strikes).",
             "Beloningen": "Top 3 zichtbaar in de app. Einde seizoen: financiële beloning voor top 3! Let op: je komt pas in het klassement als je je minimum op eigen niveau hebt gehaald."
@@ -1560,9 +1707,14 @@ def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
     if nbb_nummer not in beloningen["spelers"]:
         beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": []}
     
-    beloningen["spelers"][nbb_nummer]["strikes"] += strikes
+    oude_strikes = beloningen["spelers"][nbb_nummer].get("strikes", 0)
+    beloningen["spelers"][nbb_nummer]["strikes"] = oude_strikes + strikes
+    nieuwe_strikes = beloningen["spelers"][nbb_nummer]["strikes"]
+    
     beloningen["spelers"][nbb_nummer]["strike_log"].append({
         "strikes": strikes,
+        "oude_stand": oude_strikes,
+        "nieuwe_stand": nieuwe_strikes,
         "reden": reden,
         "datum": datetime.now().isoformat()
     })
@@ -1571,6 +1723,25 @@ def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
 def verwijder_strike(nbb_nummer: str, strikes: int, reden: str):
     """Verwijder strikes van een speler (door klusje of extra wedstrijd)."""
     beloningen = laad_beloningen()
+    if nbb_nummer not in beloningen["spelers"]:
+        beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": [], "punten_log": []}
+    
+    oude_strikes = beloningen["spelers"][nbb_nummer].get("strikes", 0)
+    beloningen["spelers"][nbb_nummer]["strikes"] = max(0, oude_strikes - strikes)
+    nieuwe_strikes = beloningen["spelers"][nbb_nummer]["strikes"]
+    
+    # Zorg dat strike_log bestaat
+    if "strike_log" not in beloningen["spelers"][nbb_nummer]:
+        beloningen["spelers"][nbb_nummer]["strike_log"] = []
+    
+    beloningen["spelers"][nbb_nummer]["strike_log"].append({
+        "strikes": -strikes,
+        "oude_stand": oude_strikes,
+        "nieuwe_stand": nieuwe_strikes,
+        "reden": reden,
+        "datum": datetime.now().isoformat()
+    })
+    sla_beloningen_op(beloningen)
 
 def pas_punten_aan(nbb_nummer: str, punten: int, reden: str):
     """
@@ -1598,30 +1769,41 @@ def pas_punten_aan(nbb_nummer: str, punten: int, reden: str):
         "handmatig": True
     })
     sla_beloningen_op(beloningen)
-    if nbb_nummer in beloningen["spelers"]:
-        beloningen["spelers"][nbb_nummer]["strikes"] = max(0, beloningen["spelers"][nbb_nummer]["strikes"] - strikes)
-        beloningen["spelers"][nbb_nummer]["strike_log"].append({
-            "strikes": -strikes,
-            "reden": reden,
-            "datum": datetime.now().isoformat()
-        })
-        sla_beloningen_op(beloningen)
 
-def is_lastig_tijdstip(nbb_nummer: str, wed_datum: datetime, wedstrijden: dict, scheidsrechters: dict) -> bool:
+def is_lastig_tijdstip(nbb_nummer: str, wed_datum: datetime, wedstrijden: dict, scheidsrechters: dict, wed_id: str = None) -> bool:
     """
-    Check of dit een 'lastig tijdstip' is voor de speler.
-    Lastig = >2u na eigen wedstrijd, >4u voor eigen thuiswedstrijd, of dag zonder eigen wedstrijd.
+    Check of dit een 'extra inspanning' is voor de speler (apart komen/blijven).
+    
+    Extra inspanning = speler moet apart komen of blijven voor het fluiten:
+    - Geen eigen teams ingesteld = altijd extra (moet apart komen)
+    - Coach/vrijwilliger = altijd extra (hoeft niet te fluiten, doet het vrijwillig)
+    - Solo fluiten = altijd extra (alleen verantwoordelijk voor de wedstrijd)
+    - Geen eigen wedstrijd op deze dag = extra (moet apart komen)
+    - Fluitwedstrijd is >2u NA eigen wedstrijd = extra (moet blijven)
+    - Fluitwedstrijd is >4u VOOR eigen thuiswedstrijd = extra (moet eerder komen)
+    
+    Geen extra inspanning = speler is toch al in de hal voor eigen wedstrijd
     """
     scheids = scheidsrechters.get(nbb_nummer, {})
     eigen_teams = scheids.get("eigen_teams", [])
     
+    # Coaches/vrijwilligers krijgen altijd de bonus - ze hoeven niet te fluiten
+    if scheids.get("is_coach", False):
+        return True
+    
+    # Solo fluiten = altijd extra (alleen verantwoordelijk voor de wedstrijd)
+    if wed_id and wed_id in wedstrijden:
+        wed = wedstrijden[wed_id]
+        if wed.get("solo_compleet", False):
+            return True
+    
     if not eigen_teams:
-        return True  # Geen eigen wedstrijden = altijd lastig (moet apart komen)
+        return True  # Geen eigen wedstrijden = altijd extra (moet apart komen)
     
     wed_dag = wed_datum.date()
     
     eigen_wedstrijden_vandaag = []
-    for wed_id, wed in wedstrijden.items():
+    for w_id, wed in wedstrijden.items():
         # Check of dit een eigen wedstrijd is
         is_eigen_thuis = any(team_match(wed["thuisteam"], et) for et in eigen_teams)
         is_eigen_uit = any(team_match(wed["uitteam"], et) for et in eigen_teams)
@@ -1641,7 +1823,7 @@ def is_lastig_tijdstip(nbb_nummer: str, wed_datum: datetime, wedstrijden: dict, 
                     "thuis": wed.get("type") != "uit"
                 })
     
-    # Geen eigen wedstrijd op deze dag = lastig tijdstip (moet apart komen)
+    # Geen eigen wedstrijd op deze dag = extra (moet apart komen)
     if not eigen_wedstrijden_vandaag:
         return True
     
@@ -1687,13 +1869,18 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         wedstrijden: Dict van alle wedstrijden
         scheidsrechters: Dict van alle scheidsrechters
         bron: Hoe de inschrijving tot stand kwam:
-              - "zelf": Speler schreef zichzelf in (geen last-minute bonus)
-              - "vervanging": Via vervangingsverzoek van afmelder
-              - "tc": Handmatig toegewezen door TC
-              - "uitnodiging": Via MSE begeleidingsuitnodiging
-              - "heraanmelding": Speler die zich eerder had afgemeld (GEEN bonussen!)
+              - "zelf": Speler schreef zichzelf in (alle bonussen)
+              - "vervanging": Via vervangingsverzoek van afmelder (alle bonussen + inval)
+              - "tc": Handmatig toegewezen door TC (ALLEEN basis - stimuleert zelf inschrijven)
+              - "uitnodiging": Via MSE begeleidingsuitnodiging (alle bonussen)
+              - "heraanmelding": Speler die zich eerder had afgemeld (ALLEEN basis)
     
     Returns: {"basis": int, "lastig_tijdstip": int, "inval_bonus": int, "pool_bonus": int, "totaal": int, "details": str, "berekening": dict}
+    
+    Zelfregulerend principe:
+    - Zelf actie ondernemen = maximale beloning
+    - TC moet toewijzen = minimale beloning (alleen basis)
+    - Dit stimuleert spelers om zelf in te schrijven ipv te wachten op TC
     """
     beloningsinst = laad_beloningsinstellingen()
     wed = wedstrijden.get(wed_id, {})
@@ -1704,34 +1891,45 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     verschil = wed_datum - nu
     uren_tot_wedstrijd = verschil.total_seconds() / 3600
     
-    # NIEUW: Bij heraanmelding krijgt speler alleen basispunten, geen bonussen
-    is_heraanmelding = bron == "heraanmelding"
+    # Bepaal of bonussen van toepassing zijn
+    # TC-toewijzing en heraanmelding krijgen ALLEEN basispunten (zelfregulerend principe)
+    # UITZONDERING: Solo fluiten geeft ALTIJD extra bonus (ook bij TC)
+    geen_bonussen = bron in ["tc", "heraanmelding"]
+    
+    # Solo detectie: expliciet gemarkeerd OF maar 1 scheids toegewezen
+    is_solo_expliciet = wed.get("solo_compleet", False)
+    scheids_1 = wed.get("scheids_1")
+    scheids_2 = wed.get("scheids_2")
+    # Solo = maar 1 scheids is ingevuld (de andere is None/leeg)
+    is_solo_door_bezetting = (scheids_1 and not scheids_2) or (scheids_2 and not scheids_1)
+    is_solo = is_solo_expliciet or is_solo_door_bezetting
     
     # Basis punten (altijd)
     basis = beloningsinst["punten_per_wedstrijd"]
     
-    # Lastig tijdstip - NIET bij heraanmelding
-    if is_heraanmelding:
+    # Extra (apart komen) - NIET bij TC-toewijzing of heraanmelding, BEHALVE bij solo
+    if is_solo:
+        # Solo fluiten geeft ALTIJD extra bonus
+        lastig = beloningsinst["punten_lastig_tijdstip"]
+    elif geen_bonussen:
         lastig = 0
     else:
-        lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters) else 0
+        lastig = beloningsinst["punten_lastig_tijdstip"] if is_lastig_tijdstip(nbb_nummer, wed_datum, wedstrijden, scheidsrechters, wed_id) else 0
     
-    # Last-minute inval bonus - ALLEEN bij vervanging, TC-toewijzing of uitnodiging
-    # Zelf inschrijven en heraanmelding geeft geen bonus
+    # Last-minute inval bonus - ALLEEN bij vervanging of uitnodiging (niet bij TC of zelf)
     inval_bonus = 0
     inval_info = {"is_inval": False, "bonus": 0, "uren": 0}
     
-    if bron in ["vervanging", "tc", "uitnodiging"]:
+    if bron in ["vervanging", "uitnodiging"]:
         inval_info = is_last_minute_inval(wed_id, wed_datum)
         inval_bonus = inval_info["bonus"]
     
-    # Pool bonus - beloning voor inschrijven op kritieke wedstrijden
-    # NIET bij heraanmelding (om gaming te voorkomen: afmelden en dan bonus claimen)
+    # Pool bonus - NIET bij TC-toewijzing of heraanmelding
     pool_bonus = 0
     pool_size = bereken_pool_voor_wedstrijd(wed_id, wedstrijden, scheidsrechters)
     pool_categorie = ""
     
-    if not is_heraanmelding:  # Alleen bonus als het geen heraanmelding is
+    if not geen_bonussen:
         if pool_size <= beloningsinst.get("pool_kritiek_grens", 3):
             pool_bonus = beloningsinst.get("punten_pool_kritiek", 3)
             pool_categorie = "kritiek"
@@ -1747,13 +1945,16 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
     details = []
     details.append(f"{basis} basis")
     if lastig:
-        details.append(f"+{lastig} lastig tijdstip")
+        details.append(f"+{lastig} extra")
     if inval_bonus:
         details.append(f"+{inval_bonus} inval <{inval_info['uren']}u")
     if pool_bonus:
         details.append(f"+{pool_bonus} {pool_categorie} pool")
-    if is_heraanmelding:
-        details.append("(heraanmelding, geen bonus)")
+    if geen_bonussen:
+        if bron == "tc":
+            details.append("(TC-toewijzing)")
+        else:
+            details.append("(heraanmelding)")
     
     # Gedetailleerde berekening voor transparantie
     berekening = {
@@ -1768,8 +1969,8 @@ def bereken_punten_voor_wedstrijd(nbb_nummer: str, wed_id: str, wedstrijden: dic
         "pool_size": pool_size,
         "pool_categorie": pool_categorie,
         "bron": bron,
-        "is_heraanmelding": is_heraanmelding,
-        "bonus_reden": "heraanmelding (geen bonus)" if is_heraanmelding else ("vervanging/TC" if bron in ["vervanging", "tc", "uitnodiging"] else "zelf ingeschreven (geen bonus)")
+        "geen_bonussen": geen_bonussen,
+        "bonus_reden": "TC-toewijzing (alleen basis)" if bron == "tc" else ("heraanmelding (alleen basis)" if bron == "heraanmelding" else ("vervanging" if bron == "vervanging" else "zelf ingeschreven"))
     }
     
     return {
@@ -2064,15 +2265,22 @@ def bevestig_wedstrijd_gefloten(wed_id: str, positie: str, bevestigd_door: str) 
     
     # Ken punten toe aan speler
     if punten and punten > 0:
-        reden = punten_details.get("details", f"Wedstrijd {wed.get('thuisteam')} vs {wed.get('uitteam')}")
-        voeg_punten_toe(nbb_nummer, punten, reden, wed_id, punten_details.get("berekening"))
+        # punten_details kan een string of dict zijn
+        if isinstance(punten_details, dict):
+            reden = punten_details.get("details", f"Wedstrijd {wed.get('thuisteam')} vs {wed.get('uitteam')}")
+            berekening = punten_details.get("berekening")
+        else:
+            reden = f"Wedstrijd {wed.get('thuisteam')} vs {wed.get('uitteam')}"
+            berekening = None
+        voeg_punten_toe(nbb_nummer, punten, reden, wed_id, berekening)
     
     return True
 
-def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
+def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> dict:
     """
     Markeer een scheidsrechter als no-show.
-    Kent no-show strikes toe.
+    Kent no-show strikes toe aan de no-show.
+    Kent solo bonus toe aan de andere scheidsrechter (indien aanwezig).
     
     Args:
         wed_id: ID van de wedstrijd
@@ -2080,15 +2288,21 @@ def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
         bevestigd_door: Naam/ID van TC-lid die markeert
     
     Returns:
-        True bij succes, False bij fout
+        Dict met resultaten: {
+            "success": bool,
+            "no_show_nbb": str,
+            "no_show_strikes": int,
+            "solo_scheids_nbb": str of None,
+            "solo_bonus": int of 0
+        }
     """
     wedstrijden = laad_wedstrijden()
     wed = wedstrijden.get(wed_id)
     
     if not wed:
-        return False
+        return {"success": False}
     
-    # Bepaal kolom namen
+    # Bepaal kolom namen voor no-show
     scheids_kolom = positie
     status_kolom = f"{positie}_status"
     bevestigd_op_kolom = f"{positie}_bevestigd_op"
@@ -2096,15 +2310,15 @@ def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
     
     nbb_nummer = wed.get(scheids_kolom)
     if not nbb_nummer:
-        return False
+        return {"success": False}
     
-    # Update status
+    # Update status van no-show
     wed[status_kolom] = "no_show"
     wed[bevestigd_op_kolom] = datetime.now().isoformat()
     wed[bevestigd_door_kolom] = bevestigd_door
     
-    # Sla wedstrijd update op
-    sla_wedstrijden_op(wedstrijden)
+    # Markeer wedstrijd als solo (geen 2e scheids meer)
+    wed["solo_compleet"] = True
     
     # Ken no-show strikes toe
     beloningsinst = laad_beloningsinstellingen()
@@ -2112,7 +2326,57 @@ def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> bool:
     reden = f"No-show: {wed.get('thuisteam')} vs {wed.get('uitteam')}"
     voeg_strike_toe(nbb_nummer, strikes, reden)
     
-    return True
+    # Bepaal de andere scheids positie
+    andere_positie = "scheids_2" if positie == "scheids_1" else "scheids_1"
+    andere_nbb = wed.get(andere_positie)
+    solo_bonus = 0
+    
+    # Als er een andere scheids is die nog niet bevestigd is, geef solo bonus
+    if andere_nbb:
+        andere_status_kolom = f"{andere_positie}_status"
+        andere_punten_kolom = f"{andere_positie}_punten_berekend"
+        andere_details_kolom = f"{andere_positie}_punten_details"
+        
+        andere_status = wed.get(andere_status_kolom)
+        
+        # Check of de andere scheids nog niet bevestigd is (status is None of leeg)
+        if not andere_status or andere_status not in ["gefloten", "no_show", "no_show_externe"]:
+            # Voeg solo bonus toe (+1 extra punt)
+            solo_bonus = beloningsinst.get("punten_lastig_tijdstip", 1)
+            
+            # Haal huidige punten op en verhoog
+            huidige_punten = wed.get(andere_punten_kolom, 0) or 0
+            huidige_details = wed.get(andere_details_kolom, {})
+            
+            # Zorg dat details een dict is
+            if not isinstance(huidige_details, dict):
+                huidige_details = {"basis": huidige_punten, "totaal": huidige_punten}
+            
+            # Verhoog punten en voeg solo bonus toe aan details
+            nieuwe_punten = huidige_punten + solo_bonus
+            huidige_details["lastig_tijdstip"] = huidige_details.get("lastig_tijdstip", 0) + solo_bonus
+            huidige_details["totaal"] = nieuwe_punten
+            huidige_details["solo_bonus"] = solo_bonus
+            huidige_details["details"] = huidige_details.get("details", "") + f", +{solo_bonus} solo (medescheids no-show)"
+            
+            if isinstance(huidige_details.get("berekening"), dict):
+                huidige_details["berekening"]["is_solo"] = True
+                huidige_details["berekening"]["solo_bonus_reden"] = "Medescheids was no-show zonder vervanger"
+            
+            # Update wedstrijd met nieuwe punten
+            wed[andere_punten_kolom] = nieuwe_punten
+            wed[andere_details_kolom] = huidige_details
+    
+    # Sla wedstrijd update op
+    sla_wedstrijden_op(wedstrijden)
+    
+    return {
+        "success": True,
+        "no_show_nbb": nbb_nummer,
+        "no_show_strikes": strikes,
+        "solo_scheids_nbb": andere_nbb if solo_bonus > 0 else None,
+        "solo_bonus": solo_bonus
+    }
 
 def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, bevestigd_door: str) -> dict:
     """
@@ -2159,7 +2423,7 @@ def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, b
     
     # Check lastig tijdstip voor invaller
     wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
-    lastig_bonus = beloningsinst.get("punten_lastig_tijdstip", 1) if is_lastig_tijdstip(invaller_nbb, wed_datum, wedstrijden, scheidsrechters) else 0
+    lastig_bonus = beloningsinst.get("punten_lastig_tijdstip", 1) if is_lastig_tijdstip(invaller_nbb, wed_datum, wedstrijden, scheidsrechters, wed_id) else 0
     
     totaal_punten = basis_punten + inval_bonus + lastig_bonus
     
@@ -2195,7 +2459,8 @@ def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, b
     
     # Ken punten toe aan invaller
     punten_reden = f"Inval voor no-show ({oorspronkelijke_naam}): {wed.get('thuisteam')} vs {wed.get('uitteam')}"
-    voeg_punten_toe(invaller_nbb, totaal_punten, punten_reden, wed_id, punten_details.get("berekening"))
+    berekening = punten_details.get("berekening") if isinstance(punten_details, dict) else None
+    voeg_punten_toe(invaller_nbb, totaal_punten, punten_reden, wed_id, berekening)
     
     return {
         "oorspronkelijke_scheids": oorspronkelijke_naam,
@@ -2207,9 +2472,173 @@ def markeer_no_show_met_invaller(wed_id: str, positie: str, invaller_nbb: str, b
         "punten_details": punten_details["details"]
     }
 
+def markeer_no_show_met_externe(wed_id: str, positie: str, bevestigd_door: str) -> dict:
+    """
+    Markeer een scheidsrechter als no-show met een externe invaller (iemand van buiten de vereniging).
+    De oorspronkelijke scheids krijgt strikes, maar er worden geen punten toegekend (externe krijgt niks).
+    De andere scheidsrechter krijgt GEEN solo bonus (want er was wel een 2e scheids).
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        bevestigd_door: Naam/ID van TC-lid die markeert
+    
+    Returns:
+        Dict met resultaten
+    """
+    wedstrijden = laad_wedstrijden()
+    wed = wedstrijden.get(wed_id)
+    
+    if not wed:
+        return {"success": False}
+    
+    scheidsrechters = laad_scheidsrechters()
+    
+    # Bepaal kolom namen
+    scheids_kolom = positie
+    status_kolom = f"{positie}_status"
+    bevestigd_op_kolom = f"{positie}_bevestigd_op"
+    bevestigd_door_kolom = f"{positie}_bevestigd_door"
+    
+    oorspronkelijke_nbb = wed.get(scheids_kolom)
+    if not oorspronkelijke_nbb:
+        return {"success": False}
+    
+    oorspronkelijke_naam = scheidsrechters.get(oorspronkelijke_nbb, {}).get("naam", "Onbekend")
+    
+    # Update status naar no_show (maar met externe vervanging)
+    wed[status_kolom] = "no_show_externe"
+    wed[bevestigd_op_kolom] = datetime.now().isoformat()
+    wed[bevestigd_door_kolom] = bevestigd_door
+    
+    # NIET solo_compleet zetten - er was wel een 2e scheids (extern)
+    # Hierdoor krijgt de andere scheids geen solo bonus
+    
+    # Sla wedstrijd update op
+    sla_wedstrijden_op(wedstrijden)
+    
+    # Ken no-show strikes toe aan oorspronkelijke scheids
+    beloningsinst = laad_beloningsinstellingen()
+    strikes = beloningsinst.get("strikes_no_show", 5)
+    strike_reden = f"No-show (externe invaller): {wed.get('thuisteam')} vs {wed.get('uitteam')}"
+    voeg_strike_toe(oorspronkelijke_nbb, strikes, strike_reden)
+    
+    return {
+        "success": True,
+        "oorspronkelijke_scheids": oorspronkelijke_naam,
+        "oorspronkelijke_nbb": oorspronkelijke_nbb,
+        "strikes": strikes
+    }
+
+def draai_bevestiging_terug(wed_id: str, positie: str, teruggedraaid_door: str) -> dict:
+    """
+    Draai een bevestiging terug (gefloten of no-show).
+    Haalt de toegekende punten of strikes terug.
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        positie: "scheids_1" of "scheids_2"
+        teruggedraaid_door: Naam/ID van TC-lid die terugdraait
+    
+    Returns:
+        dict met info over wat teruggedraaid is, of None bij fout
+    """
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    beloningen = laad_beloningen()
+    wed = wedstrijden.get(wed_id)
+    
+    if not wed:
+        return None
+    
+    # Bepaal kolom namen
+    scheids_kolom = positie
+    status_kolom = f"{positie}_status"
+    bevestigd_op_kolom = f"{positie}_bevestigd_op"
+    bevestigd_door_kolom = f"{positie}_bevestigd_door"
+    punten_kolom = f"{positie}_punten_berekend"
+    
+    nbb_nummer = wed.get(scheids_kolom)
+    huidige_status = wed.get(status_kolom)
+    
+    if not nbb_nummer or not huidige_status:
+        return None  # Niets om terug te draaien
+    
+    naam = scheidsrechters.get(nbb_nummer, {}).get("naam", "Onbekend")
+    resultaat = {
+        "nbb": nbb_nummer,
+        "naam": naam,
+        "vorige_status": huidige_status,
+        "actie": ""
+    }
+    
+    if huidige_status == "gefloten":
+        # Haal punten terug
+        punten = wed.get(punten_kolom, 0)
+        if punten and nbb_nummer in beloningen.get("spelers", {}):
+            speler_data = beloningen["spelers"][nbb_nummer]
+            
+            # Trek punten af
+            speler_data["punten"] = max(0, speler_data.get("punten", 0) - punten)
+            
+            # Verwijder registratie uit gefloten_wedstrijden
+            speler_data["gefloten_wedstrijden"] = [
+                w for w in speler_data.get("gefloten_wedstrijden", [])
+                if w.get("wed_id") != wed_id
+            ]
+            
+            # Log de correctie
+            if "punten_log" not in speler_data:
+                speler_data["punten_log"] = []
+            speler_data["punten_log"].append({
+                "punten": -punten,
+                "oude_stand": speler_data["punten"] + punten,
+                "nieuwe_stand": speler_data["punten"],
+                "reden": f"Bevestiging teruggedraaid: {wed.get('thuisteam')} vs {wed.get('uitteam')}",
+                "datum": datetime.now().isoformat(),
+                "handmatig": True,
+                "teruggedraaid_door": teruggedraaid_door
+            })
+            
+            sla_beloningen_op(beloningen)
+            resultaat["actie"] = f"{punten} punten teruggehaald"
+    
+    elif huidige_status == "no_show" or huidige_status == "no_show_externe":
+        # Haal strikes terug
+        beloningsinst = laad_beloningsinstellingen()
+        strikes = beloningsinst.get("strikes_no_show", 5)
+        
+        if nbb_nummer in beloningen.get("spelers", {}):
+            speler_data = beloningen["spelers"][nbb_nummer]
+            
+            # Trek strikes af
+            speler_data["strikes"] = max(0, speler_data.get("strikes", 0) - strikes)
+            
+            # Log de correctie
+            speler_data["strike_log"].append({
+                "strikes": -strikes,
+                "reden": f"No-show teruggedraaid: {wed.get('thuisteam')} vs {wed.get('uitteam')}",
+                "datum": datetime.now().isoformat(),
+                "teruggedraaid_door": teruggedraaid_door
+            })
+            
+            sla_beloningen_op(beloningen)
+            resultaat["actie"] = f"{strikes} strikes teruggehaald"
+    
+    # Reset wedstrijd status
+    wed[status_kolom] = None
+    wed[bevestigd_op_kolom] = None
+    wed[bevestigd_door_kolom] = None
+    
+    sla_wedstrijden_op(wedstrijden)
+    
+    return resultaat
+
 def get_te_bevestigen_wedstrijden() -> list:
     """
     Haal wedstrijden op die in het verleden liggen en nog niet volledig bevestigd zijn.
+    
+    Herberekent automatisch punten als deze ontbreken (NULL).
     
     Returns:
         Lijst van wedstrijden met openstaande bevestigingen
@@ -2219,6 +2648,7 @@ def get_te_bevestigen_wedstrijden() -> list:
     nu = datetime.now()
     
     te_bevestigen = []
+    wedstrijden_bijgewerkt = False
     
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
@@ -2242,6 +2672,20 @@ def get_te_bevestigen_wedstrijden() -> list:
         scheids_2 = wed.get("scheids_2")
         scheids_2_status = wed.get("scheids_2_status")
         
+        # NIEUW: Herbereken punten als ze ontbreken (oude inschrijvingen)
+        # Gebruik bron="zelf" als default (geeft alle bonussen)
+        if scheids_1 and wed.get("scheids_1_punten_berekend") is None and not scheids_1_status:
+            punten_info = bereken_punten_voor_wedstrijd(scheids_1, wed_id, wedstrijden, scheidsrechters, "zelf")
+            wed["scheids_1_punten_berekend"] = punten_info["totaal"]
+            wed["scheids_1_punten_details"] = punten_info
+            wedstrijden_bijgewerkt = True
+        
+        if scheids_2 and wed.get("scheids_2_punten_berekend") is None and not scheids_2_status:
+            punten_info = bereken_punten_voor_wedstrijd(scheids_2, wed_id, wedstrijden, scheidsrechters, "zelf")
+            wed["scheids_2_punten_berekend"] = punten_info["totaal"]
+            wed["scheids_2_punten_details"] = punten_info
+            wedstrijden_bijgewerkt = True
+        
         # Heeft deze wedstrijd openstaande bevestigingen?
         scheids_1_open = scheids_1 and not scheids_1_status
         scheids_2_open = scheids_2 and not scheids_2_status
@@ -2258,13 +2702,19 @@ def get_te_bevestigen_wedstrijden() -> list:
                 "scheids_1_naam": scheidsrechters.get(scheids_1, {}).get("naam", "Onbekend") if scheids_1 else None,
                 "scheids_1_status": scheids_1_status,
                 "scheids_1_punten": wed.get("scheids_1_punten_berekend", 0),
+                "scheids_1_details": wed.get("scheids_1_punten_details", {}),
                 "scheids_2": scheids_2,
                 "scheids_2_naam": scheidsrechters.get(scheids_2, {}).get("naam", "Onbekend") if scheids_2 else None,
                 "scheids_2_status": scheids_2_status,
                 "scheids_2_punten": wed.get("scheids_2_punten_berekend", 0),
+                "scheids_2_details": wed.get("scheids_2_punten_details", {}),
                 "scheids_1_open": scheids_1_open,
                 "scheids_2_open": scheids_2_open
             })
+    
+    # Sla bijgewerkte wedstrijden op
+    if wedstrijden_bijgewerkt:
+        sla_wedstrijden_op(wedstrijden)
     
     # Sorteer op datum (oudste eerst)
     return sorted(te_bevestigen, key=lambda x: x["wed_datum"])
@@ -2285,6 +2735,87 @@ def get_ranglijst() -> list:
         })
     
     return sorted(ranglijst, key=lambda x: (-x["punten"], x["strikes"]))
+
+def herbereken_ontbrekende_punten() -> dict:
+    """
+    Herbereken punten voor alle wedstrijden waar:
+    1. Punten ontbreken (NULL) - oude inschrijvingen
+    2. TC-toewijzing met pool bonus (>1 pt) - foutief berekend vóór v1.35.9
+    3. Solo wedstrijd zonder extra bonus - ontbrekende solo bonus
+    
+    Returns:
+        dict met aantal bijgewerkte posities
+    """
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    
+    bijgewerkt_null = 0
+    bijgewerkt_tc = 0
+    bijgewerkt_solo = 0
+    
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        
+        is_solo = wed.get("solo_compleet", False)
+        
+        # Check scheids_1
+        scheids_1 = wed.get("scheids_1")
+        if scheids_1 and not wed.get("scheids_1_status"):
+            punten_1 = wed.get("scheids_1_punten_berekend")
+            details_1 = wed.get("scheids_1_punten_details", {})
+            bron_1 = details_1.get("berekening", {}).get("bron") if isinstance(details_1, dict) else None
+            lastig_1 = details_1.get("lastig_tijdstip", 0) if isinstance(details_1, dict) else 0
+            
+            # Case 1: Punten ontbreken
+            if punten_1 is None:
+                punten_info = bereken_punten_voor_wedstrijd(scheids_1, wed_id, wedstrijden, scheidsrechters, bron_1 or "zelf")
+                wed["scheids_1_punten_berekend"] = punten_info["totaal"]
+                wed["scheids_1_punten_details"] = punten_info
+                bijgewerkt_null += 1
+            # Case 2: TC-toewijzing NIET solo met meer dan 1 punt (foutief)
+            elif bron_1 == "tc" and not is_solo and punten_1 > 1:
+                punten_info = bereken_punten_voor_wedstrijd(scheids_1, wed_id, wedstrijden, scheidsrechters, "tc")
+                wed["scheids_1_punten_berekend"] = punten_info["totaal"]
+                wed["scheids_1_punten_details"] = punten_info
+                bijgewerkt_tc += 1
+            # Case 3: Solo wedstrijd zonder extra bonus (TC of niet)
+            elif is_solo and lastig_1 == 0:
+                punten_info = bereken_punten_voor_wedstrijd(scheids_1, wed_id, wedstrijden, scheidsrechters, bron_1 or "zelf")
+                wed["scheids_1_punten_berekend"] = punten_info["totaal"]
+                wed["scheids_1_punten_details"] = punten_info
+                bijgewerkt_solo += 1
+        
+        # Check scheids_2 (niet relevant voor solo, maar voor consistentie)
+        scheids_2 = wed.get("scheids_2")
+        if scheids_2 and not wed.get("scheids_2_status"):
+            punten_2 = wed.get("scheids_2_punten_berekend")
+            details_2 = wed.get("scheids_2_punten_details", {})
+            bron_2 = details_2.get("berekening", {}).get("bron") if isinstance(details_2, dict) else None
+            
+            # Case 1: Punten ontbreken
+            if punten_2 is None:
+                punten_info = bereken_punten_voor_wedstrijd(scheids_2, wed_id, wedstrijden, scheidsrechters, bron_2 or "zelf")
+                wed["scheids_2_punten_berekend"] = punten_info["totaal"]
+                wed["scheids_2_punten_details"] = punten_info
+                bijgewerkt_null += 1
+            # Case 2: TC-toewijzing met meer dan 1 punt (foutief)
+            elif bron_2 == "tc" and punten_2 > 1:
+                punten_info = bereken_punten_voor_wedstrijd(scheids_2, wed_id, wedstrijden, scheidsrechters, "tc")
+                wed["scheids_2_punten_berekend"] = punten_info["totaal"]
+                wed["scheids_2_punten_details"] = punten_info
+                bijgewerkt_tc += 1
+    
+    totaal = bijgewerkt_null + bijgewerkt_tc + bijgewerkt_solo
+    if totaal > 0:
+        sla_wedstrijden_op(wedstrijden)
+    
+    return {
+        "ontbrekende_punten": bijgewerkt_null,
+        "tc_correcties": bijgewerkt_tc,
+        "solo_correcties": bijgewerkt_solo,
+        "totaal": totaal
+    }
 
 # ============================================================
 # HELPER FUNCTIES
@@ -3182,10 +3713,18 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
 # POOL-INDICATOR FUNCTIES
 # ============================================================
 
-def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters: dict) -> int:
+def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters: dict, negeer_ingeschreven: bool = True) -> int:
     """
     Bereken het aantal scheidsrechters dat beschikbaar is voor een wedstrijd.
-    Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap, al ingeschreven.
+    Houdt rekening met: niveau, BS2, eigen team, zondag, blessures, blokkades, tijdsoverlap.
+    
+    Args:
+        wed_id: ID van de wedstrijd
+        wedstrijden: Dict van alle wedstrijden
+        scheidsrechters: Dict van alle scheidsrechters
+        negeer_ingeschreven: Als True, tel al ingeschreven scheidsrechters WEL mee in pool.
+                            Dit zorgt voor consistente pool voor beide posities.
+                            Default is True voor eerlijke pool bonus berekening.
     
     BELANGRIJK: Scheidsrechters die zich hebben afgemeld worden NIET meegeteld in de pool.
     Dit voorkomt dat de pool onterecht stijgt na een afmelding.
@@ -3207,9 +3746,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
         if scheids.get("uitgesloten_van_pool", False):
             continue
         
-        # Check of al toegewezen aan deze wedstrijd
-        if wed.get("scheids_1") == nbb or wed.get("scheids_2") == nbb:
-            continue
+        # GEWIJZIGD: Alleen al ingeschreven scheidsrechters uitsluiten als negeer_ingeschreven=False
+        if not negeer_ingeschreven:
+            if wed.get("scheids_1") == nbb or wed.get("scheids_2") == nbb:
+                continue
         
         # NIEUW: Check of deze scheidsrechter zich heeft afgemeld - die telt niet mee in pool
         if nbb in afgemelde_nbbs:
@@ -3270,8 +3810,10 @@ def bereken_pool_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechters:
             continue
         
         # Check of scheidsrechter al ingeschreven is voor een overlappende fluitwedstrijd
-        if heeft_overlappende_fluitwedstrijd(nbb, wed_id, wed_datum, wedstrijden):
-            continue
+        # GEWIJZIGD: Alleen checken als we niet negeren
+        if not negeer_ingeschreven:
+            if heeft_overlappende_fluitwedstrijd(nbb, wed_id, wed_datum, wedstrijden):
+                continue
         
         pool_count += 1
     
@@ -3797,16 +4339,20 @@ def toon_speler_view(nbb_nummer: str):
             st.markdown(f"""
             | Actie | Punten |
             |-------|--------|
-            | Wedstrijd fluiten | {beloningsinst['punten_per_wedstrijd']} |
-            | Lastig tijdstip* | +{beloningsinst['punten_lastig_tijdstip']} |
-            | Invallen <48 uur | +{beloningsinst['punten_inval_48u']} |
-            | Invallen <24 uur | +{beloningsinst['punten_inval_24u']} |
+            | Wedstrijd fluiten (basis) | {beloningsinst['punten_per_wedstrijd']} |
+            | Apart komen/blijven (extra) | +{beloningsinst['punten_lastig_tijdstip']} |
+            | Vervanging overnemen <48u | +{beloningsinst['punten_inval_48u']} |
+            | Vervanging overnemen <24u | +{beloningsinst['punten_inval_24u']} |
             
-            *Lastig = apart terugkomen om te fluiten  
+            💡 **Extra bonus** krijg je bij: solo fluiten, coach, geen eigen wedstrijd, of >2u wachten.
+            
+            **Tip:** Zelf inschrijven of vervanging overnemen = maximale punten!  
+            TC-toewijzing = alleen basispunten, behalve solo fluiten (+1 extra)
+            
             **{beloningsinst['punten_voor_voucher']} punten** = voucher Clinic!
             """)
             
-            st.markdown("**🏆 Pool Bonus:**")
+            st.markdown("**🏆 Pool Bonus (alleen bij zelf inschrijven):**")
             st.markdown(f"""
             Extra punten voor wedstrijden met weinig beschikbare scheids:
             
@@ -6091,7 +6637,77 @@ def toon_bevestigen_wedstrijden():
         - ✅ Scheids was aanwezig → "Gefloten"
         - ❌ Scheids niet verschenen, wedstrijd niet doorgegaan → "No-show"
         - 🔄 Scheids niet verschenen, iemand anders heeft ingevallen → "No-show met invaller"
+        
+        **Punten opbouw:**
+        - **basis** = 1 punt (altijd)
+        - **extra** = +1 punt (apart gekomen/gebleven: solo fluiten, coach, geen eigen wedstrijd, of >2u wachten)
+        - **inval** = +3 punt (<48u) of +5 punt (<24u) bij vervanging overnemen
+        - **pool** = +1 tot +3 punten bij kleine beschikbare pool
+        
+        **Zelfregulerend:** TC-toewijzing geeft alleen basispunten, behalve solo fluiten (+1 extra).
+        Zelf inschrijven of vervanging overnemen geeft alle bonussen!
         """)
+    
+    # Check of er problemen zijn met puntenberekeningen
+    wedstrijden = laad_wedstrijden()
+    ontbrekende_punten = 0
+    tc_fout_punten = 0
+    solo_zonder_bonus = 0
+    
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        
+        is_solo = wed.get("solo_compleet", False)
+        
+        # Check scheids_1
+        if wed.get("scheids_1") and not wed.get("scheids_1_status"):
+            punten_1 = wed.get("scheids_1_punten_berekend")
+            details_1 = wed.get("scheids_1_punten_details", {})
+            bron_1 = details_1.get("berekening", {}).get("bron") if isinstance(details_1, dict) else None
+            lastig_1 = details_1.get("lastig_tijdstip", 0) if isinstance(details_1, dict) else 0
+            
+            if punten_1 is None:
+                ontbrekende_punten += 1
+            elif bron_1 == "tc" and not is_solo and punten_1 > 1:
+                tc_fout_punten += 1
+            elif is_solo and lastig_1 == 0:
+                solo_zonder_bonus += 1
+        
+        # Check scheids_2
+        if wed.get("scheids_2") and not wed.get("scheids_2_status"):
+            punten_2 = wed.get("scheids_2_punten_berekend")
+            details_2 = wed.get("scheids_2_punten_details", {})
+            bron_2 = details_2.get("berekening", {}).get("bron") if isinstance(details_2, dict) else None
+            
+            if punten_2 is None:
+                ontbrekende_punten += 1
+            elif bron_2 == "tc" and not is_solo and punten_2 > 1:
+                tc_fout_punten += 1
+    
+    totaal_problemen = ontbrekende_punten + tc_fout_punten + solo_zonder_bonus
+    
+    if totaal_problemen > 0:
+        problemen = []
+        if ontbrekende_punten > 0:
+            problemen.append(f"{ontbrekende_punten} zonder punten")
+        if tc_fout_punten > 0:
+            problemen.append(f"{tc_fout_punten} TC-toewijzingen met verkeerde bonus")
+        if solo_zonder_bonus > 0:
+            problemen.append(f"{solo_zonder_bonus} solo wedstrijden zonder extra bonus")
+        
+        st.warning(f"⚠️ **{totaal_problemen} puntenberekening(en)** moeten gecorrigeerd worden: {', '.join(problemen)}")
+        if st.button("🔄 Corrigeer puntenberekeningen", type="primary"):
+            resultaat = herbereken_ontbrekende_punten()
+            melding = []
+            if resultaat['ontbrekende_punten'] > 0:
+                melding.append(f"{resultaat['ontbrekende_punten']} ontbrekende punten toegevoegd")
+            if resultaat['tc_correcties'] > 0:
+                melding.append(f"{resultaat['tc_correcties']} TC-toewijzingen gecorrigeerd naar 1 pt")
+            if resultaat['solo_correcties'] > 0:
+                melding.append(f"{resultaat['solo_correcties']} solo wedstrijden extra bonus toegevoegd")
+            st.success(f"✅ {', '.join(melding)}!")
+            st.rerun()
     
     # Haal wedstrijden op die bevestigd moeten worden
     te_bevestigen = get_te_bevestigen_wedstrijden()
@@ -6101,9 +6717,61 @@ def toon_bevestigen_wedstrijden():
         st.info("Zodra er wedstrijden zijn gespeeld met scheidsrechters, verschijnen ze hier voor bevestiging.")
         return
     
-    # Statistieken
-    totaal_open = sum(1 for w in te_bevestigen for pos in ["scheids_1_open", "scheids_2_open"] if w.get(pos))
-    st.metric("Te bevestigen posities", totaal_open)
+    # Bereken laatste weekend (zaterdag en zondag)
+    nu = datetime.now()
+    dagen_sinds_maandag = nu.weekday()  # 0 = maandag
+    if dagen_sinds_maandag == 0:  # Het is maandag, vorig weekend was 2-3 dagen geleden
+        laatste_zaterdag = nu - timedelta(days=2)
+        laatste_zondag = nu - timedelta(days=1)
+    else:  # Andere dag, bereken afgelopen weekend
+        laatste_zaterdag = nu - timedelta(days=dagen_sinds_maandag + 2)
+        laatste_zondag = nu - timedelta(days=dagen_sinds_maandag + 1)
+    
+    weekend_start = laatste_zaterdag.replace(hour=0, minute=0, second=0, microsecond=0)
+    weekend_eind = laatste_zondag.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    # Filter opties
+    col_filter, col_stats = st.columns([2, 1])
+    
+    with col_filter:
+        periode_filter = st.selectbox(
+            "Filter op periode",
+            [
+                ("🗓️ Laatste weekend", "weekend"),
+                ("📅 Afgelopen 7 dagen", "week"),
+                ("📋 Alles", "alles")
+            ],
+            format_func=lambda x: x[0],
+            key="bevestig_periode_filter"
+        )[1]
+    
+    # Filter wedstrijden op basis van selectie
+    if periode_filter == "weekend":
+        gefilterde_wedstrijden = [w for w in te_bevestigen 
+                                  if weekend_start <= w["wed_datum"] <= weekend_eind]
+        filter_label = f"Weekend {weekend_start.strftime('%d-%m')} - {weekend_eind.strftime('%d-%m')}"
+    elif periode_filter == "week":
+        week_start = nu - timedelta(days=7)
+        gefilterde_wedstrijden = [w for w in te_bevestigen 
+                                  if w["wed_datum"] >= week_start]
+        filter_label = "Afgelopen 7 dagen"
+    else:
+        gefilterde_wedstrijden = te_bevestigen
+        filter_label = "Alle openstaande wedstrijden"
+    
+    with col_stats:
+        totaal_open = sum(1 for w in gefilterde_wedstrijden for pos in ["scheids_1_open", "scheids_2_open"] if w.get(pos))
+        st.metric("Te bevestigen", totaal_open)
+    
+    st.caption(f"*{filter_label}*")
+    
+    if not gefilterde_wedstrijden:
+        if periode_filter == "weekend":
+            st.info(f"Geen onbevestigde wedstrijden van het laatste weekend ({filter_label})")
+            st.caption("Probeer 'Afgelopen 7 dagen' of 'Alles' voor oudere wedstrijden")
+        else:
+            st.info("Geen wedstrijden gevonden voor deze periode")
+        return
     
     st.divider()
     
@@ -6112,7 +6780,7 @@ def toon_bevestigen_wedstrijden():
     with col_bulk1:
         if st.button("✅ Alles als 'Gefloten' markeren", type="primary", help="Markeer alle openstaande posities als gefloten"):
             count = 0
-            for wed in te_bevestigen:
+            for wed in gefilterde_wedstrijden:
                 if wed["scheids_1_open"]:
                     bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC (bulk)")
                     count += 1
@@ -6128,10 +6796,26 @@ def toon_bevestigen_wedstrijden():
     st.divider()
     
     # Toon wedstrijden per datum
+    dag_namen_nl = {
+        "Monday": "Maandag", "Tuesday": "Dinsdag", "Wednesday": "Woensdag",
+        "Thursday": "Donderdag", "Friday": "Vrijdag", "Saturday": "Zaterdag", "Sunday": "Zondag"
+    }
+    maand_namen_nl = {
+        "January": "januari", "February": "februari", "March": "maart", "April": "april",
+        "May": "mei", "June": "juni", "July": "juli", "August": "augustus",
+        "September": "september", "October": "oktober", "November": "november", "December": "december"
+    }
+    
     huidige_datum = None
-    for wed in te_bevestigen:
+    for wed in gefilterde_wedstrijden:
         wed_datum = wed["wed_datum"]
         datum_str = wed_datum.strftime("%A %d %B %Y")
+        
+        # Vertaal naar Nederlands
+        for eng, nl in dag_namen_nl.items():
+            datum_str = datum_str.replace(eng, nl)
+        for eng, nl in maand_namen_nl.items():
+            datum_str = datum_str.replace(eng, nl)
         
         # Nieuwe datum header
         if datum_str != huidige_datum:
@@ -6157,7 +6841,70 @@ def toon_bevestigen_wedstrijden():
                     
                     if wed["scheids_1_open"]:
                         punten = wed.get("scheids_1_punten", 0)
-                        st.caption(f"Berekende punten: {punten}")
+                        details = wed.get("scheids_1_details", {})
+                        
+                        # Zorg dat details een dict is
+                        if not isinstance(details, dict):
+                            details = {}
+                        
+                        # Bepaal of dit een solo wedstrijd is
+                        is_solo = wed.get("solo_compleet", False) or (wed.get("scheids_1") and not wed.get("scheids_2"))
+                        
+                        # Herbereken als details leeg is, geen basis bevat, of solo zonder extra bonus
+                        scheids_data = scheidsrechters.get(wed.get("scheids_1"), {})
+                        moet_herberekenen = (
+                            not details.get("basis") or 
+                            (scheids_data.get("is_coach") and details.get("lastig_tijdstip", 0) == 0) or
+                            (is_solo and details.get("lastig_tijdstip", 0) == 0)  # Solo zonder extra bonus
+                        )
+                        
+                        if moet_herberekenen and wed.get("scheids_1"):
+                            wedstrijden_data = laad_wedstrijden()
+                            # Bepaal bron op basis van opgeslagen info
+                            bron = details.get("berekening", {}).get("bron", "zelf") if isinstance(details.get("berekening"), dict) else "zelf"
+                            nieuwe_punten = bereken_punten_voor_wedstrijd(
+                                wed.get("scheids_1"), wed["wed_id"], wedstrijden_data, scheidsrechters, bron
+                            )
+                            punten = nieuwe_punten["totaal"]
+                            details = nieuwe_punten
+                            # Update in database
+                            if wed["wed_id"] in wedstrijden_data:
+                                wedstrijden_data[wed["wed_id"]]["scheids_1_punten_berekend"] = punten
+                                wedstrijden_data[wed["wed_id"]]["scheids_1_punten_details"] = details
+                                sla_wedstrijd_op(wed["wed_id"], wedstrijden_data[wed["wed_id"]])
+                        
+                        # Bouw gedetailleerde breakdown met exacte getallen
+                        breakdown_parts = []
+                        basis_val = details.get("basis", 0)
+                        extra_val = details.get("lastig_tijdstip", 0)
+                        inval_val = details.get("inval_bonus", 0)
+                        pool_val = details.get("pool_bonus", 0)
+                        
+                        if basis_val > 0:
+                            breakdown_parts.append(f"{basis_val} basis")
+                        if extra_val > 0:
+                            # Toon "solo" als het een solo wedstrijd is
+                            if is_solo:
+                                breakdown_parts.append(f"{extra_val} solo")
+                            else:
+                                breakdown_parts.append(f"{extra_val} extra")
+                        if inval_val > 0:
+                            berekening = details.get("berekening", {})
+                            uren = berekening.get("uren_tot_wedstrijd", 0) if isinstance(berekening, dict) else 0
+                            if uren and uren < 24:
+                                breakdown_parts.append(f"{inval_val} inval <24u")
+                            elif uren and uren < 48:
+                                breakdown_parts.append(f"{inval_val} inval <48u")
+                            else:
+                                breakdown_parts.append(f"{inval_val} inval")
+                        if pool_val > 0:
+                            pool_cat = details.get("berekening", {}).get("pool_categorie", "") if isinstance(details.get("berekening"), dict) else ""
+                            breakdown_parts.append(f"{pool_val} pool" + (f" ({pool_cat})" if pool_cat else ""))
+                        
+                        if breakdown_parts:
+                            st.caption(f"**{punten} pt** ({' + '.join(breakdown_parts)})")
+                        else:
+                            st.caption(f"**{punten} pt**")
                         
                         if st.button("✅ Gefloten", key=f"gefloten_1_{wed['wed_id']}", type="primary", use_container_width=True):
                             bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_1", "TC")
@@ -6165,42 +6912,64 @@ def toon_bevestigen_wedstrijden():
                             st.rerun()
                         
                         if st.button("❌ No-show (zonder invaller)", key=f"noshow_1_{wed['wed_id']}", type="secondary", use_container_width=True):
-                            markeer_no_show(wed["wed_id"], "scheids_1", "TC")
-                            beloningsinst = laad_beloningsinstellingen()
-                            strikes = beloningsinst.get("strikes_no_show", 5)
-                            st.error(f"❌ {wed['scheids_1_naam']} no-show - {strikes} strikes toegekend")
+                            resultaat = markeer_no_show(wed["wed_id"], "scheids_1", "TC")
+                            if resultaat.get("success"):
+                                st.error(f"❌ {wed['scheids_1_naam']} no-show - {resultaat['no_show_strikes']} strikes toegekend")
+                                # Toon solo bonus info als er een andere scheids is
+                                if resultaat.get("solo_bonus", 0) > 0:
+                                    scheidsrechters_temp = laad_scheidsrechters()
+                                    solo_naam = scheidsrechters_temp.get(resultaat["solo_scheids_nbb"], {}).get("naam", "Andere scheids")
+                                    st.info(f"🎯 {solo_naam} krijgt +{resultaat['solo_bonus']} solo bonus (moet nu alleen fluiten)")
                             st.rerun()
                         
                         # No-show met invaller
                         with st.expander("🔄 No-show met invaller"):
-                            # Filter: alle scheidsrechters behalve de huidige
-                            mogelijke_invallers = {
-                                nbb: s.get("naam", "Onbekend") 
-                                for nbb, s in scheidsrechters.items() 
-                                if nbb != wed["scheids_1"] and nbb != wed.get("scheids_2")
-                            }
+                            st.caption("Kies het type invaller:")
                             
-                            if mogelijke_invallers:
-                                invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
-                                geselecteerde_invaller = st.selectbox(
-                                    "Wie heeft ingevallen?",
-                                    options=list(invaller_opties.keys()),
-                                    key=f"invaller_1_{wed['wed_id']}"
-                                )
+                            tab_intern, tab_extern = st.tabs(["🏀 Invaller uit BOB", "👤 Externe invaller"])
+                            
+                            with tab_intern:
+                                # Filter: alle scheidsrechters behalve de huidige
+                                mogelijke_invallers = {
+                                    nbb: s.get("naam", "Onbekend") 
+                                    for nbb, s in scheidsrechters.items() 
+                                    if nbb != wed["scheids_1"] and nbb != wed.get("scheids_2")
+                                }
                                 
-                                beloningsinst = laad_beloningsinstellingen()
-                                inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
-                                st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                if mogelijke_invallers:
+                                    invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
+                                    geselecteerde_invaller = st.selectbox(
+                                        "Wie heeft ingevallen?",
+                                        options=list(invaller_opties.keys()),
+                                        key=f"invaller_1_{wed['wed_id']}"
+                                    )
+                                    
+                                    beloningsinst = laad_beloningsinstellingen()
+                                    inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
+                                    st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                    
+                                    if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_1_{wed['wed_id']}", type="primary"):
+                                        invaller_nbb = invaller_opties[geselecteerde_invaller]
+                                        resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_1", invaller_nbb, "TC")
+                                        if resultaat:
+                                            st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
+                                            st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                        st.rerun()
+                                else:
+                                    st.caption("Geen andere scheidsrechters beschikbaar")
+                            
+                            with tab_extern:
+                                st.caption("Iemand van buiten de vereniging heeft ingevallen.")
+                                st.caption("• No-show krijgt strikes")
+                                st.caption("• Externe krijgt geen punten (staat niet in BOB)")
+                                st.caption("• Andere scheids krijgt geen solo bonus")
                                 
-                                if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_1_{wed['wed_id']}", type="primary"):
-                                    invaller_nbb = invaller_opties[geselecteerde_invaller]
-                                    resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_1", invaller_nbb, "TC")
-                                    if resultaat:
-                                        st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
-                                        st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                if st.button("⚡ Verwerk no-show + externe", key=f"noshow_ext_1_{wed['wed_id']}", type="primary"):
+                                    resultaat = markeer_no_show_met_externe(wed["wed_id"], "scheids_1", "TC")
+                                    if resultaat.get("success"):
+                                        st.error(f"❌ {resultaat['oorspronkelijke_scheids']} no-show - {resultaat['strikes']} strikes")
+                                        st.info("ℹ️ Externe invaller - geen punten toegekend")
                                     st.rerun()
-                            else:
-                                st.caption("Geen andere scheidsrechters beschikbaar")
             
             # 2e scheids
             with col2:
@@ -6210,7 +6979,70 @@ def toon_bevestigen_wedstrijden():
                     
                     if wed["scheids_2_open"]:
                         punten = wed.get("scheids_2_punten", 0)
-                        st.caption(f"Berekende punten: {punten}")
+                        details = wed.get("scheids_2_details", {})
+                        
+                        # Zorg dat details een dict is
+                        if not isinstance(details, dict):
+                            details = {}
+                        
+                        # Bepaal of dit een solo wedstrijd is
+                        is_solo = wed.get("solo_compleet", False) or (wed.get("scheids_2") and not wed.get("scheids_1"))
+                        
+                        # Herbereken als details leeg is, geen basis bevat, of solo zonder extra bonus
+                        scheids_data = scheidsrechters.get(wed.get("scheids_2"), {})
+                        moet_herberekenen = (
+                            not details.get("basis") or 
+                            (scheids_data.get("is_coach") and details.get("lastig_tijdstip", 0) == 0) or
+                            (is_solo and details.get("lastig_tijdstip", 0) == 0)  # Solo zonder extra bonus
+                        )
+                        
+                        if moet_herberekenen and wed.get("scheids_2"):
+                            wedstrijden_data = laad_wedstrijden()
+                            # Bepaal bron op basis van opgeslagen info
+                            bron = details.get("berekening", {}).get("bron", "zelf") if isinstance(details.get("berekening"), dict) else "zelf"
+                            nieuwe_punten = bereken_punten_voor_wedstrijd(
+                                wed.get("scheids_2"), wed["wed_id"], wedstrijden_data, scheidsrechters, bron
+                            )
+                            punten = nieuwe_punten["totaal"]
+                            details = nieuwe_punten
+                            # Update in database
+                            if wed["wed_id"] in wedstrijden_data:
+                                wedstrijden_data[wed["wed_id"]]["scheids_2_punten_berekend"] = punten
+                                wedstrijden_data[wed["wed_id"]]["scheids_2_punten_details"] = details
+                                sla_wedstrijd_op(wed["wed_id"], wedstrijden_data[wed["wed_id"]])
+                        
+                        # Bouw gedetailleerde breakdown met exacte getallen
+                        breakdown_parts = []
+                        basis_val = details.get("basis", 0)
+                        extra_val = details.get("lastig_tijdstip", 0)
+                        inval_val = details.get("inval_bonus", 0)
+                        pool_val = details.get("pool_bonus", 0)
+                        
+                        if basis_val > 0:
+                            breakdown_parts.append(f"{basis_val} basis")
+                        if extra_val > 0:
+                            # Toon "solo" als het een solo wedstrijd is
+                            if is_solo:
+                                breakdown_parts.append(f"{extra_val} solo")
+                            else:
+                                breakdown_parts.append(f"{extra_val} extra")
+                        if inval_val > 0:
+                            berekening = details.get("berekening", {})
+                            uren = berekening.get("uren_tot_wedstrijd", 0) if isinstance(berekening, dict) else 0
+                            if uren and uren < 24:
+                                breakdown_parts.append(f"{inval_val} inval <24u")
+                            elif uren and uren < 48:
+                                breakdown_parts.append(f"{inval_val} inval <48u")
+                            else:
+                                breakdown_parts.append(f"{inval_val} inval")
+                        if pool_val > 0:
+                            pool_cat = details.get("berekening", {}).get("pool_categorie", "") if isinstance(details.get("berekening"), dict) else ""
+                            breakdown_parts.append(f"{pool_val} pool" + (f" ({pool_cat})" if pool_cat else ""))
+                        
+                        if breakdown_parts:
+                            st.caption(f"**{punten} pt** ({' + '.join(breakdown_parts)})")
+                        else:
+                            st.caption(f"**{punten} pt**")
                         
                         if st.button("✅ Gefloten", key=f"gefloten_2_{wed['wed_id']}", type="primary", use_container_width=True):
                             bevestig_wedstrijd_gefloten(wed["wed_id"], "scheids_2", "TC")
@@ -6218,42 +7050,151 @@ def toon_bevestigen_wedstrijden():
                             st.rerun()
                         
                         if st.button("❌ No-show (zonder invaller)", key=f"noshow_2_{wed['wed_id']}", type="secondary", use_container_width=True):
-                            markeer_no_show(wed["wed_id"], "scheids_2", "TC")
-                            beloningsinst = laad_beloningsinstellingen()
-                            strikes = beloningsinst.get("strikes_no_show", 5)
-                            st.error(f"❌ {wed['scheids_2_naam']} no-show - {strikes} strikes toegekend")
+                            resultaat = markeer_no_show(wed["wed_id"], "scheids_2", "TC")
+                            if resultaat.get("success"):
+                                st.error(f"❌ {wed['scheids_2_naam']} no-show - {resultaat['no_show_strikes']} strikes toegekend")
+                                # Toon solo bonus info als er een andere scheids is
+                                if resultaat.get("solo_bonus", 0) > 0:
+                                    scheidsrechters_temp = laad_scheidsrechters()
+                                    solo_naam = scheidsrechters_temp.get(resultaat["solo_scheids_nbb"], {}).get("naam", "Andere scheids")
+                                    st.info(f"🎯 {solo_naam} krijgt +{resultaat['solo_bonus']} solo bonus (moet nu alleen fluiten)")
                             st.rerun()
                         
                         # No-show met invaller
                         with st.expander("🔄 No-show met invaller"):
-                            # Filter: alle scheidsrechters behalve de huidige
-                            mogelijke_invallers = {
-                                nbb: s.get("naam", "Onbekend") 
-                                for nbb, s in scheidsrechters.items() 
-                                if nbb != wed["scheids_2"] and nbb != wed.get("scheids_1")
-                            }
+                            st.caption("Kies het type invaller:")
                             
-                            if mogelijke_invallers:
-                                invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
-                                geselecteerde_invaller = st.selectbox(
-                                    "Wie heeft ingevallen?",
-                                    options=list(invaller_opties.keys()),
-                                    key=f"invaller_2_{wed['wed_id']}"
-                                )
+                            tab_intern, tab_extern = st.tabs(["🏀 Invaller uit BOB", "👤 Externe invaller"])
+                            
+                            with tab_intern:
+                                # Filter: alle scheidsrechters behalve de huidige
+                                mogelijke_invallers = {
+                                    nbb: s.get("naam", "Onbekend") 
+                                    for nbb, s in scheidsrechters.items() 
+                                    if nbb != wed["scheids_2"] and nbb != wed.get("scheids_1")
+                                }
                                 
-                                beloningsinst = laad_beloningsinstellingen()
-                                inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
-                                st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                if mogelijke_invallers:
+                                    invaller_opties = {f"{naam} ({nbb})": nbb for nbb, naam in mogelijke_invallers.items()}
+                                    geselecteerde_invaller = st.selectbox(
+                                        "Wie heeft ingevallen?",
+                                        options=list(invaller_opties.keys()),
+                                        key=f"invaller_2_{wed['wed_id']}"
+                                    )
+                                    
+                                    beloningsinst = laad_beloningsinstellingen()
+                                    inval_punten = beloningsinst.get("punten_per_wedstrijd", 1) + beloningsinst.get("punten_inval_24u", 5)
+                                    st.caption(f"Invaller krijgt: ~{inval_punten}+ punten")
+                                    
+                                    if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_2_{wed['wed_id']}", type="primary"):
+                                        invaller_nbb = invaller_opties[geselecteerde_invaller]
+                                        resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_2", invaller_nbb, "TC")
+                                        if resultaat:
+                                            st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
+                                            st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                        st.rerun()
+                                else:
+                                    st.caption("Geen andere scheidsrechters beschikbaar")
+                            
+                            with tab_extern:
+                                st.caption("Iemand van buiten de vereniging heeft ingevallen.")
+                                st.caption("• No-show krijgt strikes")
+                                st.caption("• Externe krijgt geen punten (staat niet in BOB)")
+                                st.caption("• Andere scheids krijgt geen solo bonus")
                                 
-                                if st.button("⚡ Verwerk no-show + invaller", key=f"noshow_inv_2_{wed['wed_id']}", type="primary"):
-                                    invaller_nbb = invaller_opties[geselecteerde_invaller]
-                                    resultaat = markeer_no_show_met_invaller(wed["wed_id"], "scheids_2", invaller_nbb, "TC")
-                                    if resultaat:
-                                        st.success(f"✅ Verwerkt: {resultaat['oorspronkelijke_scheids']} → {resultaat['strikes']} strikes")
-                                        st.success(f"✅ Invaller {resultaat['invaller']} → {resultaat['punten']} punten")
+                                if st.button("⚡ Verwerk no-show + externe", key=f"noshow_ext_2_{wed['wed_id']}", type="primary"):
+                                    resultaat = markeer_no_show_met_externe(wed["wed_id"], "scheids_2", "TC")
+                                    if resultaat.get("success"):
+                                        st.error(f"❌ {resultaat['oorspronkelijke_scheids']} no-show - {resultaat['strikes']} strikes")
+                                        st.info("ℹ️ Externe invaller - geen punten toegekend")
                                     st.rerun()
-                            else:
-                                st.caption("Geen andere scheidsrechters beschikbaar")
+    
+    # Sectie voor terugdraaien van recent bevestigde wedstrijden
+    st.divider()
+    with st.expander("🔙 Recent bevestigd (terugdraaien)", expanded=False):
+        st.caption("Foutje gemaakt? Hier kun je recente bevestigingen terugdraaien.")
+        
+        # Haal recent bevestigde wedstrijden op (afgelopen 7 dagen)
+        wedstrijden_data = laad_wedstrijden()
+        scheidsrechters_data = laad_scheidsrechters()
+        nu = datetime.now()
+        week_geleden = nu - timedelta(days=7)
+        
+        recent_bevestigd = []
+        for wed_id, wed in wedstrijden_data.items():
+            try:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            except:
+                continue
+            
+            # Check scheids_1 bevestiging
+            if wed.get("scheids_1_status") and wed.get("scheids_1_bevestigd_op"):
+                try:
+                    bevestigd_op = datetime.fromisoformat(wed["scheids_1_bevestigd_op"])
+                    if bevestigd_op >= week_geleden:
+                        recent_bevestigd.append({
+                            "wed_id": wed_id,
+                            "positie": "scheids_1",
+                            "wed_datum": wed_datum,
+                            "thuisteam": wed.get("thuisteam", ""),
+                            "uitteam": wed.get("uitteam", ""),
+                            "scheids_nbb": wed.get("scheids_1"),
+                            "scheids_naam": scheidsrechters_data.get(wed.get("scheids_1"), {}).get("naam", "Onbekend"),
+                            "status": wed.get("scheids_1_status"),
+                            "bevestigd_op": bevestigd_op,
+                            "punten": wed.get("scheids_1_punten_berekend", 0)
+                        })
+                except:
+                    pass
+            
+            # Check scheids_2 bevestiging
+            if wed.get("scheids_2_status") and wed.get("scheids_2_bevestigd_op"):
+                try:
+                    bevestigd_op = datetime.fromisoformat(wed["scheids_2_bevestigd_op"])
+                    if bevestigd_op >= week_geleden:
+                        recent_bevestigd.append({
+                            "wed_id": wed_id,
+                            "positie": "scheids_2",
+                            "wed_datum": wed_datum,
+                            "thuisteam": wed.get("thuisteam", ""),
+                            "uitteam": wed.get("uitteam", ""),
+                            "scheids_nbb": wed.get("scheids_2"),
+                            "scheids_naam": scheidsrechters_data.get(wed.get("scheids_2"), {}).get("naam", "Onbekend"),
+                            "status": wed.get("scheids_2_status"),
+                            "bevestigd_op": bevestigd_op,
+                            "punten": wed.get("scheids_2_punten_berekend", 0)
+                        })
+                except:
+                    pass
+        
+        # Sorteer op bevestigingsdatum (nieuwste eerst)
+        recent_bevestigd.sort(key=lambda x: x["bevestigd_op"], reverse=True)
+        
+        if not recent_bevestigd:
+            st.info("Geen recent bevestigde wedstrijden gevonden.")
+        else:
+            for item in recent_bevestigd[:20]:  # Toon max 20
+                status_icon = "✅" if item["status"] == "gefloten" else "❌"
+                status_tekst = "Gefloten" if item["status"] == "gefloten" else "No-show"
+                pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                
+                col_info, col_actie = st.columns([3, 1])
+                
+                with col_info:
+                    st.markdown(f"""
+                    {status_icon} **{item['scheids_naam']}** ({pos_label} scheids)  
+                    {item['thuisteam']} vs {item['uitteam']} — {item['wed_datum'].strftime('%d-%m %H:%M')}  
+                    *Bevestigd: {item['bevestigd_op'].strftime('%d-%m %H:%M')} als {status_tekst}*
+                    """)
+                
+                with col_actie:
+                    if st.button("🔙 Terugdraaien", key=f"terug_{item['wed_id']}_{item['positie']}", type="secondary"):
+                        resultaat = draai_bevestiging_terug(item["wed_id"], item["positie"], "TC")
+                        if resultaat:
+                            st.success(f"✅ Teruggedraaid: {resultaat['actie']}")
+                            st.rerun()
+                        else:
+                            st.error("❌ Kon bevestiging niet terugdraaien")
 
 def toon_analyse_dashboard():
     """Dashboard voor analyse van fluitgedrag en minimum bepaling."""
@@ -7145,16 +8086,39 @@ def toon_weekend_overzicht():
     weekend_labels = [v["label"] for k, v in weekend_lijst]
     weekend_dagen_lijst = [v["dagen"] for k, v in weekend_lijst]
     
-    # Weekend selectie
+    # Bepaal het aankomende weekend (eerste weekend met datum >= vandaag)
+    vandaag = datetime.now().date()
+    aankomend_index = 0
+    for i, dagen in enumerate(weekend_dagen_lijst):
+        # Check of minstens één dag in dit weekend vandaag of in de toekomst is
+        if max(dagen) >= vandaag:
+            aankomend_index = i
+            break
+    
+    # Weekend selectie - key per dag zodat elke dag vers begint met aankomend weekend
+    session_key = f"weekend_selectie_idx_{vandaag.isoformat()}"
+    
+    # Initialiseer session state met aankomend weekend als key nog niet bestaat
+    if session_key not in st.session_state:
+        st.session_state[session_key] = aankomend_index
+    
     st.markdown("**Selecteer weekend**")
     
-    # Gebruik index voor betere tracking
-    gekozen_index = st.selectbox(
-        "Kies een weekend", 
-        range(len(weekend_labels)),
-        format_func=lambda i: weekend_labels[i],
-        key="weekend_selectie_idx"
-    )
+    col_sel, col_reset = st.columns([4, 1])
+    
+    with col_sel:
+        gekozen_index = st.selectbox(
+            "Kies een weekend", 
+            range(len(weekend_labels)),
+            format_func=lambda i: weekend_labels[i],
+            key=session_key
+        )
+    
+    with col_reset:
+        st.write("")  # Spacing
+        if st.button("📅 Huidig", help="Spring naar aankomend weekend"):
+            st.session_state[session_key] = aankomend_index
+            st.rerun()
     
     gekozen_weekend = weekend_labels[gekozen_index]
     gekozen_dagen = sorted(weekend_dagen_lijst[gekozen_index])
@@ -7730,8 +8694,10 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
             "niveau": niveau or 1,
             "scheids_1": wed.get("scheids_1"),
             "scheids_1_naam": scheids_1_naam,
+            "scheids_1_zoekt_vervanging": wed.get("scheids_1_zoekt_vervanging", False),
             "scheids_2": wed.get("scheids_2"),
             "scheids_2_naam": scheids_2_naam,
+            "scheids_2_zoekt_vervanging": wed.get("scheids_2_zoekt_vervanging", False),
             "compleet": compleet,
             "geannuleerd": geannuleerd,
             "reistijd": wed.get("reistijd_minuten", 0),
@@ -7836,6 +8802,17 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                     if st.session_state.get(f"bewerk_{wed['id']}", False):
                         toon_bewerk_formulier(wed, wedstrijden, scheidsrechters, form_context="geannuleerd")
                 else:
+                    # Toon duidelijk wie vervanging zoekt
+                    zoekt_1_naam = wed.get("scheids_1_naam") if wed.get("scheids_1_zoekt_vervanging", False) else None
+                    zoekt_2_naam = wed.get("scheids_2_naam") if wed.get("scheids_2_zoekt_vervanging", False) else None
+                    if zoekt_1_naam or zoekt_2_naam:
+                        zoekt_namen = []
+                        if zoekt_1_naam:
+                            zoekt_namen.append(f"**{zoekt_1_naam}** (1e)")
+                        if zoekt_2_naam:
+                            zoekt_namen.append(f"**{zoekt_2_naam}** (2e)")
+                        st.warning(f"🔄 Zoekt vervanging: {', '.join(zoekt_namen)}")
+                    
                     col1, col2, col_beg, col3 = st.columns([2, 2, 2, 1])
                     
                     # Haal afmeldingen op voor deze wedstrijd
@@ -8181,8 +9158,32 @@ def toon_scheidsrechters_beheer():
             key="scheids_begeleiding_filter"
         )
     
+    # Extra filter rij
+    col_filter6, col_filter7, _, _, _ = st.columns(5)
+    with col_filter6:
+        beschikbaar_filter = st.selectbox(
+            "Filter op beschikbaarheid",
+            options=["Alle", "🛫 Niet beschikbaar (rest seizoen)", "🚫 Heeft blokkades", "✅ Volledig beschikbaar"],
+            key="scheids_beschikbaar_filter"
+        )
+    
     # Filter scheidsrechters
     gefilterde_scheidsrechters = {}
+    vandaag_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Laad wedstrijden voor beschikbaarheidscheck
+    wedstrijden = laad_wedstrijden()
+    
+    # Bereken alle wedstrijddagen voor beschikbaarheidscheck
+    wedstrijd_dagen_set = set()
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("type", "thuis") != "thuis" or wed.get("geannuleerd", False):
+            continue
+        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+        if wed_dag_str >= vandaag_str:
+            wedstrijd_dagen_set.add(wed_dag_str)
+    
     for nbb, scheids in scheidsrechters.items():
         # Niveau filter
         if niveau_filter != "Alle niveaus":
@@ -8221,6 +9222,20 @@ def toon_scheidsrechters_beheer():
             if status_filter == "Voldoet aan minimum" and op_niveau < min_wed:
                 continue
             if status_filter == "Voldoet niet aan minimum" and op_niveau >= min_wed:
+                continue
+        
+        # Beschikbaarheid filter
+        if beschikbaar_filter != "Alle":
+            geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
+            toekomstige_blokkades = [d for d in geblokkeerde_dagen if d >= vandaag_str]
+            heeft_blokkades = len(toekomstige_blokkades) > 0
+            rest_seizoen = len(toekomstige_blokkades) >= len(wedstrijd_dagen_set) and len(wedstrijd_dagen_set) > 0
+            
+            if beschikbaar_filter == "🛫 Niet beschikbaar (rest seizoen)" and not rest_seizoen:
+                continue
+            if beschikbaar_filter == "🚫 Heeft blokkades" and not heeft_blokkades:
+                continue
+            if beschikbaar_filter == "✅ Volledig beschikbaar" and heeft_blokkades:
                 continue
         
         gefilterde_scheidsrechters[nbb] = scheids
@@ -8356,6 +9371,12 @@ def toon_scheidsrechters_beheer():
                         
                         bs2_diploma = st.checkbox("BS2 diploma", value=bool(scheids.get("bs2_diploma", False)), key=f"bs2_{nbb}")
                         niet_op_zondag = st.checkbox("Niet op zondag", value=bool(scheids.get("niet_op_zondag", False)), key=f"zondag_{nbb}")
+                        is_coach = st.checkbox(
+                            "Coach (fluit vrijwillig)", 
+                            value=bool(scheids.get("is_coach", False)), 
+                            key=f"coach_{nbb}",
+                            help="Coach/vrijwilliger - krijgt altijd 'extra' bonus omdat fluiten niet verplicht is"
+                        )
                         uitgesloten_van_pool = st.checkbox(
                             "Uitsluiten van pool", 
                             value=bool(scheids.get("uitgesloten_van_pool", False)), 
@@ -8407,6 +9428,64 @@ def toon_scheidsrechters_beheer():
                         key=f"teams_{nbb}"
                     )
                     
+                    # Geblokkeerde dagen (TC kan dit ook aanpassen)
+                    st.divider()
+                    st.write("**🚫 Niet beschikbaar**")
+                    
+                    # Haal alle toekomstige wedstrijddagen op
+                    wedstrijden = laad_wedstrijden()
+                    vandaag_str = datetime.now().strftime("%Y-%m-%d")
+                    wedstrijd_dagen = set()
+                    for wed_id, wed in wedstrijden.items():
+                        if wed.get("type", "thuis") != "thuis":
+                            continue
+                        if wed.get("geannuleerd", False):
+                            continue
+                        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                        wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+                        if wed_dag_str >= vandaag_str:
+                            wedstrijd_dagen.add(wed_dag_str)
+                    
+                    huidige_blokkades = scheids.get("geblokkeerde_dagen", [])
+                    if not isinstance(huidige_blokkades, list):
+                        huidige_blokkades = []
+                    toekomstige_blokkades = [d for d in huidige_blokkades if d >= vandaag_str]
+                    
+                    # Snelkeuze: rest van seizoen
+                    alle_dagen_geblokkeerd = len(toekomstige_blokkades) >= len(wedstrijd_dagen) and len(wedstrijd_dagen) > 0
+                    rest_van_seizoen = st.checkbox(
+                        "🛫 Rest van seizoen niet beschikbaar",
+                        value=alle_dagen_geblokkeerd,
+                        key=f"rest_seizoen_{nbb}",
+                        help="Blokkeer alle toekomstige wedstrijddagen"
+                    )
+                    
+                    # Specifieke dagen kiezen (alleen als niet rest van seizoen)
+                    if not rest_van_seizoen:
+                        if wedstrijd_dagen:
+                            gesorteerde_dagen = sorted(wedstrijd_dagen)
+                            dag_namen = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+                            dag_opties = []
+                            for dag_str in gesorteerde_dagen:
+                                dag_dt = datetime.strptime(dag_str, "%Y-%m-%d")
+                                dag_label = f"{dag_namen[dag_dt.weekday()]} {dag_dt.strftime('%d-%m')}"
+                                dag_opties.append((dag_str, dag_label))
+                            
+                            gekozen_dagen = st.multiselect(
+                                "Specifieke dagen blokkeren",
+                                options=[d[0] for d in dag_opties],
+                                default=[d for d in toekomstige_blokkades if d in wedstrijd_dagen],
+                                format_func=lambda x: next((d[1] for d in dag_opties if d[0] == x), x),
+                                key=f"blokkades_{nbb}",
+                                help="Selecteer dagen waarop deze speler niet beschikbaar is"
+                            )
+                        else:
+                            gekozen_dagen = []
+                            st.caption("*Geen toekomstige wedstrijddagen gevonden*")
+                    else:
+                        gekozen_dagen = sorted(wedstrijd_dagen)
+                        st.caption(f"*Alle {len(gekozen_dagen)} toekomstige wedstrijddagen worden geblokkeerd*")
+                    
                     # Begeleiding velden (TC kan dit ook aanpassen)
                     st.divider()
                     st.write("**🎓 Begeleiding**")
@@ -8438,24 +9517,62 @@ def toon_scheidsrechters_beheer():
                             niveau_2e = min(niveau_1e + 1, 5)
                             # Blessure waarde: leeg als "Niet geblesseerd"
                             blessure_waarde = "" if geblesseerd_tm == "Niet geblesseerd" else geblesseerd_tm
+                            
+                            # Combineer verleden blokkades (behouden) met nieuwe keuze
+                            verleden_blokkades = [d for d in huidige_blokkades if d < vandaag_str]
+                            nieuwe_blokkades = sorted(set(verleden_blokkades + gekozen_dagen))
+                            
+                            # Check welke dagen nieuw geblokkeerd worden
+                            nieuw_geblokkeerde_dagen = set(gekozen_dagen) - set(toekomstige_blokkades)
+                            
+                            # Check of speler is ingedeeld op nieuw geblokkeerde dagen
+                            uitgeschreven_wedstrijden = []
+                            if nieuw_geblokkeerde_dagen:
+                                for dag_str in nieuw_geblokkeerde_dagen:
+                                    for wed_id, wed in wedstrijden.items():
+                                        if wed.get("type", "thuis") != "thuis" or wed.get("geannuleerd", False):
+                                            continue
+                                        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                                        wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+                                        
+                                        if wed_dag_str == dag_str:
+                                            positie = None
+                                            if wed.get("scheids_1") == nbb:
+                                                positie = "scheids_1"
+                                            elif wed.get("scheids_2") == nbb:
+                                                positie = "scheids_2"
+                                            
+                                            if positie:
+                                                # Verwijder toewijzing
+                                                wedstrijden[wed_id][positie] = None
+                                                wedstrijden[wed_id][f"{positie}_zoekt_vervanging"] = False
+                                                wedstrijden[wed_id][f"{positie}_punten_berekend"] = None
+                                                wedstrijden[wed_id][f"{positie}_punten_details"] = None
+                                                sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+                                                uitgeschreven_wedstrijden.append(f"{wed['thuisteam']} vs {wed['uitteam']} ({wed_datum.strftime('%d-%m')})")
+                            
                             scheidsrechters[nbb] = {
                                 "naam": nieuwe_naam,
                                 "scheids_status": scheids_status,
                                 "bs2_diploma": bs2_diploma,
                                 "niet_op_zondag": niet_op_zondag,
+                                "is_coach": is_coach,
                                 "uitgesloten_van_pool": uitgesloten_van_pool,
                                 "niveau_1e_scheids": niveau_1e,
                                 "niveau_2e_scheids": niveau_2e,
                                 "min_wedstrijden": min_w,
                                 "eigen_teams": eigen_teams,
                                 "geblesseerd_tm": blessure_waarde,
-                                "geblokkeerde_dagen": scheids.get("geblokkeerde_dagen", []),
+                                "geblokkeerde_dagen": nieuwe_blokkades,
                                 "open_voor_begeleiding": open_voor_begeleiding,
                                 "begeleiding_reden": begeleiding_reden if open_voor_begeleiding else "",
                                 "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
                             }
                             sla_scheidsrechter_op(nbb, scheidsrechters[nbb])
                             st.session_state[edit_key] = False
+                            
+                            if uitgeschreven_wedstrijden:
+                                st.warning(f"⚠️ Speler uitgeschreven voor {len(uitgeschreven_wedstrijden)} wedstrijd(en):\n" + "\n".join([f"• {w}" for w in uitgeschreven_wedstrijden]))
                             st.success("Scheidsrechter bijgewerkt!")
                             st.rerun()
                     with col_delete:
@@ -8481,6 +9598,8 @@ def toon_scheidsrechters_beheer():
                         st.write(f"**Status:** {status_icon} {status}")
                     st.write(f"**BS2 diploma:** {'Ja' if scheids.get('bs2_diploma') else 'Nee'}")
                     st.write(f"**Niet op zondag:** {'Ja' if scheids.get('niet_op_zondag') else 'Nee'}")
+                    if scheids.get("is_coach"):
+                        st.write("**🎓 Coach:** Ja (fluit vrijwillig)")
                     if scheids.get("uitgesloten_van_pool"):
                         st.write("**🧪 Uitgesloten van pool:** Ja")
                     # Blessure indicator
@@ -8495,10 +9614,30 @@ def toon_scheidsrechters_beheer():
                 # Geblokkeerde dagen tonen
                 geblokkeerde_dagen = scheids.get("geblokkeerde_dagen", [])
                 if geblokkeerde_dagen:
-                    # Sorteer en filter op toekomstige dagen
-                    toekomstige_blokkades = sorted([d for d in geblokkeerde_dagen if d >= datetime.now().strftime("%Y-%m-%d")])
+                    vandaag_str = datetime.now().strftime("%Y-%m-%d")
+                    toekomstige_blokkades = sorted([d for d in geblokkeerde_dagen if d >= vandaag_str])
                     if toekomstige_blokkades:
-                        st.write(f"**🚫 Geblokkeerde dagen:** {', '.join(toekomstige_blokkades)}")
+                        # Check of het alle wedstrijddagen zijn (rest van seizoen)
+                        wedstrijd_dagen = set()
+                        for wed_id, wed in laad_wedstrijden().items():
+                            if wed.get("type", "thuis") != "thuis" or wed.get("geannuleerd", False):
+                                continue
+                            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                            wed_dag_str = wed_datum.strftime("%Y-%m-%d")
+                            if wed_dag_str >= vandaag_str:
+                                wedstrijd_dagen.add(wed_dag_str)
+                        
+                        if len(toekomstige_blokkades) >= len(wedstrijd_dagen) and len(wedstrijd_dagen) > 0:
+                            st.write(f"**🛫 Niet beschikbaar:** Rest van seizoen ({len(toekomstige_blokkades)} dagen)")
+                        else:
+                            # Toon dagen geformatteerd
+                            dag_namen = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+                            dagen_kort = []
+                            for d in toekomstige_blokkades[:5]:  # Max 5 tonen
+                                dag_dt = datetime.strptime(d, "%Y-%m-%d")
+                                dagen_kort.append(f"{dag_namen[dag_dt.weekday()]} {dag_dt.strftime('%d-%m')}")
+                            meer = f" +{len(toekomstige_blokkades) - 5}" if len(toekomstige_blokkades) > 5 else ""
+                            st.write(f"**🚫 Niet beschikbaar:** {', '.join(dagen_kort)}{meer}")
                 
                 # Begeleidingsinfo tonen indien aanwezig
                 if scheids.get("open_voor_begeleiding", False):
@@ -9019,7 +10158,8 @@ def toon_beloningen_beheer():
     
     st.subheader("🏆 Beloningen & Strikes Beheer")
     
-    subtab1, subtab2, subtab3, subtab4, subtab5, subtab6 = st.tabs([
+    subtab1, subtab2, subtab3, subtab4, subtab5, subtab6, subtab7 = st.tabs([
+        "📅 Recente Mutaties",
         "📊 Ranglijst", 
         "✏️ Punten & Strikes", 
         "🔧 Klusjes Toewijzen",
@@ -9029,6 +10169,167 @@ def toon_beloningen_beheer():
     ])
     
     with subtab1:
+        st.write("**Recente punten en strikes mutaties**")
+        st.caption("Overzicht van wat er de afgelopen dagen is gebeurd - handig na een speelweekend")
+        
+        # Check of er onbevestigde wedstrijden zijn
+        te_bevestigen = get_te_bevestigen_wedstrijden()
+        if te_bevestigen:
+            totaal_open = sum(1 for w in te_bevestigen for pos in ["scheids_1_open", "scheids_2_open"] if w.get(pos))
+            st.warning(f"""
+            ⚠️ **{totaal_open} posities moeten nog bevestigd worden!**
+            
+            Punten worden pas toegekend nadat je bevestigt dat de scheidsrechter heeft gefloten.
+            Ga naar de **Beheer tab → ✅ Wedstrijden Bevestigen** om wedstrijden na te lopen.
+            """)
+        
+        # Filter opties
+        col_filter, col_periode = st.columns(2)
+        with col_filter:
+            mutatie_filter = st.selectbox(
+                "Toon",
+                ["Alles", "Alleen punten", "Alleen strikes"],
+                key="mutatie_filter"
+            )
+        with col_periode:
+            dagen_terug = st.selectbox(
+                "Periode",
+                [("Laatste 3 dagen", 3), ("Laatste 7 dagen", 7), ("Laatste 14 dagen", 14), ("Laatste 30 dagen", 30)],
+                format_func=lambda x: x[0],
+                key="mutatie_periode"
+            )[1]
+        
+        # Verzamel alle mutaties
+        beloningen = laad_beloningen()
+        nu = datetime.now()
+        cutoff = nu - timedelta(days=dagen_terug)
+        
+        alle_mutaties = []
+        
+        for nbb, speler_data in beloningen.get("spelers", {}).items():
+            scheids = scheidsrechters.get(nbb, {})
+            naam = scheids.get("naam", "Onbekend")
+            
+            # Punten uit wedstrijden
+            if mutatie_filter in ["Alles", "Alleen punten"]:
+                for wed_reg in speler_data.get("gefloten_wedstrijden", []):
+                    try:
+                        reg_datum = datetime.fromisoformat(wed_reg.get("datum", ""))
+                        if reg_datum >= cutoff:
+                            wed = wedstrijden.get(wed_reg.get("wed_id", ""), {})
+                            wed_naam = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}" if wed else "Onbekende wedstrijd"
+                            berekening = wed_reg.get("berekening", {})
+                            
+                            alle_mutaties.append({
+                                "datum": reg_datum,
+                                "type": "punten",
+                                "nbb": nbb,
+                                "naam": naam,
+                                "waarde": wed_reg.get("punten", 0),
+                                "beschrijving": wed_naam,
+                                "details": berekening.get("componenten_leesbaar", "") if berekening else ""
+                            })
+                    except:
+                        pass
+                
+                # Handmatige punten aanpassingen
+                for entry in speler_data.get("punten_log", []):
+                    try:
+                        entry_datum = datetime.fromisoformat(entry.get("datum", ""))
+                        if entry_datum >= cutoff:
+                            alle_mutaties.append({
+                                "datum": entry_datum,
+                                "type": "punten_handmatig",
+                                "nbb": nbb,
+                                "naam": naam,
+                                "waarde": entry.get("punten", 0),
+                                "beschrijving": f"Handmatig: {entry.get('reden', '?')}",
+                                "details": f"{entry.get('oude_stand', 0)} → {entry.get('nieuwe_stand', 0)}"
+                            })
+                    except:
+                        pass
+            
+            # Strikes
+            if mutatie_filter in ["Alles", "Alleen strikes"]:
+                for strike in speler_data.get("strike_log", []):
+                    try:
+                        strike_datum = datetime.fromisoformat(strike.get("datum", ""))
+                        if strike_datum >= cutoff:
+                            alle_mutaties.append({
+                                "datum": strike_datum,
+                                "type": "strikes",
+                                "nbb": nbb,
+                                "naam": naam,
+                                "waarde": strike.get("strikes", 0),
+                                "beschrijving": strike.get("reden", "Onbekend"),
+                                "details": ""
+                            })
+                    except:
+                        pass
+        
+        # Sorteer op datum (nieuwste eerst)
+        alle_mutaties.sort(key=lambda x: x["datum"], reverse=True)
+        
+        if not alle_mutaties:
+            st.info(f"Geen mutaties gevonden in de laatste {dagen_terug} dagen.")
+        else:
+            # Samenvatting
+            punten_totaal = sum(m["waarde"] for m in alle_mutaties if m["type"] in ["punten", "punten_handmatig"])
+            strikes_totaal = sum(m["waarde"] for m in alle_mutaties if m["type"] == "strikes")
+            
+            col_s1, col_s2, col_s3 = st.columns(3)
+            col_s1.metric("Mutaties", len(alle_mutaties))
+            col_s2.metric("Punten uitgedeeld", f"+{punten_totaal}" if punten_totaal >= 0 else str(punten_totaal))
+            col_s3.metric("Strikes uitgedeeld", f"+{strikes_totaal}" if strikes_totaal >= 0 else str(strikes_totaal))
+            
+            st.divider()
+            
+            # Groepeer per dag
+            mutaties_per_dag = {}
+            for m in alle_mutaties:
+                dag_str = m["datum"].strftime("%A %d-%m-%Y")
+                dag_key = m["datum"].strftime("%Y-%m-%d")
+                if dag_key not in mutaties_per_dag:
+                    mutaties_per_dag[dag_key] = {"label": dag_str, "items": []}
+                mutaties_per_dag[dag_key]["items"].append(m)
+            
+            dag_namen_nl = {
+                "Monday": "Maandag", "Tuesday": "Dinsdag", "Wednesday": "Woensdag",
+                "Thursday": "Donderdag", "Friday": "Vrijdag", "Saturday": "Zaterdag", "Sunday": "Zondag"
+            }
+            
+            for dag_key in sorted(mutaties_per_dag.keys(), reverse=True):
+                dag_info = mutaties_per_dag[dag_key]
+                dag_label = dag_info["label"]
+                for eng, nl in dag_namen_nl.items():
+                    dag_label = dag_label.replace(eng, nl)
+                
+                with st.expander(f"**{dag_label}** ({len(dag_info['items'])} mutaties)", expanded=(dag_key == sorted(mutaties_per_dag.keys(), reverse=True)[0])):
+                    for m in dag_info["items"]:
+                        tijd = m["datum"].strftime("%H:%M")
+                        
+                        if m["type"] == "punten":
+                            st.markdown(f"🏆 **+{m['waarde']} pt** — {m['naam']} — *{m['beschrijving']}*")
+                            if m["details"]:
+                                st.caption(f"   ↳ {m['details']}")
+                        elif m["type"] == "punten_handmatig":
+                            teken = "+" if m["waarde"] > 0 else ""
+                            st.markdown(f"✏️ **{teken}{m['waarde']} pt** — {m['naam']} — *{m['beschrijving']}*")
+                            st.caption(f"   ↳ {m['details']}")
+                        elif m["type"] == "strikes":
+                            teken = "+" if m["waarde"] > 0 else ""
+                            kleur = "🔴" if m["waarde"] > 0 else "🟢"
+                            st.markdown(f"{kleur} **{teken}{m['waarde']} strike(s)** — {m['naam']} — *{m['beschrijving']}*")
+            
+            # Export optie
+            st.divider()
+            if st.button("📋 Kopieer naar klembord (CSV)", key="export_mutaties"):
+                csv_lines = ["Datum,Tijd,Type,Naam,Waarde,Beschrijving"]
+                for m in alle_mutaties:
+                    csv_lines.append(f"{m['datum'].strftime('%Y-%m-%d')},{m['datum'].strftime('%H:%M')},{m['type']},{m['naam']},{m['waarde']},\"{m['beschrijving']}\"")
+                st.code("\n".join(csv_lines), language="csv")
+    
+    with subtab2:
         st.write("**Ranglijst (gesorteerd op punten)**")
         
         ranglijst = get_ranglijst()
@@ -9105,7 +10406,7 @@ def toon_beloningen_beheer():
                 for k in clinic_kandidaten:
                     st.write(f"  • {k['naam']} ({k['punten']} punten)")
     
-    with subtab2:
+    with subtab3:
         st.write("**Punten & Strikes aanpassen**")
         st.caption("Handmatig bijboeken of afboeken met verplichte omschrijving voor audit trail.")
         
@@ -9119,127 +10420,107 @@ def toon_beloningen_beheer():
             # Toon huidige status
             stats = get_speler_stats(geselecteerde_nbb)
             
-            col_status1, col_status2 = st.columns(2)
-            with col_status1:
+            # Twee kolommen: Punten links, Strikes rechts
+            col_punten, col_strikes = st.columns(2)
+            
+            with col_punten:
                 st.metric("🏆 Punten", stats['punten'])
-            with col_status2:
+                
+                with st.expander("➕ Bijboeken", expanded=False):
+                    punten_bij = st.number_input("Aantal", min_value=1, max_value=50, value=1, key="punten_bij")
+                    punten_bij_reden = st.text_input("Reden", key="punten_bij_reden", placeholder="bijv. Correctie")
+                    if st.button("Bijboeken", type="primary", key="btn_punten_bij", use_container_width=True):
+                        if punten_bij_reden.strip():
+                            pas_punten_aan(geselecteerde_nbb, punten_bij, f"Bijgeboekt: {punten_bij_reden}")
+                            st.success(f"+{punten_bij} punten!")
+                            st.rerun()
+                        else:
+                            st.error("Vul reden in")
+                
+                with st.expander("➖ Afboeken", expanded=False):
+                    punten_af = st.number_input("Aantal", min_value=1, max_value=50, value=1, key="punten_af")
+                    punten_af_reden = st.text_input("Reden", key="punten_af_reden", placeholder="bijv. Voucher verzilverd")
+                    if st.button("Afboeken", key="btn_punten_af", use_container_width=True):
+                        if punten_af_reden.strip():
+                            pas_punten_aan(geselecteerde_nbb, -punten_af, f"Afgeboekt: {punten_af_reden}")
+                            st.success(f"-{punten_af} punten!")
+                            st.rerun()
+                        else:
+                            st.error("Vul reden in")
+            
+            with col_strikes:
                 st.metric("⚠️ Strikes", stats['strikes'])
-            
-            st.divider()
-            
-            # Punten sectie
-            st.subheader("🏆 Punten aanpassen")
-            
-            col_punten_plus, col_punten_min = st.columns(2)
-            
-            with col_punten_plus:
-                st.write("**Punten bijboeken**")
-                punten_bij = st.number_input("Aantal punten", min_value=1, max_value=50, value=1, key="punten_bij")
-                punten_bij_reden = st.text_input("Reden (verplicht)", key="punten_bij_reden", placeholder="bijv. Correctie, extra beloning, etc.")
                 
-                if st.button("➕ Punten bijboeken", type="primary", key="btn_punten_bij"):
-                    if punten_bij_reden.strip():
-                        pas_punten_aan(geselecteerde_nbb, punten_bij, f"Bijgeboekt: {punten_bij_reden}")
-                        st.success(f"+{punten_bij} punten toegevoegd!")
-                        st.rerun()
+                with st.expander("⚠️ Toevoegen", expanded=False):
+                    strike_reden = st.selectbox("Reden", [
+                        "No-show (5 strikes)",
+                        "Afmelding <24u (2 strikes)",
+                        "Afmelding <48u (1 strike)",
+                        "Overig"
+                    ])
+                    
+                    if strike_reden == "No-show (5 strikes)":
+                        strike_aantal = 5
+                    elif strike_reden == "Afmelding <24u (2 strikes)":
+                        strike_aantal = 2
+                    elif strike_reden == "Afmelding <48u (1 strike)":
+                        strike_aantal = 1
                     else:
-                        st.error("Vul een reden in")
-            
-            with col_punten_min:
-                st.write("**Punten afboeken**")
-                punten_af = st.number_input("Aantal punten", min_value=1, max_value=50, value=1, key="punten_af")
-                punten_af_reden = st.text_input("Reden (verplicht)", key="punten_af_reden", placeholder="bijv. Voucher verzilverd, correctie, etc.")
-                
-                if st.button("➖ Punten afboeken", key="btn_punten_af"):
-                    if punten_af_reden.strip():
-                        pas_punten_aan(geselecteerde_nbb, -punten_af, f"Afgeboekt: {punten_af_reden}")
-                        st.success(f"-{punten_af} punten verwijderd!")
+                        strike_aantal = st.number_input("Aantal", min_value=1, max_value=10, value=1, key="strike_aantal_overig")
+                    
+                    strike_opmerking = st.text_input("Opmerking", key="strike_opmerking", placeholder="optioneel")
+                    if st.button("Toevoegen", type="primary", key="btn_strike_toe", use_container_width=True):
+                        reden_tekst = f"{strike_reden}"
+                        if strike_opmerking:
+                            reden_tekst += f" - {strike_opmerking}"
+                        voeg_strike_toe(geselecteerde_nbb, strike_aantal, reden_tekst)
+                        st.success(f"+{strike_aantal} strike(s)!")
                         st.rerun()
+                
+                with st.expander("✅ Verwijderen", expanded=False):
+                    verwijder_aantal = st.number_input("Aantal", min_value=1, max_value=10, value=1, key="strike_verwijder")
+                    verwijder_reden = st.text_input("Reden", key="strike_verwijder_reden", placeholder="bijv. Klusje afgerond")
+                    if st.button("Verwijderen", key="btn_strike_verw", use_container_width=True):
+                        if verwijder_reden.strip():
+                            verwijder_strike(geselecteerde_nbb, verwijder_aantal, verwijder_reden)
+                            st.success(f"-{verwijder_aantal} strike(s)!")
+                            st.rerun()
+                        else:
+                            st.error("Vul reden in")
+            
+            # Historie tonen (compact)
+            with st.expander("📜 Aanpassingshistorie", expanded=False):
+                # Haal punten_log op indien aanwezig
+                beloningen = laad_beloningen()
+                speler_data = beloningen.get("spelers", {}).get(geselecteerde_nbb, {})
+                punten_log = speler_data.get("punten_log", [])
+                strike_log = speler_data.get("strike_log", [])
+                
+                col_hist1, col_hist2 = st.columns(2)
+                
+                with col_hist1:
+                    st.write("**Punten historie:**")
+                    if punten_log:
+                        for entry in reversed(punten_log[-10:]):
+                            datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
+                            teken = "+" if entry["punten"] > 0 else ""
+                            st.markdown(f"- **{teken}{entry['punten']}** ({entry['oude_stand']}→{entry['nieuwe_stand']})  \n  *{datum}*: {entry['reden']}")
                     else:
-                        st.error("Vul een reden in")
-            
-            st.divider()
-            
-            # Strikes sectie
-            st.subheader("⚠️ Strikes aanpassen")
-            
-            col_strikes_plus, col_strikes_min = st.columns(2)
-            
-            with col_strikes_plus:
-                st.write("**Strike toevoegen**")
-                strike_reden = st.selectbox("Reden", [
-                    "No-show (5 strikes)",
-                    "Afmelding <24 uur (2 strikes)",
-                    "Afmelding <48 uur (1 strike)",
-                    "Overig"
-                ])
+                        st.caption("Geen handmatige aanpassingen.")
                 
-                if strike_reden == "No-show (5 strikes)":
-                    strike_aantal = 5
-                elif strike_reden == "Afmelding <24 uur (2 strikes)":
-                    strike_aantal = 2
-                elif strike_reden == "Afmelding <48 uur (1 strike)":
-                    strike_aantal = 1
-                else:
-                    strike_aantal = st.number_input("Aantal strikes", min_value=1, max_value=10, value=1)
-                
-                strike_opmerking = st.text_input("Opmerking (optioneel)", key="strike_opmerking")
-                
-                if st.button("⚠️ Strike toekennen", type="primary"):
-                    reden_tekst = f"{strike_reden}"
-                    if strike_opmerking:
-                        reden_tekst += f" - {strike_opmerking}"
-                    voeg_strike_toe(geselecteerde_nbb, strike_aantal, reden_tekst)
-                    st.success(f"+{strike_aantal} strike(s) toegekend!")
-                    st.rerun()
-            
-            with col_strikes_min:
-                st.write("**Strike verwijderen**")
-                verwijder_aantal = st.number_input("Aantal strikes", min_value=1, max_value=10, value=1, key="strike_verwijder")
-                verwijder_reden = st.text_input("Reden (verplicht)", key="strike_verwijder_reden", placeholder="bijv. Klusje afgerond, correctie, etc.")
-                
-                if st.button("✅ Strike verwijderen"):
-                    if verwijder_reden.strip():
-                        verwijder_strike(geselecteerde_nbb, verwijder_aantal, verwijder_reden)
-                        st.success(f"-{verwijder_aantal} strike(s) verwijderd!")
-                        st.rerun()
+                with col_hist2:
+                    st.write("**Strikes historie:**")
+                    if strike_log:
+                        for entry in reversed(strike_log[-10:]):
+                            datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
+                            teken = "+" if entry["strikes"] > 0 else ""
+                            oude = entry.get('oude_stand', '?')
+                            nieuwe = entry.get('nieuwe_stand', '?')
+                            st.markdown(f"- **{teken}{entry['strikes']}** ({oude}→{nieuwe})  \n  *{datum}*: {entry['reden']}")
                     else:
-                        st.error("Vul een reden in")
-            
-            st.divider()
-            
-            # Historie tonen
-            st.subheader("📜 Aanpassingshistorie")
-            
-            # Haal punten_log op indien aanwezig
-            beloningen = laad_beloningen()
-            speler_data = beloningen.get("spelers", {}).get(geselecteerde_nbb, {})
-            punten_log = speler_data.get("punten_log", [])
-            strike_log = speler_data.get("strike_log", [])
-            
-            col_hist1, col_hist2 = st.columns(2)
-            
-            with col_hist1:
-                st.write("**Punten historie:**")
-                if punten_log:
-                    for entry in reversed(punten_log[-10:]):
-                        datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
-                        teken = "+" if entry["punten"] > 0 else ""
-                        st.markdown(f"- **{teken}{entry['punten']}** ({entry['oude_stand']}→{entry['nieuwe_stand']})  \n  *{datum}*: {entry['reden']}")
-                else:
-                    st.caption("Geen handmatige aanpassingen.")
-            
-            with col_hist2:
-                st.write("**Strikes historie:**")
-                if strike_log:
-                    for entry in reversed(strike_log[-10:]):
-                        datum = datetime.fromisoformat(entry["datum"]).strftime("%d-%m-%Y %H:%M")
-                        teken = "+" if entry["strikes"] > 0 else ""
-                        st.markdown(f"- **{teken}{entry['strikes']}** - *{datum}*  \n  {entry['reden']}")
-                else:
-                    st.caption("Geen strikes geregistreerd.")
+                        st.caption("Geen strikes geregistreerd.")
     
-    with subtab3:
+    with subtab4:
         st.write("**Klusjes beheer**")
         
         # Openstaande klusjes
@@ -9312,7 +10593,7 @@ def toon_beloningen_beheer():
         else:
             st.info("Geen spelers met strikes.")
     
-    with subtab4:
+    with subtab5:
         st.write("**Beschikbare klusjes beheren**")
         st.caption("Hier kun je de klusjes instellen die aan spelers met strikes kunnen worden toegewezen.")
         
@@ -9362,7 +10643,7 @@ def toon_beloningen_beheer():
                 else:
                     st.error("Vul naam en omschrijving in")
     
-    with subtab5:
+    with subtab6:
         st.write("**Openstaande vervangingsverzoeken**")
         
         open_verzoeken = {v_id: v for v_id, v in verzoeken.items() if v.get("status") == "pending"}
@@ -9417,7 +10698,7 @@ def toon_beloningen_beheer():
         else:
             st.info("Geen openstaande vervangingsverzoeken.")
     
-    with subtab6:
+    with subtab7:
         st.write("**Begeleiding Feedback Monitoring**")
         
         wedstrijden = laad_wedstrijden()
@@ -9591,6 +10872,102 @@ def toon_instellingen_beheer():
         if st.button("Niveaus opslaan"):
             sla_instellingen_op(instellingen)
             st.success("Niveaus opgeslagen!")
+        
+        st.divider()
+        
+        # Herbereken niveaus voor bestaande wedstrijden
+        st.subheader("🔄 Niveaus herberekenen")
+        st.caption("Pas de niveaus van bestaande wedstrijden aan op basis van bovenstaande instellingen.")
+        
+        # Toon eerder gevonden problemen
+        if "niveau_problemen" in st.session_state and st.session_state["niveau_problemen"]:
+            problemen = st.session_state["niveau_problemen"]
+            st.warning(f"⚠️ **Let op:** {len(problemen)} scheidsrechter(s) staan boven hun niveau!")
+            st.caption("Deze scheidsrechters waren ingeschreven op het oude niveau. Controleer of ze kunnen blijven staan of vervangen moeten worden.")
+            
+            for p in problemen:
+                wed_datum = datetime.strptime(p["datum"], "%Y-%m-%d %H:%M")
+                st.markdown(f"- **{p['scheids_naam']}** ({p['positie']} scheids, niv. {p['scheids_niveau']}) → {wed_datum.strftime('%d-%m %H:%M')} {p['thuisteam']} vs {p['uitteam']} (niv. {p['wed_niveau']})")
+            
+            if st.button("✅ Begrepen, melding sluiten"):
+                st.session_state["niveau_problemen"] = []
+                st.rerun()
+        
+        if st.button("🔄 Herbereken niveaus voor alle wedstrijden", type="secondary"):
+            wedstrijden = laad_wedstrijden()
+            scheidsrechters = laad_scheidsrechters()
+            aangepast = 0
+            
+            for wed_id, wed in wedstrijden.items():
+                thuisteam = wed.get("thuisteam", "")
+                if "Waterdragers" in thuisteam:
+                    nieuw_niveau = bepaal_niveau_uit_team(thuisteam)
+                    if wed.get("niveau") != nieuw_niveau:
+                        wedstrijden[wed_id]["niveau"] = nieuw_niveau
+                        aangepast += 1
+            
+            if aangepast > 0:
+                sla_wedstrijden_op(wedstrijden)
+                st.success(f"✅ {aangepast} wedstrijd(en) bijgewerkt naar correct niveau!")
+                
+                # Check op scheidsrechters boven hun niveau
+                problemen = []
+                nu = datetime.now()
+                
+                for wed_id, wed in wedstrijden.items():
+                    # Alleen toekomstige wedstrijden
+                    try:
+                        wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+                        if wed_datum < nu:
+                            continue
+                    except:
+                        continue
+                    
+                    if wed.get("geannuleerd", False):
+                        continue
+                    
+                    wed_niveau = wed.get("niveau", 1)
+                    
+                    # Check 1e scheids
+                    scheids_1_nbb = wed.get("scheids_1")
+                    if scheids_1_nbb:
+                        scheids_1 = scheidsrechters.get(scheids_1_nbb, {})
+                        niveau_1e = scheids_1.get("niveau_1e_scheids", 1)
+                        if wed_niveau > niveau_1e:
+                            problemen.append({
+                                "wed_id": wed_id,
+                                "datum": wed["datum"],
+                                "thuisteam": wed.get("thuisteam", ""),
+                                "uitteam": wed.get("uitteam", ""),
+                                "wed_niveau": wed_niveau,
+                                "scheids_naam": scheids_1.get("naam", "Onbekend"),
+                                "scheids_niveau": niveau_1e,
+                                "positie": "1e"
+                            })
+                    
+                    # Check 2e scheids (mag 1 niveau hoger)
+                    scheids_2_nbb = wed.get("scheids_2")
+                    if scheids_2_nbb:
+                        scheids_2 = scheidsrechters.get(scheids_2_nbb, {})
+                        niveau_2e = scheids_2.get("niveau_1e_scheids", 1)
+                        max_niveau_2e = niveau_2e + 1  # 2e scheids mag 1 hoger
+                        if wed_niveau > max_niveau_2e:
+                            problemen.append({
+                                "wed_id": wed_id,
+                                "datum": wed["datum"],
+                                "thuisteam": wed.get("thuisteam", ""),
+                                "uitteam": wed.get("uitteam", ""),
+                                "wed_niveau": wed_niveau,
+                                "scheids_naam": scheids_2.get("naam", "Onbekend"),
+                                "scheids_niveau": niveau_2e,
+                                "positie": "2e"
+                            })
+                
+                # Sla problemen op in session_state
+                st.session_state["niveau_problemen"] = problemen
+                st.rerun()
+            else:
+                st.info("Alle wedstrijden hebben al het juiste niveau.")
     
     with tab_bel:
         st.subheader("🏆 Beloningssysteem Instellingen")
@@ -10110,7 +11487,10 @@ def toon_instellingen_beheer():
             st.markdown(APP_CHANGELOG)
 
 def bepaal_niveau_uit_team(teamnaam: str) -> int:
-    """Bepaal niveau 1-5 uit de teamnaam van Waterdragers."""
+    """Bepaal niveau 1-5 uit de teamnaam van Waterdragers.
+    
+    Gebruikt de niveau-omschrijvingen uit instellingen als die beschikbaar zijn.
+    """
     # Haal het team-deel uit de naam (bijv. "Waterdragers - X10-1" -> "X10-1")
     if " - " in teamnaam:
         team = teamnaam.split(" - ")[-1].strip().upper()
@@ -10120,7 +11500,22 @@ def bepaal_niveau_uit_team(teamnaam: str) -> int:
     # Verwijder eventuele asterisk (bijv. "M18-2*")
     team = team.rstrip("*")
     
-    # Niveau-indeling op basis van teamnaam
+    # Probeer eerst de niveau-omschrijvingen uit instellingen te gebruiken
+    try:
+        instellingen = laad_instellingen()
+        niveaus = instellingen.get("niveaus", {})
+        
+        # Zoek in welk niveau dit team voorkomt
+        for niveau_str, omschrijving in niveaus.items():
+            if omschrijving:
+                # Parse de teams uit de omschrijving (bijv. "X12-1, V12-1, X14-2")
+                teams_in_niveau = [t.strip().upper() for t in omschrijving.split(",")]
+                if team in teams_in_niveau:
+                    return int(niveau_str)
+    except:
+        pass  # Fallback naar hardcoded als instellingen niet beschikbaar
+    
+    # Fallback: hardcoded niveau-indeling
     # Niveau 1: X10-1, X10-2, X12-2, V12-2
     # Niveau 2: X12-1, V12-1, X14-2, M16-2
     # Niveau 3: X14-1, M16-1, V16-2
