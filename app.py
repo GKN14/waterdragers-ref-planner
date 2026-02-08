@@ -24,9 +24,15 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.41"
+APP_VERSIE = "1.35.42"
 APP_VERSIE_DATUM = "2026-02-08"
 APP_CHANGELOG = """
+### v1.35.42 (2026-02-08)
+**Solo-correctie tool:**
+- 🎯 Nieuwe tool: detecteert wedstrijden met 'gefloten' status maar ontbrekende solo-markering
+- 🎯 Corrigeert solo_compleet + herberekent punten met solo bonus in één klik
+- 🎯 Werkt ook voor wedstrijden die eerder hersteld zijn zonder solo-detectie
+
 ### v1.35.41 (2026-02-08)
 **Herstel met solo-detectie:**
 - 🎯 Herstelfunctie detecteert automatisch solo wedstrijden (1 scheids, andere positie leeg)
@@ -3367,6 +3373,131 @@ def voer_herstel_bevestigingen_uit() -> dict:
     return {
         "hersteld": len(detail_log),
         "solo_hersteld": solo_hersteld,
+        "detail_log": detail_log
+    }
+
+def detecteer_ontbrekende_solo() -> dict:
+    """
+    Detecteer wedstrijden die solo gefloten zijn maar niet als solo_compleet gemarkeerd.
+    
+    Criteria: wedstrijd in het verleden, één positie met status "gefloten", 
+    andere positie leeg (geen scheids), solo_compleet is False.
+    """
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    nu = datetime.now()
+    
+    te_corrigeren = []
+    
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        if wed.get("solo_compleet", False):
+            continue  # Al correct gemarkeerd
+        
+        # Alleen wedstrijden in het verleden
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            if wed_datum > nu:
+                continue
+        except:
+            continue
+        
+        scheids_1 = wed.get("scheids_1")
+        scheids_2 = wed.get("scheids_2")
+        status_1 = wed.get("scheids_1_status")
+        status_2 = wed.get("scheids_2_status")
+        
+        # Patroon: één positie gefloten, andere positie leeg
+        solo_positie = None
+        if scheids_1 and status_1 == "gefloten" and not scheids_2:
+            solo_positie = "scheids_1"
+        elif scheids_2 and status_2 == "gefloten" and not scheids_1:
+            solo_positie = "scheids_2"
+        
+        if solo_positie:
+            nbb = wed.get(solo_positie)
+            scheids_naam = scheidsrechters.get(nbb, {}).get("naam", "Onbekend")
+            wed_label = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}"
+            punten = wed.get(f"{solo_positie}_punten_berekend", 0)
+            
+            te_corrigeren.append({
+                "wed_id": wed_id,
+                "positie": solo_positie,
+                "nbb": nbb,
+                "scheids_naam": scheids_naam,
+                "wed_label": wed_label,
+                "wed_datum": wed.get("datum", "?"),
+                "huidige_punten": punten
+            })
+    
+    return {
+        "te_corrigeren": te_corrigeren,
+        "totaal": len(te_corrigeren)
+    }
+
+def corrigeer_ontbrekende_solo() -> dict:
+    """
+    Corrigeer wedstrijden die solo gefloten zijn maar niet als solo_compleet gemarkeerd.
+    Zet solo_compleet=True, herberekent punten, slaat per wedstrijd op.
+    """
+    detectie = detecteer_ontbrekende_solo()
+    
+    if detectie["totaal"] == 0:
+        return {"gecorrigeerd": 0, "detail_log": []}
+    
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    detail_log = []
+    
+    for item in detectie["te_corrigeren"]:
+        wed_id = item["wed_id"]
+        positie = item["positie"]
+        wed = wedstrijden.get(wed_id)
+        
+        if not wed:
+            continue
+        
+        # Markeer als solo
+        wed["solo_compleet"] = True
+        
+        # Handel lege andere positie af
+        andere_positie = "scheids_2" if positie == "scheids_1" else "scheids_1"
+        if not wed.get(f"{andere_positie}_status"):
+            wed[f"{andere_positie}_status"] = "niet_ingevuld_solo"
+        
+        # Herbereken punten met solo bonus
+        details = wed.get(f"{positie}_punten_details", {})
+        bron = "zelf"
+        if isinstance(details, dict) and isinstance(details.get("berekening"), dict):
+            bron = details["berekening"].get("bron", "zelf")
+        
+        moment = zoek_inschrijf_moment(item["nbb"], wed_id)
+        punten_info = bereken_punten_voor_wedstrijd(
+            item["nbb"], wed_id, wedstrijden, scheidsrechters, bron, inschrijf_moment=moment
+        )
+        
+        oud_punten = item["huidige_punten"]
+        nieuw_punten = punten_info["totaal"]
+        
+        wed[f"{positie}_punten_berekend"] = nieuw_punten
+        wed[f"{positie}_punten_details"] = punten_info
+        
+        # Sla per wedstrijd op
+        sla_wedstrijd_op(wed_id, wed)
+        
+        detail_log.append({
+            "scheids_naam": item["scheids_naam"],
+            "wed_label": item["wed_label"],
+            "wed_datum": item["wed_datum"],
+            "positie": positie,
+            "oud_punten": oud_punten,
+            "nieuw_punten": nieuw_punten,
+            "details": punten_info["details"]
+        })
+    
+    return {
+        "gecorrigeerd": len(detail_log),
         "detail_log": detail_log
     }
 
@@ -12211,6 +12342,40 @@ def toon_beloningen_beheer():
                     st.caption(f"✅ {item['scheids_naam']} ({pos_label}) — {item['wed_label']} — {punten_tekst}{solo_label}")
                 
                 st.info("💡 Draai nu 'Sync beloningen' om de puntentotalen bij te werken met de herberekende solo-punten.")
+                st.rerun()
+        
+        st.divider()
+        
+        # Tool 5: Solo-correctie
+        st.write("**5. Solo wedstrijden corrigeren**")
+        st.caption("Detecteert wedstrijden met status 'gefloten' waar de andere positie leeg is. "
+                   "Markeert deze als solo_compleet en herberekent de punten met solo bonus.")
+        
+        solo_data = detecteer_ontbrekende_solo()
+        
+        if solo_data["totaal"] == 0:
+            st.success("✅ Geen ontbrekende solo-markeringen gevonden.")
+        else:
+            st.warning(f"⚠️ **{solo_data['totaal']} wedstrijden** gefloten zonder solo-markering")
+            
+            with st.expander(f"Bekijk {solo_data['totaal']} solo wedstrijden", expanded=True):
+                for item in solo_data["te_corrigeren"]:
+                    pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                    st.caption(f"🎯 {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
+                               f"({item['wed_datum']}) — huidig: {item['huidige_punten']} pt")
+            
+            if st.button("🎯 Corrigeer solo wedstrijden", type="primary", key="oh_solo", use_container_width=True):
+                with st.spinner("Bezig met solo-correctie..."):
+                    if "_registratie_log_cache" in st.session_state:
+                        del st.session_state["_registratie_log_cache"]
+                    resultaat = corrigeer_ontbrekende_solo()
+                
+                st.success(f"✅ {resultaat['gecorrigeerd']} solo wedstrijden gecorrigeerd!")
+                for item in resultaat["detail_log"]:
+                    pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                    st.caption(f"🎯 {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
+                               f"— {item['oud_punten']} → {item['nieuw_punten']} pt ({item['details']})")
+                st.info("💡 Draai nu 'Sync beloningen' om de puntentotalen bij te werken.")
                 st.rerun()
 
 def toon_instellingen_beheer():
