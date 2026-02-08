@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.39"
+APP_VERSIE = "1.35.40"
 APP_VERSIE_DATUM = "2026-02-08"
 APP_CHANGELOG = """
+### v1.35.40 (2026-02-08)
+**Kritieke fix: voorkom dataverlies bij herberekeningen:**
+- 🛡️ herbereken_alle_wedstrijdpunten slaat nu PER WEDSTRIJD op ipv bulk
+- 🛡️ herbereken_ontbrekende_punten slaat nu PER WEDSTRIJD op ipv bulk
+- 🔄 Herstelfunctie: herstel verloren bevestigingsstatussen uit beloningen data
+- 🔄 Dry-run preview: bekijk wat er hersteld wordt voordat je bevestigt
+
 ### v1.35.39 (2026-02-08)
 **Puntenopbouw & Ranglijst verbeterd:**
 - 📅 Wedstrijddatum nu zichtbaar bij wedstrijdpunten in Ranglijst
@@ -2930,6 +2937,7 @@ def get_te_bevestigen_wedstrijden() -> list:
     
     te_bevestigen = []
     wedstrijden_bijgewerkt = False
+    gewijzigde_wed_ids = set()
     
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
@@ -2960,12 +2968,14 @@ def get_te_bevestigen_wedstrijden() -> list:
             wed["scheids_1_punten_berekend"] = punten_info["totaal"]
             wed["scheids_1_punten_details"] = punten_info
             wedstrijden_bijgewerkt = True
+            gewijzigde_wed_ids.add(wed_id)
         
         if scheids_2 and wed.get("scheids_2_punten_berekend") is None and not scheids_2_status:
             punten_info = bereken_punten_voor_wedstrijd(scheids_2, wed_id, wedstrijden, scheidsrechters, "zelf")
             wed["scheids_2_punten_berekend"] = punten_info["totaal"]
             wed["scheids_2_punten_details"] = punten_info
             wedstrijden_bijgewerkt = True
+            gewijzigde_wed_ids.add(wed_id)
         
         # Heeft deze wedstrijd openstaande bevestigingen?
         scheids_1_open = scheids_1 and not scheids_1_status
@@ -3004,7 +3014,9 @@ def get_te_bevestigen_wedstrijden() -> list:
     
     # Sla bijgewerkte wedstrijden op
     if wedstrijden_bijgewerkt:
-        sla_wedstrijden_op(wedstrijden)
+        # Sla alleen gewijzigde wedstrijden op (per record, niet bulk)
+        for w_id in gewijzigde_wed_ids:
+            sla_wedstrijd_op(w_id, wedstrijden[w_id])
     
     # Sorteer op datum (oudste eerst)
     return sorted(te_bevestigen, key=lambda x: x["wed_datum"])
@@ -3042,6 +3054,7 @@ def herbereken_ontbrekende_punten() -> dict:
     bijgewerkt_null = 0
     bijgewerkt_tc = 0
     bijgewerkt_solo = 0
+    gewijzigde_wedstrijden = set()
     
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
@@ -3066,6 +3079,7 @@ def herbereken_ontbrekende_punten() -> dict:
                 wed["scheids_1_punten_berekend"] = punten_info["totaal"]
                 wed["scheids_1_punten_details"] = punten_info
                 bijgewerkt_null += 1
+                gewijzigde_wedstrijden.add(wed_id)
             # Case 2: TC-toewijzing met pool of inval bonus (die horen niet bij TC)
             elif bron_1 == "tc" and (pool_1 > 0 or inval_1 > 0):
                 moment_1 = zoek_inschrijf_moment(scheids_1, wed_id)
@@ -3073,6 +3087,7 @@ def herbereken_ontbrekende_punten() -> dict:
                 wed["scheids_1_punten_berekend"] = punten_info["totaal"]
                 wed["scheids_1_punten_details"] = punten_info
                 bijgewerkt_tc += 1
+                gewijzigde_wedstrijden.add(wed_id)
             # Case 3: Solo wedstrijd zonder extra bonus (TC of niet)
             elif is_solo and lastig_1 == 0:
                 moment_1 = zoek_inschrijf_moment(scheids_1, wed_id)
@@ -3080,6 +3095,7 @@ def herbereken_ontbrekende_punten() -> dict:
                 wed["scheids_1_punten_berekend"] = punten_info["totaal"]
                 wed["scheids_1_punten_details"] = punten_info
                 bijgewerkt_solo += 1
+                gewijzigde_wedstrijden.add(wed_id)
         
         # Check scheids_2
         scheids_2 = wed.get("scheids_2")
@@ -3097,6 +3113,7 @@ def herbereken_ontbrekende_punten() -> dict:
                 wed["scheids_2_punten_berekend"] = punten_info["totaal"]
                 wed["scheids_2_punten_details"] = punten_info
                 bijgewerkt_null += 1
+                gewijzigde_wedstrijden.add(wed_id)
             # Case 2: TC-toewijzing met pool of inval bonus
             elif bron_2 == "tc" and (pool_2 > 0 or inval_2 > 0):
                 moment_2 = zoek_inschrijf_moment(scheids_2, wed_id)
@@ -3104,10 +3121,12 @@ def herbereken_ontbrekende_punten() -> dict:
                 wed["scheids_2_punten_berekend"] = punten_info["totaal"]
                 wed["scheids_2_punten_details"] = punten_info
                 bijgewerkt_tc += 1
+                gewijzigde_wedstrijden.add(wed_id)
     
     totaal = bijgewerkt_null + bijgewerkt_tc + bijgewerkt_solo
-    if totaal > 0:
-        sla_wedstrijden_op(wedstrijden)
+    # Sla PER WEDSTRIJD op (voorkomt dataverlies door bulk operatie)
+    for wed_id in gewijzigde_wedstrijden:
+        sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
     
     return {
         "ontbrekende_punten": bijgewerkt_null,
@@ -3120,6 +3139,7 @@ def herbereken_alle_wedstrijdpunten() -> dict:
     """
     Herbereken punten voor ALLE wedstrijden met een scheidsrechter.
     Gebruikt het werkelijke inschrijfmoment uit registratie_log.
+    Slaat PER WEDSTRIJD op (niet bulk) om dataverlies te voorkomen.
     
     Gebruik na wijzigingen aan puntenregels om alle bestaande data bij te werken.
     """
@@ -3129,6 +3149,7 @@ def herbereken_alle_wedstrijdpunten() -> dict:
     
     bijgewerkt = 0
     detail_log = []
+    gewijzigde_wedstrijden = set()  # Track welke wedstrijden gewijzigd zijn
     
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
@@ -3158,6 +3179,7 @@ def herbereken_alle_wedstrijdpunten() -> dict:
                 wed[f"{positie}_punten_berekend"] = nieuw_punten
                 wed[f"{positie}_punten_details"] = punten_info
                 bijgewerkt += 1
+                gewijzigde_wedstrijden.add(wed_id)
                 
                 if oud_punten != nieuw_punten:
                     scheids_naam = scheidsrechters.get(nbb, {}).get("naam", nbb)
@@ -3170,12 +3192,132 @@ def herbereken_alle_wedstrijdpunten() -> dict:
                         "details": punten_info["details"]
                     })
     
-    if bijgewerkt > 0:
-        sla_wedstrijden_op(wedstrijden)
+    # Sla PER WEDSTRIJD op (voorkomt dataverlies door bulk operatie)
+    for wed_id in gewijzigde_wedstrijden:
+        sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
     
     return {
         "bijgewerkt": bijgewerkt,
         "punten_gewijzigd": len(detail_log),
+        "detail_log": detail_log
+    }
+
+def herstel_bevestigingsstatussen() -> dict:
+    """
+    Herstel verloren bevestigingsstatussen uit beloningen data.
+    
+    Logica:
+    - gefloten_wedstrijden entries in beloningen → status "gefloten"
+    - Alleen herstellen als huidige status NULL is (geen bestaande statussen overschrijven)
+    - Per wedstrijd opslaan (geen bulk)
+    
+    Returns:
+        dict met dry_run resultaten en detail_log
+    """
+    beloningen = laad_beloningen()
+    wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
+    
+    # Stap 1: Bouw mapping (nbb, wed_id) → bevestigingsdata uit beloningen
+    bevestigingen_uit_beloningen = {}  # (nbb, wed_id) → {geregistreerd_op, punten}
+    
+    for nbb, speler_data in beloningen.get("spelers", {}).items():
+        for wed_reg in speler_data.get("gefloten_wedstrijden", []):
+            wed_id = wed_reg.get("wed_id")
+            if wed_id:
+                bevestigingen_uit_beloningen[(nbb, wed_id)] = {
+                    "geregistreerd_op": wed_reg.get("geregistreerd_op", datetime.now().isoformat()),
+                    "punten": wed_reg.get("punten", 0),
+                    "berekening": wed_reg.get("berekening", {})
+                }
+    
+    # Stap 2: Check welke wedstrijden hersteld moeten worden
+    te_herstellen = []
+    
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("geannuleerd", False):
+            continue
+        
+        for positie in ["scheids_1", "scheids_2"]:
+            nbb = wed.get(positie)
+            if not nbb:
+                continue
+            
+            huidige_status = wed.get(f"{positie}_status")
+            
+            # Alleen herstellen als status NULL is
+            if huidige_status is not None:
+                continue
+            
+            # Check of deze (nbb, wed_id) in beloningen staat
+            key = (nbb, wed_id)
+            if key in bevestigingen_uit_beloningen:
+                bev_data = bevestigingen_uit_beloningen[key]
+                scheids_naam = scheidsrechters.get(nbb, {}).get("naam", "Onbekend")
+                wed_label = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}"
+                wed_datum = wed.get("datum", "?")
+                
+                te_herstellen.append({
+                    "wed_id": wed_id,
+                    "positie": positie,
+                    "nbb": nbb,
+                    "scheids_naam": scheids_naam,
+                    "wed_label": wed_label,
+                    "wed_datum": wed_datum,
+                    "geregistreerd_op": bev_data["geregistreerd_op"],
+                    "punten": bev_data["punten"]
+                })
+    
+    return {
+        "te_herstellen": te_herstellen,
+        "totaal": len(te_herstellen),
+        "bevestigingen_in_beloningen": len(bevestigingen_uit_beloningen)
+    }
+
+def voer_herstel_bevestigingen_uit() -> dict:
+    """
+    Voer het daadwerkelijke herstel uit (na dry-run goedkeuring).
+    Slaat per wedstrijd op (geen bulk).
+    """
+    # Haal hersteldata op
+    herstel_data = herstel_bevestigingsstatussen()
+    
+    if herstel_data["totaal"] == 0:
+        return {"hersteld": 0, "detail_log": []}
+    
+    wedstrijden = laad_wedstrijden()
+    detail_log = []
+    hersteld_per_wedstrijd = {}  # wed_id → True (track welke wedstrijden gewijzigd zijn)
+    
+    for item in herstel_data["te_herstellen"]:
+        wed_id = item["wed_id"]
+        positie = item["positie"]
+        wed = wedstrijden.get(wed_id)
+        
+        if not wed:
+            continue
+        
+        # Herstel status
+        wed[f"{positie}_status"] = "gefloten"
+        wed[f"{positie}_bevestigd_op"] = item["geregistreerd_op"]
+        wed[f"{positie}_bevestigd_door"] = "TC (hersteld)"
+        
+        hersteld_per_wedstrijd[wed_id] = True
+        
+        detail_log.append({
+            "scheids_naam": item["scheids_naam"],
+            "wed_label": item["wed_label"],
+            "wed_datum": item["wed_datum"],
+            "positie": positie,
+            "punten": item["punten"]
+        })
+    
+    # Sla PER WEDSTRIJD op
+    for wed_id in hersteld_per_wedstrijd:
+        sla_wedstrijd_op(wed_id, wedstrijden[wed_id])
+    
+    return {
+        "hersteld": len(detail_log),
         "detail_log": detail_log
     }
 
@@ -11976,6 +12118,39 @@ def toon_beloningen_beheer():
                 with st.expander("Details wedstrijdpunten"):
                     for item in herbereken_result["detail_log"]:
                         st.caption(f"• {item['naam']}: {item['oud']} → {item['nieuw']} ({item['details']})")
+        
+        st.divider()
+        
+        # Tool 4: Herstel bevestigingsstatussen
+        st.write("**4. Herstel bevestigingsstatussen**")
+        st.caption("Herstel verloren bevestigingsstatussen (gefloten/no-show) uit de beloningen data. "
+                   "Alleen posities met status NULL worden hersteld — bestaande statussen worden nooit overschreven.")
+        
+        # Dry run - toon wat er hersteld zou worden
+        herstel_data = herstel_bevestigingsstatussen()
+        
+        if herstel_data["totaal"] == 0:
+            st.success(f"✅ Geen verloren bevestigingen gevonden. "
+                       f"({herstel_data['bevestigingen_in_beloningen']} bevestigingen in beloningen gecontroleerd)")
+        else:
+            st.warning(f"⚠️ **{herstel_data['totaal']} verloren bevestigingen** gevonden "
+                       f"(van {herstel_data['bevestigingen_in_beloningen']} in beloningen)")
+            
+            with st.expander(f"Bekijk {herstel_data['totaal']} te herstellen posities", expanded=True):
+                for item in herstel_data["te_herstellen"]:
+                    pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                    st.caption(f"• {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
+                               f"({item['wed_datum']}) — {item['punten']} pt")
+            
+            if st.button("🔄 Herstel bevestigingen", type="primary", key="oh_herstel", use_container_width=True):
+                with st.spinner("Bezig met herstellen..."):
+                    resultaat = voer_herstel_bevestigingen_uit()
+                
+                st.success(f"✅ {resultaat['hersteld']} bevestigingen hersteld!")
+                for item in resultaat["detail_log"]:
+                    pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                    st.caption(f"✅ {item['scheids_naam']} ({pos_label}) — {item['wed_label']} — {item['punten']} pt")
+                st.rerun()
 
 def toon_instellingen_beheer():
     """Beheer instellingen."""
