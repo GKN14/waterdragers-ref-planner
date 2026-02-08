@@ -1123,38 +1123,43 @@ def sla_instellingen_op(instellingen: dict) -> bool:
 # ============================================================
 
 def laad_beloningen() -> dict:
-    """Laad beloningen uit Supabase (met caching)"""
+    """Laad beloningen uit Supabase voor het huidige seizoen (met caching)"""
     cache_key = "_db_cache_beloningen"
     
     # Return cached versie als beschikbaar
     if cache_key in st.session_state:
         return st.session_state[cache_key]
     
+    huidig_seizoen = get_huidig_seizoen()
+    
     try:
         supabase = get_supabase_client()
-        response = supabase.table("beloningen").select("*").order("seizoen", desc=True).limit(1).execute()
+        # Haal expliciet het huidige seizoen op
+        response = supabase.table("beloningen").select("*").eq("seizoen", huidig_seizoen).execute()
         
         if response.data:
             row = response.data[0]
             result = {
-                "seizoen": row.get("seizoen", "2024-2025"),
+                "seizoen": row.get("seizoen", huidig_seizoen),
                 "spelers": row.get("spelers", {})
             }
         else:
-            result = {"seizoen": "2024-2025", "spelers": {}}
+            # Seizoen bestaat nog niet — maak nieuw record aan
+            result = {"seizoen": huidig_seizoen, "spelers": {}}
+            sla_beloningen_op(result)
         
         st.session_state[cache_key] = result
         return result
     except Exception as e:
         st.error(f"Fout bij laden beloningen: {e}")
-        return st.session_state.get(cache_key, {"seizoen": "2024-2025", "spelers": {}})
+        return st.session_state.get(cache_key, {"seizoen": huidig_seizoen, "spelers": {}})
 
 def sla_beloningen_op(beloningen: dict) -> bool:
     """Sla beloningen op naar Supabase"""
     try:
         supabase = get_supabase_client()
         record = {
-            "seizoen": beloningen.get("seizoen", "2024-2025"),
+            "seizoen": beloningen.get("seizoen", get_huidig_seizoen()),
             "spelers": beloningen.get("spelers", {}),
             "updated_at": datetime.now().isoformat()
         }
@@ -1169,10 +1174,79 @@ def sla_beloningen_op(beloningen: dict) -> bool:
         st.error(f"Fout bij opslaan beloningen: {e}")
         return False
 
+def laad_beloningen_voor_seizoen(seizoen: str) -> dict:
+    """Laad beloningen voor een specifiek seizoen (voor historie)."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("beloningen").select("*").eq("seizoen", seizoen).execute()
+        
+        if response.data:
+            row = response.data[0]
+            return {
+                "seizoen": row.get("seizoen", seizoen),
+                "spelers": row.get("spelers", {})
+            }
+        return {"seizoen": seizoen, "spelers": {}}
+    except Exception as e:
+        st.error(f"Fout bij laden beloningen voor seizoen {seizoen}: {e}")
+        return {"seizoen": seizoen, "spelers": {}}
+
+def laad_alle_seizoenen() -> list:
+    """Laad alle beschikbare seizoenen uit de beloningen tabel."""
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("beloningen").select("seizoen").order("seizoen", desc=True).execute()
+        return [row["seizoen"] for row in response.data] if response.data else []
+    except Exception as e:
+        st.error(f"Fout bij laden seizoenen: {e}")
+        return []
+
+def start_nieuw_seizoen(nieuw_seizoen: str) -> dict:
+    """
+    Start een nieuw seizoen:
+    1. Archiveer het huidige seizoen
+    2. Maak een leeg beloningen record voor het nieuwe seizoen
+    
+    Returns: dict met resultaat info
+    """
+    try:
+        huidig_seizoen = get_huidig_seizoen()
+        
+        # 1. Laad huidige beloningen
+        huidige_beloningen = laad_beloningen()
+        
+        # 2. Archiveer (als er data is)
+        if huidige_beloningen.get("spelers"):
+            scheidsrechters = laad_scheidsrechters()
+            wedstrijden = laad_wedstrijden()
+            statistieken = verzamel_seizoen_statistieken(scheidsrechters, huidige_beloningen, wedstrijden)
+            archiveer_seizoen(huidige_beloningen["seizoen"], statistieken)
+        
+        # 3. Check of nieuw seizoen al bestaat
+        bestaand = laad_beloningen_voor_seizoen(nieuw_seizoen)
+        if bestaand.get("spelers"):
+            return {"success": False, "reden": f"Seizoen {nieuw_seizoen} bestaat al met {len(bestaand['spelers'])} spelers"}
+        
+        # 4. Maak nieuw leeg seizoen
+        nieuw = {"seizoen": nieuw_seizoen, "spelers": {}}
+        sla_beloningen_op(nieuw)
+        
+        # 5. Clear cache zodat app het nieuwe seizoen oppakt
+        if "_db_cache_beloningen" in st.session_state:
+            del st.session_state["_db_cache_beloningen"]
+        
+        return {
+            "success": True,
+            "oud_seizoen": huidige_beloningen["seizoen"],
+            "nieuw_seizoen": nieuw_seizoen,
+            "gearchiveerde_spelers": len(huidige_beloningen.get("spelers", {}))
+        }
+    except Exception as e:
+        return {"success": False, "reden": str(e)}
+
 # ============================================================
 # BELONINGSINSTELLINGEN
 # ============================================================
-
 def laad_beloningsinstellingen() -> dict:
     """Laad beloningsinstellingen uit Supabase (met caching)"""
     cache_key = "_db_cache_beloningsinstellingen"
