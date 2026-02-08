@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.40"
+APP_VERSIE = "1.35.41"
 APP_VERSIE_DATUM = "2026-02-08"
 APP_CHANGELOG = """
+### v1.35.41 (2026-02-08)
+**Herstel met solo-detectie:**
+- 🎯 Herstelfunctie detecteert automatisch solo wedstrijden (1 scheids, andere positie leeg)
+- 🎯 Solo wedstrijden worden gemarkeerd als solo_compleet + punten herberekend met solo bonus
+- 🎯 Lege andere positie wordt automatisch afgesloten (niet_ingevuld_solo)
+- 📋 Dry-run preview toont welke wedstrijden solo zijn
+
 ### v1.35.40 (2026-02-08)
 **Kritieke fix: voorkom dataverlies bij herberekeningen:**
 - 🛡️ herbereken_alle_wedstrijdpunten slaat nu PER WEDSTRIJD op ipv bulk
@@ -3233,6 +3240,7 @@ def herstel_bevestigingsstatussen() -> dict:
     
     # Stap 2: Check welke wedstrijden hersteld moeten worden
     te_herstellen = []
+    solo_wedstrijden = set()  # wed_ids die solo zijn
     
     for wed_id, wed in wedstrijden.items():
         if wed.get("geannuleerd", False):
@@ -3257,6 +3265,13 @@ def herstel_bevestigingsstatussen() -> dict:
                 wed_label = f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')}"
                 wed_datum = wed.get("datum", "?")
                 
+                # Solo detectie: andere positie is leeg
+                andere_positie = "scheids_2" if positie == "scheids_1" else "scheids_1"
+                andere_nbb = wed.get(andere_positie)
+                is_solo = not andere_nbb  # Leeg = solo
+                if is_solo:
+                    solo_wedstrijden.add(wed_id)
+                
                 te_herstellen.append({
                     "wed_id": wed_id,
                     "positie": positie,
@@ -3265,29 +3280,36 @@ def herstel_bevestigingsstatussen() -> dict:
                     "wed_label": wed_label,
                     "wed_datum": wed_datum,
                     "geregistreerd_op": bev_data["geregistreerd_op"],
-                    "punten": bev_data["punten"]
+                    "punten": bev_data["punten"],
+                    "is_solo": is_solo
                 })
     
     return {
         "te_herstellen": te_herstellen,
         "totaal": len(te_herstellen),
+        "solo_wedstrijden": len(solo_wedstrijden),
         "bevestigingen_in_beloningen": len(bevestigingen_uit_beloningen)
     }
 
 def voer_herstel_bevestigingen_uit() -> dict:
     """
     Voer het daadwerkelijke herstel uit (na dry-run goedkeuring).
+    - Herstelt bevestigingsstatussen uit beloningen
+    - Detecteert en markeert solo wedstrijden
+    - Herberekent punten voor solo wedstrijden (solo bonus)
     Slaat per wedstrijd op (geen bulk).
     """
     # Haal hersteldata op
     herstel_data = herstel_bevestigingsstatussen()
     
     if herstel_data["totaal"] == 0:
-        return {"hersteld": 0, "detail_log": []}
+        return {"hersteld": 0, "solo_hersteld": 0, "detail_log": []}
     
     wedstrijden = laad_wedstrijden()
+    scheidsrechters = laad_scheidsrechters()
     detail_log = []
-    hersteld_per_wedstrijd = {}  # wed_id → True (track welke wedstrijden gewijzigd zijn)
+    hersteld_per_wedstrijd = {}
+    solo_hersteld = 0
     
     for item in herstel_data["te_herstellen"]:
         wed_id = item["wed_id"]
@@ -3302,14 +3324,40 @@ def voer_herstel_bevestigingen_uit() -> dict:
         wed[f"{positie}_bevestigd_op"] = item["geregistreerd_op"]
         wed[f"{positie}_bevestigd_door"] = "TC (hersteld)"
         
+        # Solo afhandeling
+        if item.get("is_solo"):
+            wed["solo_compleet"] = True
+            
+            # Handel lege andere positie af
+            andere_positie = "scheids_2" if positie == "scheids_1" else "scheids_1"
+            if not wed.get(f"{andere_positie}_status"):
+                wed[f"{andere_positie}_status"] = "niet_ingevuld_solo"
+            
+            # Herbereken punten met solo bonus
+            details = wed.get(f"{positie}_punten_details", {})
+            bron = "zelf"
+            if isinstance(details, dict) and isinstance(details.get("berekening"), dict):
+                bron = details["berekening"].get("bron", "zelf")
+            
+            moment = zoek_inschrijf_moment(item["nbb"], wed_id)
+            punten_info = bereken_punten_voor_wedstrijd(
+                item["nbb"], wed_id, wedstrijden, scheidsrechters, bron, inschrijf_moment=moment
+            )
+            wed[f"{positie}_punten_berekend"] = punten_info["totaal"]
+            wed[f"{positie}_punten_details"] = punten_info
+            solo_hersteld += 1
+        
         hersteld_per_wedstrijd[wed_id] = True
         
+        solo_label = " 🎯 solo" if item.get("is_solo") else ""
         detail_log.append({
             "scheids_naam": item["scheids_naam"],
             "wed_label": item["wed_label"],
             "wed_datum": item["wed_datum"],
             "positie": positie,
-            "punten": item["punten"]
+            "punten": item["punten"],
+            "is_solo": item.get("is_solo", False),
+            "nieuwe_punten": wed.get(f"{positie}_punten_berekend") if item.get("is_solo") else None
         })
     
     # Sla PER WEDSTRIJD op
@@ -3318,6 +3366,7 @@ def voer_herstel_bevestigingen_uit() -> dict:
     
     return {
         "hersteld": len(detail_log),
+        "solo_hersteld": solo_hersteld,
         "detail_log": detail_log
     }
 
@@ -12133,23 +12182,35 @@ def toon_beloningen_beheer():
             st.success(f"✅ Geen verloren bevestigingen gevonden. "
                        f"({herstel_data['bevestigingen_in_beloningen']} bevestigingen in beloningen gecontroleerd)")
         else:
-            st.warning(f"⚠️ **{herstel_data['totaal']} verloren bevestigingen** gevonden "
+            solo_tekst = f", waarvan **{herstel_data['solo_wedstrijden']} solo**" if herstel_data["solo_wedstrijden"] > 0 else ""
+            st.warning(f"⚠️ **{herstel_data['totaal']} verloren bevestigingen** gevonden{solo_tekst} "
                        f"(van {herstel_data['bevestigingen_in_beloningen']} in beloningen)")
             
             with st.expander(f"Bekijk {herstel_data['totaal']} te herstellen posities", expanded=True):
                 for item in herstel_data["te_herstellen"]:
                     pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                    solo_label = " 🎯 **solo**" if item.get("is_solo") else ""
                     st.caption(f"• {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
-                               f"({item['wed_datum']}) — {item['punten']} pt")
+                               f"({item['wed_datum']}) — {item['punten']} pt{solo_label}")
             
             if st.button("🔄 Herstel bevestigingen", type="primary", key="oh_herstel", use_container_width=True):
                 with st.spinner("Bezig met herstellen..."):
+                    # Reset registratie_log cache voor correcte inschrijfmomenten
+                    if "_registratie_log_cache" in st.session_state:
+                        del st.session_state["_registratie_log_cache"]
                     resultaat = voer_herstel_bevestigingen_uit()
                 
-                st.success(f"✅ {resultaat['hersteld']} bevestigingen hersteld!")
+                solo_msg = f" ({resultaat['solo_hersteld']} solo met herberekende punten)" if resultaat["solo_hersteld"] > 0 else ""
+                st.success(f"✅ {resultaat['hersteld']} bevestigingen hersteld!{solo_msg}")
                 for item in resultaat["detail_log"]:
                     pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
-                    st.caption(f"✅ {item['scheids_naam']} ({pos_label}) — {item['wed_label']} — {item['punten']} pt")
+                    solo_label = " 🎯 solo" if item.get("is_solo") else ""
+                    punten_tekst = f"{item['punten']} pt"
+                    if item.get("nieuwe_punten") is not None and item["nieuwe_punten"] != item["punten"]:
+                        punten_tekst = f"{item['punten']} → {item['nieuwe_punten']} pt"
+                    st.caption(f"✅ {item['scheids_naam']} ({pos_label}) — {item['wed_label']} — {punten_tekst}{solo_label}")
+                
+                st.info("💡 Draai nu 'Sync beloningen' om de puntentotalen bij te werken met de herberekende solo-punten.")
                 st.rerun()
 
 def toon_instellingen_beheer():
