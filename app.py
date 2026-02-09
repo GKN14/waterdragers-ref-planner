@@ -24,9 +24,16 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.42"
+APP_VERSIE = "1.35.43"
 APP_VERSIE_DATUM = "2026-02-08"
 APP_CHANGELOG = """
+### v1.35.43 (2026-02-08)
+**Solo-correctie robuuster:**
+- 🛡️ Directe Supabase update voor solo_compleet (geen full record upsert meer)
+- 🛡️ Cache invalidatie na correctie (verse data bij reload)
+- 🛡️ Foutmeldingen zichtbaar (geen st.rerun die fouten wegpoetst)
+- 🛡️ Punten-update apart van solo-markering (als punten falen, is solo_compleet al opgeslagen)
+
 ### v1.35.42 (2026-02-08)
 **Solo-correctie tool:**
 - 🎯 Nieuwe tool: detecteert wedstrijden met 'gefloten' status maar ontbrekende solo-markering
@@ -3439,7 +3446,10 @@ def detecteer_ontbrekende_solo() -> dict:
 def corrigeer_ontbrekende_solo() -> dict:
     """
     Corrigeer wedstrijden die solo gefloten zijn maar niet als solo_compleet gemarkeerd.
-    Zet solo_compleet=True, herberekent punten, slaat per wedstrijd op.
+    
+    Gebruikt directe Supabase update (niet full record upsert) om serialisatieproblemen te voorkomen.
+    Stap 1: Zet solo_compleet + status via gerichte update
+    Stap 2: Herbereken punten met solo bonus
     """
     detectie = detecteer_ontbrekende_solo()
     
@@ -3449,6 +3459,7 @@ def corrigeer_ontbrekende_solo() -> dict:
     wedstrijden = laad_wedstrijden()
     scheidsrechters = laad_scheidsrechters()
     detail_log = []
+    fouten = []
     
     for item in detectie["te_corrigeren"]:
         wed_id = item["wed_id"]
@@ -3458,15 +3469,28 @@ def corrigeer_ontbrekende_solo() -> dict:
         if not wed:
             continue
         
-        # Markeer als solo
-        wed["solo_compleet"] = True
-        
-        # Handel lege andere positie af
         andere_positie = "scheids_2" if positie == "scheids_1" else "scheids_1"
+        
+        # Stap 1: Directe database update (alleen de velden die we nodig hebben)
+        try:
+            supabase = db.get_supabase_client()
+            update_data = {"solo_compleet": True}
+            
+            # Zet andere positie status als die nog leeg is
+            if not wed.get(f"{andere_positie}_status"):
+                update_data[f"{andere_positie}_status"] = "niet_ingevuld_solo"
+            
+            supabase.table("wedstrijden").update(update_data).eq("wed_id", wed_id).execute()
+        except Exception as e:
+            fouten.append(f"{wed_id}: {e}")
+            continue
+        
+        # Update in-memory cache
+        wed["solo_compleet"] = True
         if not wed.get(f"{andere_positie}_status"):
             wed[f"{andere_positie}_status"] = "niet_ingevuld_solo"
         
-        # Herbereken punten met solo bonus
+        # Stap 2: Herbereken punten met solo bonus
         details = wed.get(f"{positie}_punten_details", {})
         bron = "zelf"
         if isinstance(details, dict) and isinstance(details.get("berekening"), dict):
@@ -3483,8 +3507,13 @@ def corrigeer_ontbrekende_solo() -> dict:
         wed[f"{positie}_punten_berekend"] = nieuw_punten
         wed[f"{positie}_punten_details"] = punten_info
         
-        # Sla per wedstrijd op
-        sla_wedstrijd_op(wed_id, wed)
+        # Stap 3: Sla punten apart op via full record (nu met solo_compleet=True in dict)
+        try:
+            sla_wedstrijd_op(wed_id, wed)
+        except Exception as e:
+            # Solo-markering is al opgeslagen via directe update
+            # Punten worden bij volgende herberekening gecorrigeerd
+            fouten.append(f"{wed_id} punten: {e}")
         
         detail_log.append({
             "scheids_naam": item["scheids_naam"],
@@ -3495,6 +3524,16 @@ def corrigeer_ontbrekende_solo() -> dict:
             "nieuw_punten": nieuw_punten,
             "details": punten_info["details"]
         })
+    
+    # Invalideer cache zodat verse data wordt geladen bij rerun
+    if "_db_cache_wedstrijden" in st.session_state:
+        del st.session_state["_db_cache_wedstrijden"]
+    
+    return {
+        "gecorrigeerd": len(detail_log),
+        "fouten": fouten,
+        "detail_log": detail_log
+    }
     
     return {
         "gecorrigeerd": len(detail_log),
@@ -12370,13 +12409,19 @@ def toon_beloningen_beheer():
                         del st.session_state["_registratie_log_cache"]
                     resultaat = corrigeer_ontbrekende_solo()
                 
-                st.success(f"✅ {resultaat['gecorrigeerd']} solo wedstrijden gecorrigeerd!")
-                for item in resultaat["detail_log"]:
-                    pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
-                    st.caption(f"🎯 {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
-                               f"— {item['oud_punten']} → {item['nieuw_punten']} pt ({item['details']})")
-                st.info("💡 Draai nu 'Sync beloningen' om de puntentotalen bij te werken.")
-                st.rerun()
+                if resultaat.get("fouten"):
+                    for fout in resultaat["fouten"]:
+                        st.error(f"❌ {fout}")
+                
+                if resultaat["gecorrigeerd"] > 0:
+                    st.success(f"✅ {resultaat['gecorrigeerd']} solo wedstrijden gecorrigeerd!")
+                    for item in resultaat["detail_log"]:
+                        pos_label = "1e" if item["positie"] == "scheids_1" else "2e"
+                        st.caption(f"🎯 {item['scheids_naam']} ({pos_label}) — {item['wed_label']} "
+                                   f"— {item['oud_punten']} → {item['nieuw_punten']} pt ({item['details']})")
+                    st.info("💡 Draai nu 'Sync beloningen' om de puntentotalen bij te werken.")
+                else:
+                    st.warning("⚠️ Geen wedstrijden konden worden gecorrigeerd. Zie fouten hierboven.")
 
 def toon_instellingen_beheer():
     """Beheer instellingen."""
