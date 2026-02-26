@@ -17,6 +17,7 @@ from io import BytesIO
 
 # Database module voor Supabase
 import database as db
+import ti_sync  # Koppeling met Teamindeling database
 
 # Geofiltering - alleen toegang vanuit Nederland
 # Let op: Werkt momenteel NIET op Streamlit Cloud (geen publiek IP beschikbaar)
@@ -24,9 +25,33 @@ import database as db
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.35.43"
-APP_VERSIE_DATUM = "2026-02-08"
+APP_VERSIE = "1.36.3"
+APP_VERSIE_DATUM = "2026-02-26"
 APP_CHANGELOG = """
+### v1.36.2 (2026-02-25)
+**Tafel Officials — totaaloverzicht download:**
+- 🖼️ Downloadbaar totaaloverzicht als PNG in grijstinten
+- 📊 Gegroepeerd per datum met statistieken (ingevuld/totaal)
+- 🎨 Afwijkende opmaak: grijstinten (vs. teal voor wekelijks overzicht)
+
+### v1.36.1 (2026-02-25)
+**Tafel Officials — beschikbaarheidsfilter:**
+- 🎯 Team filter toont alleen beschikbare U16-teams (geen tijdsoverlap)
+- 🏠🚗 Checkt zowel thuis- als uitwedstrijden op dezelfde dag
+- ✅ Vrije teams, ⭐ ideale aansluiting, 🚫 niet beschikbaar — duidelijk per team
+- 🐛 Fix: beginscherm-probleem bij eerste team selectie opgelost
+
+### v1.36.0 (2026-02-25)
+**Tafel Officials module:**
+- 🏀 Nieuw tabblad: Tafel Officials voor MSE-1 en M20-1 thuiswedstrijden
+- 📋 Scoretafel en klok toewijzen aan U16-spelers
+- 🔗 Koppeling met Teamindeling database voor spelersdata
+- ⭐ Slimme aansluiting: aanbeveling welk team het best past qua tijdstip
+- 📊 Verdelingsinzicht: hoe vaak is elke speler al ingedeeld
+- 📱 WhatsApp berichten genereren per team
+- 👁️ Teammanager view (read-only overzicht per team)
+- 🖼️ Tafel officials PNG in Weekend Overzicht (teal kleur, naast scheidsrechters)
+
 ### v1.35.43 (2026-02-08)
 **Solo-correctie robuuster:**
 - 🛡️ Directe Supabase update voor solo_compleet (geen full record upsert meer)
@@ -1506,6 +1531,631 @@ def laad_beschikbare_klusjes() -> list:
 
 def sla_beschikbare_klusjes_op(data: list):
     db.sla_beschikbare_klusjes_op(data)
+
+# ============================================================
+# TAFEL OFFICIALS FUNCTIES
+# ============================================================
+
+def laad_tafel_toewijzingen(seizoen: str = None) -> list[dict]:
+    """Laad alle tafel toewijzingen uit de database."""
+    try:
+        client = db.get_supabase_client()
+        query = client.table('tafel_toewijzingen').select('*')
+        if seizoen:
+            query = query.eq('seizoen', seizoen)
+        response = query.execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"❌ Fout bij laden tafel toewijzingen: {e}")
+        return []
+
+
+def sla_tafel_toewijzing_op(wed_id: str, rol: str, speler_naam: str, 
+                              speler_team: str, speler_nbb: str = None,
+                              notitie: str = None) -> bool:
+    """Sla een tafel toewijzing op (upsert op wed_id + rol)."""
+    try:
+        client = db.get_supabase_client()
+        data = {
+            "wed_id": wed_id,
+            "rol": rol,
+            "speler_naam": speler_naam,
+            "speler_team": speler_team,
+            "speler_nbb": speler_nbb,
+            "status": "ingepland",
+            "seizoen": db.get_huidig_seizoen() if hasattr(db, 'get_huidig_seizoen') else "2025-2026"
+        }
+        if notitie:
+            data["notitie"] = notitie
+        
+        client.table('tafel_toewijzingen').upsert(
+            data, 
+            on_conflict='wed_id,rol'
+        ).execute()
+        return True
+    except Exception as e:
+        st.error(f"❌ Fout bij opslaan toewijzing: {e}")
+        return False
+
+
+def verwijder_tafel_toewijzing(wed_id: str, rol: str) -> bool:
+    """Verwijder een tafel toewijzing."""
+    try:
+        client = db.get_supabase_client()
+        client.table('tafel_toewijzingen').delete().eq(
+            'wed_id', wed_id
+        ).eq('rol', rol).execute()
+        return True
+    except Exception as e:
+        st.error(f"❌ Fout bij verwijderen toewijzing: {e}")
+        return False
+
+
+def get_tafel_inzet_telling(seizoen: str = None) -> dict:
+    """Tel hoe vaak elke speler is ingedeeld als tafel official."""
+    toewijzingen = laad_tafel_toewijzingen(seizoen)
+    telling = {}
+    for t in toewijzingen:
+        naam = t.get("speler_naam", "")
+        telling[naam] = telling.get(naam, 0) + 1
+    return telling
+
+
+def bepaal_beschikbare_teams(wed_datum_str: str, alle_wedstrijden: dict, 
+                              u16_teams: list) -> list:
+    """
+    Bepaal welke U16-teams beschikbaar zijn voor een MSE/M20-1 wedstrijd.
+    Checkt ALLE wedstrijden (thuis en uit) op tijdsoverlap.
+    
+    Een team is NIET beschikbaar als het gelijktijdig speelt (overlap < 2 uur).
+    
+    Returns:
+        Lijst van dicts per U16-team:
+        [{"team": str, "beschikbaar": bool, "eigen_wedstrijd": str|None,
+          "aanbeveling": str, "score": int}]
+    """
+    try:
+        doel_datum = datetime.strptime(wed_datum_str, "%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return []
+    
+    doel_dag = doel_datum.date()
+    WEDSTRIJD_DUUR = 2  # Geschatte duur wedstrijd in uren
+    
+    # Zoek per U16-team hun wedstrijden op deze dag
+    team_wedstrijden = {team: [] for team in u16_teams}
+    
+    for wed_id, wed in alle_wedstrijden.items():
+        thuisteam = wed.get("thuisteam", "")
+        uitteam = wed.get("uitteam", "")
+        
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        except (ValueError, TypeError, KeyError):
+            continue
+        
+        if wed_datum.date() != doel_dag:
+            continue
+        
+        # Check of een U16-team betrokken is (thuis of uit)
+        for u16t in u16_teams:
+            if team_match(thuisteam, u16t) or team_match(uitteam, u16t):
+                is_thuis = team_match(thuisteam, u16t)
+                team_wedstrijden[u16t].append({
+                    "datum": wed_datum,
+                    "thuis": is_thuis,
+                    "label": f"{thuisteam} vs {uitteam}" if is_thuis else f"{uitteam} @ {thuisteam}",
+                    "tijd": wed_datum.strftime("%H:%M")
+                })
+    
+    # Bepaal beschikbaarheid per team
+    resultaten = []
+    for team in u16_teams:
+        wedstrijden_team = team_wedstrijden[team]
+        
+        if not wedstrijden_team:
+            # Geen wedstrijd die dag — volledig beschikbaar
+            resultaten.append({
+                "team": team,
+                "beschikbaar": True,
+                "eigen_wedstrijd": None,
+                "aanbeveling": "✅ Vrij — geen wedstrijd deze dag",
+                "score": 0,
+                "wed_label": "Geen wedstrijd"
+            })
+            continue
+        
+        # Check elke wedstrijd van dit team op overlap
+        beste_aansluiting = None
+        heeft_overlap = False
+        
+        for tw in wedstrijden_team:
+            # Tijdsverschil: positief = U16 speelt eerder dan MSE/M20
+            verschil = (doel_datum - tw["datum"]).total_seconds() / 3600
+            
+            # Overlap check: wedstrijd duurt ~2 uur
+            # Als U16 speelt van 14:00-16:00 en MSE is 15:00 → overlap
+            # Als U16 speelt van 14:00-16:00 en MSE is 16:30 → geen overlap
+            eind_eigen = tw["datum"] + timedelta(hours=WEDSTRIJD_DUUR)
+            start_tafel = doel_datum - timedelta(minutes=15)  # 15 min voor aanvang
+            
+            if tw["datum"] <= doel_datum <= eind_eigen or start_tafel <= tw["datum"] <= doel_datum + timedelta(hours=WEDSTRIJD_DUUR):
+                # Directe overlap
+                heeft_overlap = True
+                beste_aansluiting = {
+                    "verschil": verschil,
+                    "wed": tw,
+                    "aanbeveling": f"🚫 Niet beschikbaar — speelt om {tw['tijd']}",
+                    "score": 99
+                }
+                break
+            
+            # Geen overlap, bepaal kwaliteit van aansluiting
+            if verschil > 0:
+                # U16 speelt eerder
+                if verschil <= 3:
+                    aanb = f"⭐ Ideaal — {'thuis' if tw['thuis'] else 'uit'} om {tw['tijd']}, net klaar"
+                    sc = 1
+                else:
+                    aanb = f"👌 Mogelijk — {'thuis' if tw['thuis'] else 'uit'} om {tw['tijd']}, lang wachten"
+                    sc = 4
+            else:
+                # U16 speelt later
+                if abs(verschil) > WEDSTRIJD_DUUR + 0.5:
+                    aanb = f"👍 Goed — {'thuis' if tw['thuis'] else 'uit'} om {tw['tijd']}, daarna eigen wedstrijd"
+                    sc = 2
+                else:
+                    aanb = f"⚠️ Krap — {'thuis' if tw['thuis'] else 'uit'} om {tw['tijd']}"
+                    sc = 6
+            
+            if beste_aansluiting is None or sc < beste_aansluiting["score"]:
+                beste_aansluiting = {
+                    "verschil": verschil,
+                    "wed": tw,
+                    "aanbeveling": aanb,
+                    "score": sc
+                }
+        
+        if heeft_overlap:
+            resultaten.append({
+                "team": team,
+                "beschikbaar": False,
+                "eigen_wedstrijd": beste_aansluiting["wed"]["label"],
+                "aanbeveling": beste_aansluiting["aanbeveling"],
+                "score": beste_aansluiting["score"],
+                "wed_label": f"{beste_aansluiting['wed']['tijd']} — {beste_aansluiting['wed']['label']}"
+            })
+        else:
+            resultaten.append({
+                "team": team,
+                "beschikbaar": True,
+                "eigen_wedstrijd": beste_aansluiting["wed"]["label"] if beste_aansluiting else None,
+                "aanbeveling": beste_aansluiting["aanbeveling"] if beste_aansluiting else "✅ Vrij",
+                "score": beste_aansluiting["score"] if beste_aansluiting else 0,
+                "wed_label": f"{beste_aansluiting['wed']['tijd']} — {beste_aansluiting['wed']['label']}" if beste_aansluiting else "Geen wedstrijd"
+            })
+    
+    resultaten.sort(key=lambda r: r["score"])
+    return resultaten
+
+
+def toon_tafel_officials():
+    """TC beheer scherm voor het inplannen van tafel officials."""
+    st.subheader("🏀 Tafel Officials")
+    st.caption("Inplannen van scoretafel en klok voor MSE-1 en M20-1 thuiswedstrijden")
+    
+    # Check verbinding met Teamindeling
+    if not ti_sync.is_ti_connected():
+        st.warning("⚠️ Geen verbinding met Teamindeling database. "
+                   "Controleer TI_SUPABASE_URL en TI_SUPABASE_KEY in Streamlit secrets.")
+        return
+    
+    st.success("✅ Verbonden met Teamindeling")
+    
+    # Laad data
+    wedstrijden = laad_wedstrijden()
+    toewijzingen = laad_tafel_toewijzingen()
+    
+    # Cache U16 spelers in sessie
+    vernieuwen = st.button("🔄 Spelers vernieuwen", key="ti_refresh")
+    if "ti_u16_spelers" not in st.session_state or vernieuwen:
+        with st.spinner("U16 spelers ophalen uit Teamindeling..."):
+            st.session_state.ti_u16_spelers = ti_sync.get_u16_spelers()
+            st.session_state.ti_u16_teams = ti_sync.get_u16_teams()
+    
+    u16_spelers = st.session_state.get("ti_u16_spelers", [])
+    u16_teams = st.session_state.get("ti_u16_teams", [])
+    
+    if not u16_spelers:
+        st.warning("Geen U16 spelers gevonden in Teamindeling database.")
+        return
+    
+    st.info(f"📋 {len(u16_spelers)} U16 spelers beschikbaar uit {len(u16_teams)} teams: {', '.join(u16_teams)}")
+    
+    # Lookup toewijzingen per wed_id
+    toewijzing_lookup = {}
+    for t in toewijzingen:
+        wed_id = t.get("wed_id", "")
+        if wed_id not in toewijzing_lookup:
+            toewijzing_lookup[wed_id] = {}
+        toewijzing_lookup[wed_id][t.get("rol", "")] = t
+    
+    # Inzet telling voor eerlijke verdeling
+    inzet_telling = get_tafel_inzet_telling()
+    
+    # Filter MSE-1 en M20-1 thuiswedstrijden
+    tafel_wedstrijden = []
+    for wed_id, wed in wedstrijden.items():
+        if wed.get("type") == "uit":
+            continue
+        thuisteam = wed.get("thuisteam", "")
+        if not (team_match(thuisteam, "MSE-1") or team_match(thuisteam, "M20-1")):
+            continue
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        except (ValueError, TypeError):
+            continue
+        tafel_wedstrijden.append({
+            "wed_id": wed_id,
+            "wed": wed,
+            "datum": wed_datum,
+            "thuisteam": thuisteam,
+            "uitteam": wed.get("uitteam", ""),
+        })
+    
+    tafel_wedstrijden.sort(key=lambda w: w["datum"])
+    
+    if not tafel_wedstrijden:
+        st.warning("Geen MSE-1 of M20-1 thuiswedstrijden gevonden.")
+        return
+    
+    # Filter: toon alleen toekomstige wedstrijden (of alles)
+    toon_alles = st.checkbox("Toon ook afgelopen wedstrijden", key="tafel_toon_alles")
+    nu = datetime.now()
+    
+    if not toon_alles:
+        tafel_wedstrijden = [w for w in tafel_wedstrijden if w["datum"] > nu - timedelta(hours=2)]
+    
+    # Statusoverzicht
+    st.write("---")
+    totaal = len(tafel_wedstrijden)
+    volledig = sum(1 for w in tafel_wedstrijden 
+                   if w["wed_id"] in toewijzing_lookup 
+                   and "score" in toewijzing_lookup[w["wed_id"]] 
+                   and "klok" in toewijzing_lookup[w["wed_id"]])
+    deels = sum(1 for w in tafel_wedstrijden 
+                if w["wed_id"] in toewijzing_lookup 
+                and len(toewijzing_lookup[w["wed_id"]]) == 1)
+    leeg = totaal - volledig - deels
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("✅ Volledig", volledig)
+    col2.metric("⚠️ Deels ingevuld", deels)
+    col3.metric("🔴 Nog open", leeg)
+    
+    st.write("---")
+    
+    # Per wedstrijd
+    for w in tafel_wedstrijden:
+        wed_id = w["wed_id"]
+        wed = w["wed"]
+        wed_datum = w["datum"]
+        
+        wed_toewijzingen = toewijzing_lookup.get(wed_id, {})
+        has_score = "score" in wed_toewijzingen
+        has_klok = "klok" in wed_toewijzingen
+        
+        if has_score and has_klok:
+            status_icon = "✅"
+        elif has_score or has_klok:
+            status_icon = "⚠️"
+        elif wed_datum < nu + timedelta(hours=48):
+            status_icon = "🔴"
+        else:
+            status_icon = "⬜"
+        
+        dag_naam = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+        header = (f"{status_icon} {dag_naam} {wed_datum.strftime('%d-%m %H:%M')} — "
+                  f"{w['thuisteam']} vs {w['uitteam']}")
+        
+        with st.expander(header, expanded=not (has_score and has_klok)):
+            # Beschikbaarheid per team bepalen
+            team_info = bepaal_beschikbare_teams(wed["datum"], wedstrijden, u16_teams)
+            beschikbare_teams = [t["team"] for t in team_info if t["beschikbaar"]]
+            
+            if team_info:
+                st.write("**Beschikbaarheid U16-teams:**")
+                for a in team_info:
+                    st.write(f"  {a['aanbeveling']} — **{a['team']}**")
+            
+            if not beschikbare_teams:
+                st.warning("⚠️ Geen U16 teams beschikbaar (alle teams spelen gelijktijdig)")
+            
+            st.write("")
+            
+            # Filter spelers op beschikbare teams
+            beschikbare_spelers_all = [sp for sp in u16_spelers if sp["team"] in beschikbare_teams]
+            beschikbare_per_team = {team: [sp for sp in u16_spelers if sp["team"] == team] for team in beschikbare_teams}
+            
+            col_score, col_klok = st.columns(2)
+            
+            with col_score:
+                st.write("**📋 Scoretafel**")
+                if has_score:
+                    t = wed_toewijzingen["score"]
+                    st.success(f"✅ {t['speler_naam']} ({t['speler_team']})")
+                    if st.button("❌ Verwijder", key=f"del_score_{wed_id}"):
+                        if verwijder_tafel_toewijzing(wed_id, "score"):
+                            st.success("Verwijderd")
+                            st.rerun()
+                else:
+                    team_filter = st.selectbox(
+                        "Filter team", 
+                        ["Beschikbare teams"] + beschikbare_teams,
+                        key=f"team_score_{wed_id}",
+                        index=0
+                    )
+                    
+                    if team_filter == "Beschikbare teams":
+                        sel_spelers = beschikbare_spelers_all
+                    else:
+                        sel_spelers = beschikbare_per_team.get(team_filter, [])
+                    
+                    opties = ["— Selecteer speler —"]
+                    for sp in sel_spelers:
+                        aantal = inzet_telling.get(sp["naam"], 0)
+                        opties.append(f"{sp['naam']} ({sp['team']}) — {aantal}x ingedeeld")
+                    
+                    keuze = st.selectbox("Kies speler", opties, key=f"sel_score_{wed_id}")
+                    
+                    if keuze != "— Selecteer speler —":
+                        if st.button("💾 Toewijzen", key=f"save_score_{wed_id}"):
+                            idx = opties.index(keuze) - 1
+                            sp = sel_spelers[idx]
+                            if sla_tafel_toewijzing_op(wed_id, "score", sp["naam"], sp["team"], sp.get("nbb_nummer")):
+                                st.success(f"✅ {sp['naam']} toegewezen als scoretafel")
+                                st.rerun()
+            
+            with col_klok:
+                st.write("**⏱️ Klok**")
+                if has_klok:
+                    t = wed_toewijzingen["klok"]
+                    st.success(f"✅ {t['speler_naam']} ({t['speler_team']})")
+                    if st.button("❌ Verwijder", key=f"del_klok_{wed_id}"):
+                        if verwijder_tafel_toewijzing(wed_id, "klok"):
+                            st.success("Verwijderd")
+                            st.rerun()
+                else:
+                    team_filter_klok = st.selectbox(
+                        "Filter team",
+                        ["Beschikbare teams"] + beschikbare_teams,
+                        key=f"team_klok_{wed_id}",
+                        index=0
+                    )
+                    
+                    if team_filter_klok == "Beschikbare teams":
+                        sel_spelers_klok = beschikbare_spelers_all
+                    else:
+                        sel_spelers_klok = beschikbare_per_team.get(team_filter_klok, [])
+                    
+                    opties_klok = ["— Selecteer speler —"]
+                    for sp in sel_spelers_klok:
+                        aantal = inzet_telling.get(sp["naam"], 0)
+                        opties_klok.append(f"{sp['naam']} ({sp['team']}) — {aantal}x ingedeeld")
+                    
+                    keuze_klok = st.selectbox("Kies speler", opties_klok, key=f"sel_klok_{wed_id}")
+                    
+                    if keuze_klok != "— Selecteer speler —":
+                        if st.button("💾 Toewijzen", key=f"save_klok_{wed_id}"):
+                            idx = opties_klok.index(keuze_klok) - 1
+                            sp = sel_spelers_klok[idx]
+                            if sla_tafel_toewijzing_op(wed_id, "klok", sp["naam"], sp["team"], sp.get("nbb_nummer")):
+                                st.success(f"✅ {sp['naam']} toegewezen als klok")
+                                st.rerun()
+    
+    # Verdelingsinzicht
+    st.write("---")
+    st.write("### 📊 Verdeling tafel officials")
+    
+    if inzet_telling:
+        verdeling_data = []
+        for sp in u16_spelers:
+            aantal = inzet_telling.get(sp["naam"], 0)
+            verdeling_data.append({
+                "Speler": sp["naam"],
+                "Team": sp["team"],
+                "Ingedeeld": aantal
+            })
+        verdeling_data.sort(key=lambda x: (x["Ingedeeld"], x["Speler"]))
+        st.dataframe(verdeling_data, use_container_width=True, hide_index=True)
+    else:
+        st.caption("Nog geen toewijzingen gedaan.")
+    
+    # WhatsApp berichten
+    st.write("---")
+    st.write("### 📱 Berichten voor teammanager")
+    
+    per_team_berichten = {}
+    for w in tafel_wedstrijden:
+        wed_id = w["wed_id"]
+        wed_toewijzingen = toewijzing_lookup.get(wed_id, {})
+        
+        for rol, t in wed_toewijzingen.items():
+            team = t.get("speler_team", "")
+            if team not in per_team_berichten:
+                per_team_berichten[team] = []
+            
+            dag_naam = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][w["datum"].weekday()]
+            per_team_berichten[team].append({
+                "datum": f"{dag_naam} {w['datum'].strftime('%d-%m')}",
+                "tijd": w["datum"].strftime("%H:%M"),
+                "wedstrijd": f"{w['thuisteam']} vs {w['uitteam']}",
+                "rol": "Scoretafel" if rol == "score" else "Klok",
+                "speler": t.get("speler_naam", "")
+            })
+    
+    if per_team_berichten:
+        team_keuze = st.selectbox(
+            "Bericht genereren voor team:",
+            sorted(per_team_berichten.keys()),
+            key="tafel_whatsapp_team"
+        )
+        
+        if team_keuze:
+            berichten = per_team_berichten[team_keuze]
+            tekst = f"🏀 Tafeldienst {team_keuze}\n\n"
+            for b in sorted(berichten, key=lambda x: x["datum"]):
+                tekst += f"📅 {b['datum']} — {b['wedstrijd']} ({b['tijd']})\n"
+                tekst += f"   → {b['rol']}: {b['speler']}\n\n"
+            tekst += "Graag 15 min van tevoren aanwezig! 🙏"
+            
+            st.code(tekst, language=None)
+            st.caption("Kopieer bovenstaand bericht en plak het in de WhatsApp groep van het team.")
+    else:
+        st.caption("Nog geen toewijzingen om berichten voor te genereren.")
+    
+    # Totaaloverzicht downloaden
+    st.write("---")
+    st.write("### 🖼️ Totaaloverzicht downloaden")
+    st.caption("Genereer een overzicht van alle ingedeelde tafel officials als afbeelding.")
+    
+    # Bouw overzicht data op
+    overzicht_data = []
+    for w in tafel_wedstrijden:
+        wed_id = w["wed_id"]
+        wed_toewijzingen = toewijzing_lookup.get(wed_id, {})
+        
+        score_t = wed_toewijzingen.get("score")
+        klok_t = wed_toewijzingen.get("klok")
+        
+        overzicht_data.append({
+            "datum_str": w["datum"].strftime("%Y-%m-%d"),
+            "tijd": w["datum"].strftime("%H:%M"),
+            "thuisteam": w["thuisteam"],
+            "uitteam": w["uitteam"],
+            "score_naam": score_t["speler_naam"] if score_t else "-",
+            "score_team": score_t["speler_team"] if score_t else "",
+            "klok_naam": klok_t["speler_naam"] if klok_t else "-",
+            "klok_team": klok_t["speler_team"] if klok_t else "",
+        })
+    
+    if overzicht_data and PIL_AVAILABLE:
+        col_gen, col_dl = st.columns(2)
+        
+        with col_gen:
+            if st.button("🖼️ Genereer totaaloverzicht", key="gen_tafel_totaal", type="primary"):
+                try:
+                    seizoen = db.get_huidig_seizoen() if hasattr(db, 'get_huidig_seizoen') else "2025-2026"
+                    img_bytes = genereer_tafel_totaaloverzicht(overzicht_data, seizoen)
+                    st.session_state["tafel_totaal_png"] = img_bytes
+                    st.success("Totaaloverzicht gegenereerd!")
+                except Exception as e:
+                    st.error(f"Fout bij genereren: {e}")
+        
+        with col_dl:
+            if "tafel_totaal_png" in st.session_state:
+                st.download_button(
+                    "⬇️ Download PNG",
+                    data=st.session_state["tafel_totaal_png"],
+                    file_name="tafel_officials_totaaloverzicht.png",
+                    mime="image/png",
+                    key="download_tafel_totaal"
+                )
+        
+        if "tafel_totaal_png" in st.session_state:
+            with st.expander("Bekijk totaaloverzicht", expanded=True):
+                st.image(st.session_state["tafel_totaal_png"])
+    elif not PIL_AVAILABLE:
+        st.warning("PIL/Pillow is niet beschikbaar voor afbeelding generatie.")
+    else:
+        st.caption("Nog geen wedstrijden om een overzicht van te genereren.")
+
+
+def toon_tafel_teammanager_view():
+    """Read-only overzicht voor teammanagers. Toont tafeldiensten voor een specifiek team."""
+    st.subheader("📋 Tafeldienst overzicht")
+    
+    query_params = st.query_params
+    team_param = query_params.get("team", None)
+    
+    wedstrijden = laad_wedstrijden()
+    toewijzingen = laad_tafel_toewijzingen()
+    
+    teams_met_dienst = sorted(set(t.get("speler_team", "") for t in toewijzingen))
+    
+    if not teams_met_dienst:
+        st.info("Er zijn nog geen tafeldiensten ingepland.")
+        return
+    
+    if team_param and team_param in teams_met_dienst:
+        geselecteerd_team = team_param
+        st.info(f"Tafeldiensten voor **{geselecteerd_team}**")
+    else:
+        geselecteerd_team = st.selectbox("Selecteer je team:", teams_met_dienst, key="tafel_tm_team")
+    
+    if not geselecteerd_team:
+        return
+    
+    team_toewijzingen = [t for t in toewijzingen if t.get("speler_team") == geselecteerd_team]
+    
+    if not team_toewijzingen:
+        st.info(f"Geen tafeldiensten gevonden voor {geselecteerd_team}")
+        return
+    
+    per_wedstrijd = {}
+    for t in team_toewijzingen:
+        wed_id = t.get("wed_id", "")
+        if wed_id not in per_wedstrijd:
+            per_wedstrijd[wed_id] = {"score": None, "klok": None}
+        per_wedstrijd[wed_id][t.get("rol", "")] = t
+    
+    for wed_id, rollen in sorted(per_wedstrijd.items(), 
+                                   key=lambda x: wedstrijden.get(x[0], {}).get("datum", "")):
+        wed = wedstrijden.get(wed_id, {})
+        if not wed:
+            continue
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+        except (ValueError, TypeError):
+            continue
+        if wed_datum < datetime.now() - timedelta(hours=2):
+            continue
+        
+        dag_naam = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", 
+                     "Vrijdag", "Zaterdag", "Zondag"][wed_datum.weekday()]
+        
+        st.write(f"**📅 {dag_naam} {wed_datum.strftime('%d-%m-%Y')} — "
+                 f"{wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')} ({wed_datum.strftime('%H:%M')})**")
+        
+        score_naam = rollen["score"]["speler_naam"] if rollen["score"] else "— nog niet ingedeeld —"
+        klok_naam = rollen["klok"]["speler_naam"] if rollen["klok"] else "— nog niet ingedeeld —"
+        
+        st.write(f"  📋 Scoretafel: **{score_naam}**")
+        st.write(f"  ⏱️ Klok: **{klok_naam}**")
+        st.write("")
+    
+    # WhatsApp kopieerblok
+    st.write("---")
+    tekst = f"🏀 Tafeldienst {geselecteerd_team}\n\n"
+    for wed_id, rollen in sorted(per_wedstrijd.items(),
+                                   key=lambda x: wedstrijden.get(x[0], {}).get("datum", "")):
+        wed = wedstrijden.get(wed_id, {})
+        try:
+            wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            if wed_datum < datetime.now() - timedelta(hours=2):
+                continue
+        except:
+            continue
+        dag = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"][wed_datum.weekday()]
+        tekst += f"📅 {dag} {wed_datum.strftime('%d-%m')} — {wed.get('thuisteam', '?')} vs {wed.get('uitteam', '?')} ({wed_datum.strftime('%H:%M')})\n"
+        score_naam = rollen["score"]["speler_naam"] if rollen["score"] else "nog niet ingedeeld"
+        klok_naam = rollen["klok"]["speler_naam"] if rollen["klok"] else "nog niet ingedeeld"
+        tekst += f"   → Score: {score_naam}\n"
+        tekst += f"   → Klok: {klok_naam}\n\n"
+    tekst += "Graag 15 min van tevoren aanwezig! 🙏"
+    
+    st.code(tekst, language=None)
+    st.caption("Kopieer bovenstaand bericht voor de WhatsApp groep.")
 
 # ============================================================
 # BELONINGSSYSTEEM FUNCTIES
@@ -5906,12 +6556,12 @@ def toon_speler_view(nbb_nummer: str):
     mijn_klusjes = [k for k_id, k in klusjes.items() if k.get("nbb_nummer") == nbb_nummer and not k.get("afgerond", False)]
     
     uitnodigingen = laad_begeleidingsuitnodigingen()
-    mijn_uitnodigingen = [u for u_id, u in uitnodigingen.items() 
+    mijn_uitnodigingen = [{**u, "id": u_id} for u_id, u in uitnodigingen.items() 
                           if u.get("speler_nbb") == nbb_nummer 
                           and u.get("status") == "pending"]
     
     verzoeken = laad_vervangingsverzoeken()
-    inkomende_verzoeken = [v for v_id, v in verzoeken.items() 
+    inkomende_verzoeken = [{**v, "id": v_id} for v_id, v in verzoeken.items() 
                           if v.get("vervanger_nbb") == nbb_nummer 
                           and v.get("status") == "pending"]
     
@@ -7483,13 +8133,14 @@ def toon_beheerder_view():
     
     st.divider()
     
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
         "📅 Wedstrijden", 
         "👥 Scheidsrechters", 
         "📈 Capaciteit",
         "🏆 Beloningen",
         "✅ Bevestigen",
         "📊 Analyse",
+        "🏀 Tafel Officials",
         "🖼️ Weekend Overzicht",
         "⚙️ Instellingen",
         "📊 Import/Export",
@@ -7515,15 +8166,18 @@ def toon_beheerder_view():
         toon_analyse_dashboard()
     
     with tab7:
-        toon_weekend_overzicht()
+        toon_tafel_officials()
     
     with tab8:
-        toon_instellingen_beheer()
+        toon_weekend_overzicht()
     
     with tab9:
-        toon_import_export()
+        toon_instellingen_beheer()
     
     with tab10:
+        toon_import_export()
+    
+    with tab11:
         toon_apparaten_beheer()
 
 def toon_bevestigen_wedstrijden():
@@ -8974,6 +9628,340 @@ def genereer_overzicht_afbeelding(datum: datetime, wedstrijden_data: list, schei
     buffer.seek(0)
     return buffer.getvalue()
 
+
+def genereer_tafel_officials_afbeelding(datum: datetime, tafel_data: list) -> bytes:
+    """
+    Genereer een PNG afbeelding van het tafel officials overzicht.
+    Vergelijkbare stijl als scheidsrechteroverzicht, in teal kleur.
+    
+    Args:
+        datum: De dag waarvoor het overzicht is
+        tafel_data: Lijst van dicts met:
+            {"tijd": str, "thuisteam": str, "uitteam": str, "score": str, "klok": str}
+    """
+    
+    # Configuratie
+    breedte = 850
+    header_hoogte = 100
+    rij_hoogte = 55
+    kolom_breedtes = [65, 300, 200, 200]  # Tijd, Wedstrijd, Scoretafel, Klok
+    
+    # Bereken hoogte
+    aantal_rijen = len(tafel_data)
+    hoogte = header_hoogte + 40 + (aantal_rijen + 1) * rij_hoogte + 20
+    
+    # Kleuren — teal, afwijkend van steel blue scheidsrechters
+    header_kleur = (0, 128, 128)  # Teal
+    header_tekst = (255, 255, 255)
+    tabel_header_bg = (0, 128, 128)
+    rij_even = (240, 248, 245)  # Licht groenblauw tint
+    rij_oneven = (255, 255, 255)
+    rand_kleur = (200, 200, 200)
+    tekst_kleur = (50, 50, 50)
+    leeg_kleur = (200, 80, 80)  # Rood voor niet-ingevulde posities
+    
+    # Maak afbeelding
+    img = Image.new('RGB', (breedte, hoogte), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Fonts
+    try:
+        font_groot = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+        font_normaal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
+        font_datum = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", 16)
+        font_klein = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+    except:
+        font_groot = ImageFont.load_default()
+        font_normaal = ImageFont.load_default()
+        font_bold = ImageFont.load_default()
+        font_datum = ImageFont.load_default()
+        font_klein = ImageFont.load_default()
+    
+    # Header achtergrond
+    draw.rectangle([0, 0, breedte, header_hoogte], fill=header_kleur)
+    
+    # Titel
+    titel = "TAFEL OFFICIALS OVERZICHT"
+    bbox = draw.textbbox((0, 0), titel, font=font_groot)
+    titel_breedte = bbox[2] - bbox[0]
+    draw.text(((breedte - titel_breedte) / 2, 20), titel, fill=header_tekst, font=font_groot)
+    
+    # Datum
+    dag_namen = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
+    maand_namen = ["januari", "februari", "maart", "april", "mei", "juni", 
+                   "juli", "augustus", "september", "oktober", "november", "december"]
+    datum_tekst = f"{dag_namen[datum.weekday()]} {datum.day} {maand_namen[datum.month-1]} {datum.year}"
+    bbox = draw.textbbox((0, 0), datum_tekst, font=font_datum)
+    datum_breedte = bbox[2] - bbox[0]
+    draw.text(((breedte - datum_breedte) / 2, 60), datum_tekst, fill=header_tekst, font=font_datum)
+    
+    # Tabel start positie
+    tabel_start_y = header_hoogte + 20
+    margin_left = 30
+    
+    # Tabel header
+    x = margin_left
+    y = tabel_start_y
+    headers = ["Tijd", "Wedstrijd", "Scoretafel", "Klok"]
+    
+    draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=tabel_header_bg)
+    
+    for i, (header, width) in enumerate(zip(headers, kolom_breedtes)):
+        bbox = draw.textbbox((0, 0), header, font=font_bold)
+        tekst_breedte = bbox[2] - bbox[0]
+        tekst_x = x + (width - tekst_breedte) / 2
+        draw.text((tekst_x, y + 18), header, fill=header_tekst, font=font_bold)
+        x += width
+    
+    # Data rijen
+    y += rij_hoogte
+    for idx, wed in enumerate(tafel_data):
+        bg_kleur = rij_even if idx % 2 == 0 else rij_oneven
+        draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=bg_kleur)
+        draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+        
+        x = margin_left
+        
+        # Tijd
+        tijd_tekst = wed["tijd"]
+        bbox = draw.textbbox((0, 0), tijd_tekst, font=font_normaal)
+        tekst_breedte = bbox[2] - bbox[0]
+        draw.text((x + (kolom_breedtes[0] - tekst_breedte) / 2, y + 18), tijd_tekst, fill=tekst_kleur, font=font_normaal)
+        x += kolom_breedtes[0]
+        
+        # Wedstrijd (2 regels)
+        draw.text((x + 8, y + 8), wed["thuisteam"], fill=tekst_kleur, font=font_normaal)
+        draw.text((x + 8, y + 28), wed["uitteam"], fill=tekst_kleur, font=font_normaal)
+        x += kolom_breedtes[1]
+        
+        # Scoretafel
+        score_tekst = wed.get("score", "-")
+        score_kleur = leeg_kleur if score_tekst == "-" else tekst_kleur
+        score_font = font_bold if score_tekst == "-" else font_klein
+        draw.text((x + 8, y + 18), score_tekst, fill=score_kleur, font=score_font)
+        x += kolom_breedtes[2]
+        
+        # Klok
+        klok_tekst = wed.get("klok", "-")
+        klok_kleur = leeg_kleur if klok_tekst == "-" else tekst_kleur
+        klok_font = font_bold if klok_tekst == "-" else font_klein
+        draw.text((x + 8, y + 18), klok_tekst, fill=klok_kleur, font=klok_font)
+        
+        y += rij_hoogte
+    
+    # Laatste lijn en rand
+    draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+    draw.rectangle([margin_left, tabel_start_y, breedte - margin_left, y], outline=rand_kleur, width=2)
+    
+    # Verticale lijnen
+    x = margin_left
+    for width in kolom_breedtes[:-1]:
+        x += width
+        draw.line([x, tabel_start_y, x, y], fill=rand_kleur, width=1)
+    
+    # Opslaan naar bytes
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+    # Opslaan naar bytes
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def genereer_tafel_totaaloverzicht(tafel_overzicht_data: list, seizoen: str = "2025-2026") -> bytes:
+    """
+    Genereer een PNG totaaloverzicht van alle ingedeelde tafel officials.
+    Grijstinten opmaak, afwijkend van de wekelijkse teal variant.
+    
+    Args:
+        tafel_overzicht_data: Lijst van dicts:
+            [{"datum_str": str, "tijd": str, "thuisteam": str, "uitteam": str,
+              "score_naam": str, "score_team": str, "klok_naam": str, "klok_team": str}]
+        seizoen: Seizoen label
+    """
+    
+    # Configuratie
+    breedte = 900
+    header_hoogte = 110
+    rij_hoogte = 50
+    dag_header_hoogte = 32
+    kolom_breedtes = [70, 260, 260, 260]  # Tijd, Wedstrijd, Scoretafel, Klok
+    margin_left = 25
+    
+    # Groepeer per datum
+    per_datum = {}
+    for item in tafel_overzicht_data:
+        d = item["datum_str"]
+        if d not in per_datum:
+            per_datum[d] = []
+        per_datum[d].append(item)
+    
+    # Bereken hoogte
+    totaal_rijen = len(tafel_overzicht_data)
+    totaal_dag_headers = len(per_datum)
+    hoogte = (header_hoogte + 50 + rij_hoogte  # Header + subtitel + tabel header
+              + totaal_rijen * rij_hoogte 
+              + totaal_dag_headers * dag_header_hoogte 
+              + 30)  # marge onderaan
+    
+    # Grijstinten kleurenpalet
+    header_bg = (55, 55, 55)         # Donkergrijs header
+    header_tekst = (255, 255, 255)   # Wit
+    subtitel_kleur = (180, 180, 180) # Lichtgrijs subtitel
+    tabel_header_bg = (80, 80, 80)   # Grijs tabel header
+    dag_header_bg = (110, 110, 110)  # Medium grijs dagkop
+    dag_header_tekst = (255, 255, 255)
+    rij_even = (245, 245, 245)       # Bijna wit
+    rij_oneven = (232, 232, 232)     # Lichtgrijs
+    rand_kleur = (180, 180, 180)
+    tekst_kleur = (40, 40, 40)       # Donkergrijs tekst
+    team_kleur = (120, 120, 120)     # Grijs voor teamnaam
+    leeg_kleur = (180, 60, 60)       # Rood accent voor ontbrekend
+    accent_lijn = (100, 100, 100)    # Lijn onder header
+    
+    # Maak afbeelding
+    img = Image.new('RGB', (breedte, hoogte), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Fonts
+    try:
+        font_titel = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 22)
+        font_subtitel = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+        font_normaal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+        font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_dag = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_klein = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    except:
+        font_titel = ImageFont.load_default()
+        font_subtitel = ImageFont.load_default()
+        font_normaal = ImageFont.load_default()
+        font_bold = ImageFont.load_default()
+        font_dag = ImageFont.load_default()
+        font_klein = ImageFont.load_default()
+    
+    # === HEADER ===
+    draw.rectangle([0, 0, breedte, header_hoogte], fill=header_bg)
+    # Accent lijn onderaan header
+    draw.rectangle([0, header_hoogte - 4, breedte, header_hoogte], fill=accent_lijn)
+    
+    titel = "TAFEL OFFICIALS"
+    bbox = draw.textbbox((0, 0), titel, font=font_titel)
+    draw.text(((breedte - (bbox[2] - bbox[0])) / 2, 20), titel, fill=header_tekst, font=font_titel)
+    
+    subtitel = f"Totaaloverzicht — Seizoen {seizoen}"
+    bbox = draw.textbbox((0, 0), subtitel, font=font_subtitel)
+    draw.text(((breedte - (bbox[2] - bbox[0])) / 2, 55), subtitel, fill=subtitel_kleur, font=font_subtitel)
+    
+    # Statistieken regel
+    totaal_wed = len(tafel_overzicht_data)
+    ingevuld_score = sum(1 for d in tafel_overzicht_data if d.get("score_naam") and d["score_naam"] != "-")
+    ingevuld_klok = sum(1 for d in tafel_overzicht_data if d.get("klok_naam") and d["klok_naam"] != "-")
+    stats_tekst = f"{totaal_wed} wedstrijden  •  Score: {ingevuld_score}/{totaal_wed}  •  Klok: {ingevuld_klok}/{totaal_wed}"
+    bbox = draw.textbbox((0, 0), stats_tekst, font=font_klein)
+    draw.text(((breedte - (bbox[2] - bbox[0])) / 2, 80), stats_tekst, fill=subtitel_kleur, font=font_klein)
+    
+    # === TABEL HEADER ===
+    y = header_hoogte + 15
+    draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=tabel_header_bg)
+    
+    x = margin_left
+    headers = ["Tijd", "Wedstrijd", "Scoretafel", "Klok"]
+    for header, width in zip(headers, kolom_breedtes):
+        bbox = draw.textbbox((0, 0), header, font=font_bold)
+        tekst_x = x + (width - (bbox[2] - bbox[0])) / 2
+        draw.text((tekst_x, y + 16), header, fill=header_tekst, font=font_bold)
+        x += width
+    
+    tabel_start_y = y
+    y += rij_hoogte
+    
+    # === DATA RIJEN per datum ===
+    rij_idx = 0
+    dag_namen = ["Maandag", "Dinsdag", "Woensdag", "Donderdag", "Vrijdag", "Zaterdag", "Zondag"]
+    maand_namen = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"]
+    
+    for datum_str, items in per_datum.items():
+        # Dag header balk
+        draw.rectangle([margin_left, y, breedte - margin_left, y + dag_header_hoogte], fill=dag_header_bg)
+        
+        # Probeer mooie datum te tonen
+        try:
+            d = datetime.strptime(datum_str, "%Y-%m-%d")
+            dag_label = f"  {dag_namen[d.weekday()]} {d.day} {maand_namen[d.month-1]} {d.year}"
+        except:
+            dag_label = f"  {datum_str}"
+        
+        draw.text((margin_left + 8, y + 8), dag_label, fill=dag_header_tekst, font=font_dag)
+        y += dag_header_hoogte
+        
+        for item in items:
+            bg = rij_even if rij_idx % 2 == 0 else rij_oneven
+            draw.rectangle([margin_left, y, breedte - margin_left, y + rij_hoogte], fill=bg)
+            draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+            
+            x = margin_left
+            
+            # Tijd
+            tijd = item.get("tijd", "")
+            bbox = draw.textbbox((0, 0), tijd, font=font_normaal)
+            draw.text((x + (kolom_breedtes[0] - (bbox[2] - bbox[0])) / 2, y + 16), 
+                      tijd, fill=tekst_kleur, font=font_normaal)
+            x += kolom_breedtes[0]
+            
+            # Wedstrijd (2 regels)
+            draw.text((x + 8, y + 6), item.get("thuisteam", ""), fill=tekst_kleur, font=font_normaal)
+            draw.text((x + 8, y + 26), item.get("uitteam", ""), fill=team_kleur, font=font_klein)
+            x += kolom_breedtes[1]
+            
+            # Scoretafel
+            score_naam = item.get("score_naam", "-")
+            score_team = item.get("score_team", "")
+            if score_naam and score_naam != "-":
+                draw.text((x + 8, y + 6), score_naam, fill=tekst_kleur, font=font_normaal)
+                draw.text((x + 8, y + 26), score_team, fill=team_kleur, font=font_klein)
+            else:
+                draw.text((x + 8, y + 16), "—", fill=leeg_kleur, font=font_bold)
+            x += kolom_breedtes[2]
+            
+            # Klok
+            klok_naam = item.get("klok_naam", "-")
+            klok_team = item.get("klok_team", "")
+            if klok_naam and klok_naam != "-":
+                draw.text((x + 8, y + 6), klok_naam, fill=tekst_kleur, font=font_normaal)
+                draw.text((x + 8, y + 26), klok_team, fill=team_kleur, font=font_klein)
+            else:
+                draw.text((x + 8, y + 16), "—", fill=leeg_kleur, font=font_bold)
+            
+            y += rij_hoogte
+            rij_idx += 1
+    
+    # Afsluitende lijn
+    draw.line([margin_left, y, breedte - margin_left, y], fill=rand_kleur, width=1)
+    
+    # Rand om hele tabel
+    draw.rectangle([margin_left, tabel_start_y, breedte - margin_left, y], outline=accent_lijn, width=2)
+    
+    # Verticale lijnen
+    x = margin_left
+    for width in kolom_breedtes[:-1]:
+        x += width
+        draw.line([x, tabel_start_y, x, y], fill=rand_kleur, width=1)
+    
+    # Crop afbeelding tot werkelijke hoogte
+    img = img.crop((0, 0, breedte, y + 15))
+    
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def genereer_open_posities_alert(weekend_dagen: list, wedstrijden: dict, scheidsrechters: dict) -> bytes:
     """
     Genereer een alert-stijl afbeelding met open scheidsrechtersposities.
@@ -9198,6 +10186,7 @@ def toon_weekend_overzicht():
     
     wedstrijden = laad_wedstrijden()
     scheidsrechters = laad_scheidsrechters()
+    toewijzingen_tafel = laad_tafel_toewijzingen()
     
     # Vind beschikbare datums en groepeer per weekend
     datums_met_wedstrijden = set()
@@ -9406,6 +10395,110 @@ def toon_weekend_overzicht():
         if f"overzicht_png_{dag_key}" in st.session_state:
             with st.expander("Bekijk gegenereerde afbeelding", expanded=False):
                 st.image(st.session_state[f"overzicht_png_{dag_key}"])
+        
+        # === TAFEL OFFICIALS OVERZICHT PER DAG ===
+        # Zoek MSE-1 en M20-1 thuiswedstrijden op deze dag
+        tafel_dag_data = []
+        # Maak lookup van toewijzingen
+        tafel_lookup = {}
+        for t in toewijzingen_tafel:
+            t_wed_id = t.get("wed_id", "")
+            if t_wed_id not in tafel_lookup:
+                tafel_lookup[t_wed_id] = {}
+            tafel_lookup[t_wed_id][t.get("rol", "")] = t
+        
+        for wed_id, wed in wedstrijden.items():
+            if wed.get("type") == "uit" or wed.get("geannuleerd"):
+                continue
+            thuisteam = wed.get("thuisteam", "")
+            if not (team_match(thuisteam, "MSE-1") or team_match(thuisteam, "M20-1")):
+                continue
+            try:
+                wed_datum = datetime.strptime(wed["datum"], "%Y-%m-%d %H:%M")
+            except:
+                continue
+            if wed_datum.date() != gekozen_datum:
+                continue
+            
+            wed_toewijzingen = tafel_lookup.get(wed_id, {})
+            score_t = wed_toewijzingen.get("score")
+            klok_t = wed_toewijzingen.get("klok")
+            
+            tafel_dag_data.append({
+                "tijd": wed_datum.strftime("%H:%M"),
+                "thuisteam": thuisteam,
+                "uitteam": wed.get("uitteam", ""),
+                "score": f"{score_t['speler_naam']} ({score_t['speler_team']})" if score_t else "-",
+                "klok": f"{klok_t['speler_naam']} ({klok_t['speler_team']})" if klok_t else "-",
+                "datum": wed_datum
+            })
+        
+        if tafel_dag_data:
+            tafel_dag_data.sort(key=lambda x: x["datum"])
+            
+            st.markdown("#### 🏀 Tafel Officials")
+            
+            # HTML preview voor tafel officials
+            tafel_html_rows = []
+            for idx, wed in enumerate(tafel_dag_data):
+                bg = "#f0f8f5" if idx % 2 == 0 else "#ffffff"
+                score_stijl = 'color: #c85050; font-weight: bold;' if wed["score"] == "-" else ''
+                klok_stijl = 'color: #c85050; font-weight: bold;' if wed["klok"] == "-" else ''
+                tafel_html_rows.append(
+                    f'<tr style="background-color: {bg};">'
+                    f'<td style="padding: 8px; border: 1px solid #ccc; text-align: center; vertical-align: middle;">{wed["tijd"]}</td>'
+                    f'<td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;">{wed["thuisteam"]}<br/>{wed["uitteam"]}</td>'
+                    f'<td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;"><span style="{score_stijl}">{wed["score"]}</span></td>'
+                    f'<td style="padding: 8px; border: 1px solid #ccc; vertical-align: middle;"><span style="{klok_stijl}">{wed["klok"]}</span></td>'
+                    f'</tr>'
+                )
+            
+            tafel_html = (
+                f'<div style="font-family: Arial, sans-serif; max-width: 750px; margin-bottom: 20px;">'
+                f'<div style="background-color: #008080; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;">'
+                f'<h2 style="margin: 0;">TAFEL OFFICIALS OVERZICHT</h2>'
+                f'<p style="margin: 5px 0 0 0; font-style: italic;">{dag_namen_lang[gekozen_datum.weekday()]} {gekozen_datum.day} {maand_namen[gekozen_datum.month-1]} {gekozen_datum.year}</p>'
+                f'</div>'
+                f'<table style="width: 100%; border-collapse: collapse; border: 1px solid #ccc;">'
+                f'<tr style="background-color: #008080; color: white;">'
+                f'<th style="padding: 10px; border: 1px solid #ccc; width: 60px;">Tijd</th>'
+                f'<th style="padding: 10px; border: 1px solid #ccc;">Wedstrijd</th>'
+                f'<th style="padding: 10px; border: 1px solid #ccc;">Scoretafel</th>'
+                f'<th style="padding: 10px; border: 1px solid #ccc;">Klok</th>'
+                f'</tr>{"".join(tafel_html_rows)}</table></div>'
+            )
+            st.markdown(tafel_html, unsafe_allow_html=True)
+            
+            # PNG generatie voor tafel officials
+            col_t1, col_t2 = st.columns(2)
+            
+            with col_t1:
+                if st.button(f"🏀 Genereer Tafel PNG", key=f"gen_tafel_{dag_key}", type="secondary"):
+                    try:
+                        tafel_img_bytes = genereer_tafel_officials_afbeelding(
+                            datetime.combine(gekozen_datum, datetime.min.time()),
+                            tafel_dag_data
+                        )
+                        st.session_state[f"tafel_png_{dag_key}"] = tafel_img_bytes
+                        st.success("Tafel officials afbeelding gegenereerd!")
+                    except Exception as e:
+                        st.error(f"Fout bij genereren: {e}")
+            
+            with col_t2:
+                if f"tafel_png_{dag_key}" in st.session_state:
+                    datum_str = gekozen_datum.strftime("%Y-%m-%d")
+                    dag_naam = dag_namen_lang[gekozen_datum.weekday()].lower()
+                    st.download_button(
+                        "⬇️ Download Tafel PNG",
+                        data=st.session_state[f"tafel_png_{dag_key}"],
+                        file_name=f"tafel_officials_{dag_naam}_{datum_str}.png",
+                        mime="image/png",
+                        key=f"download_tafel_{dag_key}"
+                    )
+            
+            if f"tafel_png_{dag_key}" in st.session_state:
+                with st.expander("Bekijk tafel officials afbeelding", expanded=False):
+                    st.image(st.session_state[f"tafel_png_{dag_key}"])
         
         if dag_idx < len(gekozen_dagen) - 1:
             st.markdown("---")
