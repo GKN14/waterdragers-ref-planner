@@ -25,7 +25,7 @@ import ti_sync  # Koppeling met Teamindeling database
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.36.3"
+APP_VERSIE = "1.36.4"
 APP_VERSIE_DATUM = "2026-02-26"
 APP_CHANGELOG = """
 ### v1.36.2 (2026-02-25)
@@ -2951,7 +2951,7 @@ def get_afmeldingen_voor_wedstrijd(wed_id: str, wedstrijden: dict, scheidsrechte
     
     return resultaat
 
-def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict, bron: str = "zelf") -> dict:
+def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijden: dict, scheidsrechters: dict, bron: str = "zelf", vervang_nbb: str = None) -> dict:
     """
     Schrijf een scheidsrechter in voor een wedstrijd.
     
@@ -2985,8 +2985,8 @@ def schrijf_in_als_scheids(nbb_nummer: str, wed_id: str, positie: str, wedstrijd
     
     # Check of positie nog vrij is (met verse data uit database!)
     huidige_scheids = verse_wed.get(positie)
-    if huidige_scheids is not None and huidige_scheids != nbb_nummer:
-        # Positie is al bezet door iemand anders!
+    if huidige_scheids is not None and huidige_scheids != nbb_nummer and huidige_scheids != vervang_nbb:
+        # Positie is al bezet door iemand anders (niet de aanvrager, niet zichzelf)!
         # Retourneer info over wie er staat zodat UI dit kan tonen
         huidige_naam = scheidsrechters.get(huidige_scheids, {}).get("naam", f"NBB {huidige_scheids}")
         return {"error": "bezet", "huidige_scheids": huidige_scheids, "huidige_naam": huidige_naam}
@@ -6847,7 +6847,8 @@ def toon_speler_view(nbb_nummer: str):
                     if st.button("✅", key=f"verz_acc_{verzoek['id']}", help="Accepteren"):
                         positie_key = "scheids_1" if verzoek["positie"] == "1e scheidsrechter" else "scheids_2"
                         # Vervanging via uitnodiging: bonus op basis van moment uitnodiging
-                        resultaat = schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging")
+                        # Geef aanvrager_nbb mee zodat zijn positie als "vrij" wordt beschouwd
+                        resultaat = schrijf_in_als_scheids(nbb_nummer, verzoek["wed_id"], positie_key, wedstrijden, scheidsrechters, bron="vervanging", vervang_nbb=verzoek.get("aanvrager_nbb"))
                         if resultaat is None or (isinstance(resultaat, dict) and resultaat.get("error")):
                             naam = resultaat.get("huidige_naam", "iemand anders") if isinstance(resultaat, dict) else "iemand anders"
                             st.error(f"⚠️ Deze positie is al door **{naam}** ingenomen.")
