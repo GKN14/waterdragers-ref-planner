@@ -25,9 +25,16 @@ import ti_sync  # Koppeling met Teamindeling database
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.36.4"
-APP_VERSIE_DATUM = "2026-02-26"
+APP_VERSIE = "1.37.0"
+APP_VERSIE_DATUM = "2026-03-01"
 APP_CHANGELOG = """
+### v1.37.0 (2026-03-01)
+**Bugfix: no-show verwerking & logging verbeteringen:**
+- 🐛 Fix: markeer_no_show functiedefinitie ontbrak (NameError bij no-show zonder invaller)
+- 📋 Inschrijfmoment en bron zichtbaar in beheer per scheidsrechter (👤 Speler / 📋 TC / 🔄 Overgenomen)
+- 🔍 IP-adres wordt nu gelogd bij elke inschrijving (onderscheid speler vs TC)
+- 🏷️ Logging onderscheidt nu: inschrijven / inschrijven_tc / inschrijven_via_overnemen / heraanmelden
+
 ### v1.36.2 (2026-02-25)
 **Tafel Officials — totaaloverzicht download:**
 - 🖼️ Downloadbaar totaaloverzicht als PNG in grijstinten
@@ -3235,6 +3242,9 @@ def verwerk_afmelding_zonder_vervanging(wed_id: str, afgemelde_positie: str, bev
         "afgemelde_scheids": afgemelde_naam,
         "andere_scheids_punten": nieuwe_punten
     }
+
+
+def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> dict:
     """
     Markeer een scheidsrechter als no-show.
     Kent no-show strikes toe aan de no-show.
