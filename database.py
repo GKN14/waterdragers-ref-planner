@@ -2053,6 +2053,16 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
         if deadline:
             dagen_voor_deadline = (deadline - nu).days
         
+        # Haal IP op voor onderscheid speler vs TC (niet kritisch als het mislukt)
+        ip_adres = None
+        try:
+            ip_info = get_ip_info()
+            ip_adres = ip_info.get("ip") or None
+            if ip_adres == "Niet gevonden":
+                ip_adres = None
+        except:
+            pass
+
         record = {
             "nbb_nummer": nbb_nummer,
             "wed_id": wed_id,
@@ -2061,7 +2071,8 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
             "tijdstip": nu.isoformat(),
             "dagen_voor_wedstrijd": dagen_voor_wedstrijd,
             "dagen_voor_deadline": dagen_voor_deadline,
-            "wed_datum": wed_datum.isoformat()
+            "wed_datum": wed_datum.isoformat(),
+            "ip_adres": ip_adres
         }
         
         supabase.table("registratie_log").insert(record).execute()
