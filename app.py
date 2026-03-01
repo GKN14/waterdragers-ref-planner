@@ -29,11 +29,13 @@ APP_VERSIE = "1.37.0"
 APP_VERSIE_DATUM = "2026-03-01"
 APP_CHANGELOG = """
 ### v1.37.0 (2026-03-01)
-**Bugfix: no-show verwerking & logging verbeteringen:**
+**Bugfix & dispensatiesysteem:**
 - 🐛 Fix: markeer_no_show functiedefinitie ontbrak (NameError bij no-show zonder invaller)
-- 📋 Inschrijfmoment en bron zichtbaar in beheer per scheidsrechter (👤 Speler / 📋 TC / 🔄 Overgenomen)
-- 🔍 IP-adres wordt nu gelogd bij elke inschrijving (onderscheid speler vs TC)
-- 🏷️ Logging onderscheidt nu: inschrijven / inschrijven_tc / inschrijven_via_overnemen / heraanmelden
+- ⚡ Dispensatie: TC kan speler indelen buiten BS2/niveau-vereiste om
+- ⚡ Dispensatie zichtbaar in beheer met reden (geen BS2 / niveau te laag)
+- 📋 Inschrijfmoment en bron zichtbaar in beheer (👤 Speler / 📋 TC / 🔄 Overgenomen)
+- 🔍 IP-adres wordt gelogd bij elke inschrijving
+- 🏷️ Logging: inschrijven / inschrijven_tc / inschrijven_via_overnemen / heraanmelden
 
 ### v1.36.2 (2026-02-25)
 **Tafel Officials — totaaloverzicht download:**
@@ -3242,9 +3244,6 @@ def verwerk_afmelding_zonder_vervanging(wed_id: str, afgemelde_positie: str, bev
         "afgemelde_scheids": afgemelde_naam,
         "andere_scheids_punten": nieuwe_punten
     }
-
-
-def markeer_no_show(wed_id: str, positie: str, bevestigd_door: str) -> dict:
     """
     Markeer een scheidsrechter als no-show.
     Kent no-show strikes toe aan de no-show.
@@ -5130,8 +5129,13 @@ def tel_wedstrijden_op_eigen_niveau(nbb_nummer: str) -> dict:
         "voldaan": op_niveau >= min_wed
     }
 
-def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
-    """Haal geschikte kandidaten op voor een wedstrijd (voor beheerder)."""
+def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool, met_dispensatie: bool = False) -> list:
+    """Haal geschikte kandidaten op voor een wedstrijd (voor beheerder).
+    
+    Args:
+        met_dispensatie: Als True, toon ook kandidaten die normaal geblokkeerd zijn
+                        door BS2 of niveauvereiste. Worden apart gemarkeerd.
+    """
     scheidsrechters = laad_scheidsrechters()
     wedstrijden = laad_wedstrijden()
     
@@ -5157,17 +5161,22 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         # Voor 2e scheids: standaard max 1 niveau hoger dan eigen niveau
         max_niveau_2e = min(niveau_1e + 1, 5)
         
-        # Check BS2 vereiste - dit geldt ALTIJD, ook voor 2e scheidsrechter
-        if wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False):
+        # Check BS2 vereiste
+        bs2_dispensatie_nodig = wed.get("vereist_bs2", False) and not scheids.get("bs2_diploma", False)
+        if bs2_dispensatie_nodig and not met_dispensatie:
             continue
         
         # Check niveau
         wed_niveau = wed["niveau"]
+        niveau_dispensatie_nodig = False
         
         if als_eerste:
             # 1e scheidsrechter: gewoon niveau check
             if wed_niveau > niveau_1e:
-                continue
+                if met_dispensatie:
+                    niveau_dispensatie_nodig = True
+                else:
+                    continue
         else:
             # 2e scheidsrechter: complexere logica
             
@@ -5182,9 +5191,15 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
                     eerste_scheids = scheidsrechters.get(eerste_scheids_nbb, {})
                     is_mse = eerste_scheids.get("niveau_1e_scheids", 1) == 5 or any("MSE" in t.upper() for t in eerste_scheids.get("eigen_teams", []))
                     if not is_mse:
-                        continue  # Te hoog, geen MSE
+                        if met_dispensatie:
+                            niveau_dispensatie_nodig = True
+                        else:
+                            continue  # Te hoog, geen MSE
                 else:
-                    continue  # Te hoog, nog geen 1e scheids
+                    if met_dispensatie:
+                        niveau_dispensatie_nodig = True
+                    else:
+                        continue  # Te hoog, nog geen 1e scheids
         
         # Check eigen team (thuiswedstrijd van eigen team) - flexibele matching
         eigen_teams_scheids = scheids.get("eigen_teams", [])
@@ -5254,6 +5269,8 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
         else:
             tekort = 0  # Wedstrijd onder eigen niveau telt niet mee voor minimum
         
+        heeft_dispensatie = bs2_dispensatie_nodig or niveau_dispensatie_nodig
+        
         kandidaten.append({
             "nbb_nummer": nbb,
             "naam": scheids["naam"],
@@ -5263,8 +5280,12 @@ def get_kandidaten_voor_wedstrijd(wed_id: str, als_eerste: bool) -> list:
             "min_wedstrijden": min_wed,
             "tekort": tekort,
             "is_op_eigen_niveau": is_op_eigen_niveau_of_hoger,
-            "is_passief": huidig_totaal == 0,  # Nog nergens voor ingeschreven
-            "is_eerder_afgemeld": nbb in afgemelde_nbbs  # NIEUW: Heeft zich eerder afgemeld
+            "is_passief": huidig_totaal == 0,
+            "is_eerder_afgemeld": nbb in afgemelde_nbbs,
+            "heeft_dispensatie": heeft_dispensatie,  # Normaal geblokkeerd, maar dispensatie actief
+            "dispensatie_reden": ("geen BS2" if bs2_dispensatie_nodig else "") + 
+                                 (" + " if bs2_dispensatie_nodig and niveau_dispensatie_nodig else "") +
+                                 ("niveau te laag" if niveau_dispensatie_nodig else "")
         })
     
     # Sorteer: 
@@ -11108,27 +11129,38 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 afm_namen = ", ".join([a["naam"] for a in afmeldingen_1e])
                                 st.caption(f"⚠️ Afgemeld: {afm_namen}")
                             
-                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True)
+                            dispensatie_1 = st.checkbox("🔓 Dispensatie", key=f"disp1_{wed['id']}", help="Toon ook spelers zonder BS2 of onder niveau")
+                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=True, met_dispensatie=dispensatie_1)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
-                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +  # NIEUW: indicator voor eerder afgemeld
+                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +
                                     ("😴 " if k.get('is_passief') else "") +
+                                    ("⚡ " if k.get('heeft_dispensatie') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" + 
-                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "") +
+                                    (f" [{k['dispensatie_reden']}]" if k.get('heeft_dispensatie') else "")
                                     for k in kandidaten
                                 ]
                                 selectie = st.selectbox("Kies 1e scheids", keuzes, key=f"sel1_{wed['id']}")
                                 if selectie != "-- Selecteer --":
                                     idx = keuzes.index(selectie) - 1
+                                    gekozen_kandidaat = kandidaten[idx]
+                                    geeft_dispensatie = gekozen_kandidaat.get("heeft_dispensatie", False)
+                                    if geeft_dispensatie:
+                                        st.warning(f"⚡ Let op: dispensatie ({gekozen_kandidaat['dispensatie_reden']})")
                                     if st.button("Toewijzen", key=f"assign1_{wed['id']}"):
-                                        gekozen_nbb = kandidaten[idx]["nbb_nummer"]
-                                        # TC-toewijzing: bereken punten met bonus
+                                        gekozen_nbb = gekozen_kandidaat["nbb_nummer"]
                                         resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_1", wedstrijden, scheidsrechters, bron="tc")
                                         if resultaat is None:
                                             st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
                                         elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
                                             toon_error_met_scroll(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
+                                            if geeft_dispensatie:
+                                                # Sla dispensatie op bij de wedstrijd
+                                                wedstrijden[wed["id"]]["scheids_1_dispensatie"] = True
+                                                wedstrijden[wed["id"]]["scheids_1_dispensatie_reden"] = gekozen_kandidaat["dispensatie_reden"]
+                                                sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                             st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
@@ -11158,27 +11190,37 @@ def toon_wedstrijden_lijst(wedstrijden: dict, scheidsrechters: dict, instellinge
                                 afm_namen = ", ".join([a["naam"] for a in afmeldingen_2e])
                                 st.caption(f"⚠️ Afgemeld: {afm_namen}")
                             
-                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False)
+                            dispensatie_2 = st.checkbox("🔓 Dispensatie", key=f"disp2_{wed['id']}", help="Toon ook spelers zonder BS2 of onder niveau")
+                            kandidaten = get_kandidaten_voor_wedstrijd(wed["id"], als_eerste=False, met_dispensatie=dispensatie_2)
                             if kandidaten:
                                 keuzes = ["-- Selecteer --"] + [
-                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +  # NIEUW: indicator voor eerder afgemeld
+                                    ("🔙 " if k.get('is_eerder_afgemeld') else "") +
                                     ("😴 " if k.get('is_passief') else "") +
+                                    ("⚡ " if k.get('heeft_dispensatie') else "") +
                                     f"{k['naam']} ({k['huidig_aantal']} wed)" +
-                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "")
+                                    (f" ⚠️ nog {k['tekort']} nodig" if k['tekort'] > 0 else "") +
+                                    (f" [{k['dispensatie_reden']}]" if k.get('heeft_dispensatie') else "")
                                     for k in kandidaten
                                 ]
                                 selectie = st.selectbox("Kies 2e scheids", keuzes, key=f"sel2_{wed['id']}")
                                 if selectie != "-- Selecteer --":
                                     idx = keuzes.index(selectie) - 1
+                                    gekozen_kandidaat = kandidaten[idx]
+                                    geeft_dispensatie = gekozen_kandidaat.get("heeft_dispensatie", False)
+                                    if geeft_dispensatie:
+                                        st.warning(f"⚡ Let op: dispensatie ({gekozen_kandidaat['dispensatie_reden']})")
                                     if st.button("Toewijzen", key=f"assign2_{wed['id']}"):
-                                        gekozen_nbb = kandidaten[idx]["nbb_nummer"]
-                                        # TC-toewijzing: bereken punten met bonus
+                                        gekozen_nbb = gekozen_kandidaat["nbb_nummer"]
                                         resultaat = schrijf_in_als_scheids(gekozen_nbb, wed["id"], "scheids_2", wedstrijden, scheidsrechters, bron="tc")
                                         if resultaat is None:
                                             st.error("⚠️ Wedstrijd niet gevonden. Ververs de pagina.")
                                         elif isinstance(resultaat, dict) and resultaat.get("error") == "bezet":
                                             toon_error_met_scroll(f"⚠️ Positie al bezet door **{resultaat['huidige_naam']}**. Ververs de pagina.")
                                         else:
+                                            if geeft_dispensatie:
+                                                wedstrijden[wed["id"]]["scheids_2_dispensatie"] = True
+                                                wedstrijden[wed["id"]]["scheids_2_dispensatie_reden"] = gekozen_kandidaat["dispensatie_reden"]
+                                                sla_wedstrijd_op(wed["id"], wedstrijden[wed["id"]])
                                             st.rerun()
                             else:
                                 st.warning("Geen geschikte kandidaten")
