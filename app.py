@@ -25,9 +25,15 @@ import ti_sync  # Koppeling met Teamindeling database
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.37.2"
+APP_VERSIE = "1.37.3"
 APP_VERSIE_DATUM = "2026-03-02"
 APP_CHANGELOG = """
+### v1.37.3 (2026-03-02)
+**Beschikbaarheid log zichtbaar in beheer:**
+- 📋 Beschikbaarheidswijzigingen per speler zichtbaar in scheidsrechters overzicht
+- 🔍 Toont: dag, actie (blokkeren/deblokkeren), door wie (speler/TC), tijdstip
+- 📂 Inklapbaar per speler (laatste 15 wijzigingen)
+
 ### v1.37.2 (2026-03-02)
 **Beschikbaarheid audit trail:**
 - 📋 Elke beschikbaarheidswijziging wordt gelogd in beschikbaarheid_log
@@ -11983,6 +11989,30 @@ def toon_scheidsrechters_beheer():
                             meer = f" +{len(toekomstige_blokkades) - 5}" if len(toekomstige_blokkades) > 5 else ""
                             st.write(f"**🚫 Niet beschikbaar:** {', '.join(dagen_kort)}{meer}")
                 
+                # Beschikbaarheid log tonen
+                with st.expander("📋 Beschikbaarheidswijzigingen"):
+                    beschikbaar_log = db.laad_beschikbaarheid_log(nbb, max_results=15)
+                    if beschikbaar_log:
+                        dag_namen = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+                        for entry in beschikbaar_log:
+                            try:
+                                tijdstip = datetime.fromisoformat(entry["tijdstip"]).strftime("%d-%m-%Y %H:%M")
+                            except:
+                                tijdstip = entry.get("tijdstip", "?")[:16]
+                            dag = entry.get("dag", "?")
+                            try:
+                                dag_dt = datetime.strptime(dag, "%Y-%m-%d")
+                                dag_label = f"{dag_namen[dag_dt.weekday()]} {dag_dt.strftime('%d-%m-%Y')}"
+                            except:
+                                dag_label = dag
+                            actie = entry.get("actie", "?")
+                            door = entry.get("gewijzigd_door", "?")
+                            actie_icon = "🚫" if actie == "blokkeren" else "✅"
+                            door_label = "👤 Speler" if door == "speler" else "📋 TC"
+                            st.caption(f"{actie_icon} {dag_label} — {actie} door {door_label} op {tijdstip}")
+                    else:
+                        st.caption("Geen wijzigingen geregistreerd.")
+
                 # Begeleidingsinfo tonen indien aanwezig
                 if scheids.get("open_voor_begeleiding", False):
                     st.divider()

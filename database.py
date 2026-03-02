@@ -2071,6 +2071,31 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
         print(f"Registratie log fout (niet kritisch): {e}")
         return False
 
+def laad_beschikbaarheid_log(nbb_nummer: str, max_results: int = 20) -> list:
+    """
+    Laad beschikbaarheidswijzigingen voor een speler.
+
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        max_results: Maximum aantal resultaten (default 20)
+
+    Returns:
+        Lijst van log-entries gesorteerd op tijdstip (nieuwste eerst)
+    """
+    try:
+        supabase = get_supabase_client()
+        response = (supabase.table("beschikbaarheid_log")
+                    .select("*")
+                    .eq("nbb_nummer", nbb_nummer)
+                    .order("tijdstip", desc=True)
+                    .limit(max_results)
+                    .execute())
+        return response.data or []
+    except Exception as e:
+        print(f"Fout bij laden beschikbaarheid log: {e}")
+        return []
+
+
 def log_beschikbaarheid(nbb_nummer: str, actie: str, gewijzigde_dagen: list,
                         gewijzigd_door: str, ip_adres: str = None) -> bool:
     """
