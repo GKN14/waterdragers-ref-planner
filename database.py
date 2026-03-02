@@ -2053,16 +2053,6 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
         if deadline:
             dagen_voor_deadline = (deadline - nu).days
         
-        # Haal IP op voor onderscheid speler vs TC (niet kritisch als het mislukt)
-        ip_adres = None
-        try:
-            ip_info = get_ip_info()
-            ip_adres = ip_info.get("ip") or None
-            if ip_adres == "Niet gevonden":
-                ip_adres = None
-        except:
-            pass
-
         record = {
             "nbb_nummer": nbb_nummer,
             "wed_id": wed_id,
@@ -2071,8 +2061,7 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
             "tijdstip": nu.isoformat(),
             "dagen_voor_wedstrijd": dagen_voor_wedstrijd,
             "dagen_voor_deadline": dagen_voor_deadline,
-            "wed_datum": wed_datum.isoformat(),
-            "ip_adres": ip_adres
+            "wed_datum": wed_datum.isoformat()
         }
         
         supabase.table("registratie_log").insert(record).execute()
@@ -2081,6 +2070,110 @@ def log_registratie(nbb_nummer: str, wed_id: str, positie: str, actie: str,
         # Niet kritisch - log failure mag app niet blokkeren
         print(f"Registratie log fout (niet kritisch): {e}")
         return False
+
+def log_beschikbaarheid(nbb_nummer: str, actie: str, gewijzigde_dagen: list, 
+                        gewijzigd_door: str, ip_adres: str = None) -> bool:
+    """
+    Log een beschikbaarheidswijziging voor audit trail.
+    
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        actie: "blokkeren" of "deblokkeren"
+        gewijzigde_dagen: Lijst van datums die zijn gewijzigd (YYYY-MM-DD)
+        gewijzigd_door: "speler" of "tc"
+        ip_adres: Optioneel - IP adres van de gebruiker
+    
+    Returns:
+        True bij succes, False bij fout
+    """
+    if not gewijzigde_dagen:
+        return True  # Niets te loggen
+    
+    try:
+        supabase = get_supabase_client()
+        nu = datetime.now()
+        
+        # Haal IP op als niet meegegeven
+        if ip_adres is None:
+            try:
+                ip_info = get_ip_info()
+                ip_adres = ip_info.get("ip") or None
+                if ip_adres == "Niet gevonden":
+                    ip_adres = None
+            except:
+                pass
+        
+        # Één log-entry per gewijzigde dag
+        records = []
+        for dag in gewijzigde_dagen:
+            records.append({
+                "nbb_nummer": nbb_nummer,
+                "actie": actie,
+                "dag": dag,
+                "tijdstip": nu.isoformat(),
+                "gewijzigd_door": gewijzigd_door,
+                "ip_adres": ip_adres
+            })
+        
+        supabase.table("beschikbaarheid_log").insert(records).execute()
+        return True
+    except Exception as e:
+        # Niet kritisch - log failure mag app niet blokkeren
+        print(f"Beschikbaarheid log fout (niet kritisch): {e}")
+        return False
+
+
+def log_beschikbaarheid(nbb_nummer: str, actie: str, gewijzigde_dagen: list,
+                        gewijzigd_door: str, ip_adres: str = None) -> bool:
+    """
+    Log een beschikbaarheidswijziging voor audit trail.
+
+    Args:
+        nbb_nummer: NBB nummer van de scheidsrechter
+        actie: "blokkeren" of "deblokkeren"
+        gewijzigde_dagen: Lijst van datums die zijn gewijzigd (YYYY-MM-DD)
+        gewijzigd_door: "speler" of "tc"
+        ip_adres: Optioneel - IP adres van de gebruiker
+
+    Returns:
+        True bij succes, False bij fout
+    """
+    if not gewijzigde_dagen:
+        return True  # Niets te loggen
+
+    try:
+        supabase = get_supabase_client()
+        nu = datetime.now()
+
+        # Haal IP op als niet meegegeven
+        if ip_adres is None:
+            try:
+                ip_info = get_ip_info()
+                ip_adres = ip_info.get("ip") or None
+                if ip_adres == "Niet gevonden":
+                    ip_adres = None
+            except:
+                pass
+
+        # Één log-entry per gewijzigde dag
+        records = []
+        for dag in gewijzigde_dagen:
+            records.append({
+                "nbb_nummer": nbb_nummer,
+                "actie": actie,
+                "dag": dag,
+                "tijdstip": nu.isoformat(),
+                "gewijzigd_door": gewijzigd_door,
+                "ip_adres": ip_adres
+            })
+
+        supabase.table("beschikbaarheid_log").insert(records).execute()
+        return True
+    except Exception as e:
+        # Niet kritisch - log failure mag app niet blokkeren
+        print(f"Beschikbaarheid log fout (niet kritisch): {e}")
+        return False
+
 
 def laad_registratie_logs(nbb_nummer: str = None, vanaf: datetime = None) -> list:
     """

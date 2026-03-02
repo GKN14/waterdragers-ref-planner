@@ -25,9 +25,21 @@ import ti_sync  # Koppeling met Teamindeling database
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.37.0"
-APP_VERSIE_DATUM = "2026-03-01"
+APP_VERSIE = "1.37.2"
+APP_VERSIE_DATUM = "2026-03-02"
 APP_CHANGELOG = """
+### v1.37.2 (2026-03-02)
+**Beschikbaarheid audit trail:**
+- 📋 Elke beschikbaarheidswijziging wordt gelogd in beschikbaarheid_log
+- 🔍 Vastgelegd: wie (speler/TC), wat (blokkeren/deblokkeren), welke dag, wanneer, IP
+- 🛡️ Voorkomt dat spelers ongemerkt blokkades kunnen terugdraaien
+
+### v1.37.1 (2026-03-01)
+**Bugfix: dubbele bevestiging puntentelling:**
+- 🐛 Fix: dubbel bevestigen van wedstrijd telde punten twee keer
+- 🛡️ voeg_punten_toe controleert nu of wed_id al geregistreerd staat
+- 🛡️ Bij dubbele bevestiging: punten worden niet opnieuw toegevoegd
+
 ### v1.37.0 (2026-03-01)
 **Bugfix & dispensatiesysteem:**
 - 🐛 Fix: markeer_no_show functiedefinitie ontbrak (NameError bij no-show zonder invaller)
@@ -2469,8 +2481,15 @@ def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None
     if nbb_nummer not in beloningen["spelers"]:
         beloningen["spelers"][nbb_nummer] = {"punten": 0, "strikes": 0, "gefloten_wedstrijden": [], "strike_log": []}
     
-    beloningen["spelers"][nbb_nummer]["punten"] += punten
     if wed_id:
+        # Voorkom dubbele bevestiging: check of wed_id al bestaat
+        bestaande_wedstrijden = beloningen["spelers"][nbb_nummer].get("gefloten_wedstrijden", [])
+        al_geregistreerd = any(w.get("wed_id") == wed_id for w in bestaande_wedstrijden)
+        if al_geregistreerd:
+            # Wedstrijd al bevestigd — sla op zonder punten toe te voegen
+            print(f"[voeg_punten_toe] Dubbele bevestiging voorkomen: {nbb_nummer} - {wed_id}")
+            return
+        
         registratie = {
             "wed_id": wed_id,
             "punten": punten,
@@ -2480,6 +2499,8 @@ def voeg_punten_toe(nbb_nummer: str, punten: int, reden: str, wed_id: str = None
         if berekening:
             registratie["berekening"] = berekening
         beloningen["spelers"][nbb_nummer]["gefloten_wedstrijden"].append(registratie)
+    
+    beloningen["spelers"][nbb_nummer]["punten"] += punten
     sla_beloningen_op(beloningen)
 
 def voeg_strike_toe(nbb_nummer: str, strikes: int, reden: str):
@@ -6227,6 +6248,15 @@ def toon_speler_view(nbb_nummer: str):
                     # Update scheidsrechter data
                     scheids["geblokkeerde_dagen"] = nieuwe_blokkades
                     sla_scheidsrechter_op(nbb_nummer, scheids)
+                    
+                    # Log beschikbaarheidswijzigingen
+                    nieuw_geblokkeerd = list(set(nieuwe_blokkades) - set(huidige_blokkades))
+                    nieuw_gedeblokkeerd = list(set(huidige_blokkades) - set(nieuwe_blokkades))
+                    if nieuw_geblokkeerd:
+                        db.log_beschikbaarheid(nbb_nummer, "blokkeren", nieuw_geblokkeerd, "speler")
+                    if nieuw_gedeblokkeerd:
+                        db.log_beschikbaarheid(nbb_nummer, "deblokkeren", nieuw_gedeblokkeerd, "speler")
+                    
                     st.rerun()
                 
                 # Toon samenvatting
@@ -11874,6 +11904,15 @@ def toon_scheidsrechters_beheer():
                                 "telefoon_begeleiding": telefoon_begeleiding if open_voor_begeleiding else ""
                             }
                             sla_scheidsrechter_op(nbb, scheidsrechters[nbb])
+                            
+                            # Log beschikbaarheidswijzigingen door TC
+                            tc_nieuw_geblokkeerd = list(set(nieuwe_blokkades) - set(huidige_blokkades))
+                            tc_nieuw_gedeblokkeerd = list(set(toekomstige_blokkades) - set(gekozen_dagen))
+                            if tc_nieuw_geblokkeerd:
+                                db.log_beschikbaarheid(nbb, "blokkeren", tc_nieuw_geblokkeerd, "tc")
+                            if tc_nieuw_gedeblokkeerd:
+                                db.log_beschikbaarheid(nbb, "deblokkeren", tc_nieuw_gedeblokkeerd, "tc")
+                            
                             st.session_state[edit_key] = False
                             
                             if uitgeschreven_wedstrijden:
