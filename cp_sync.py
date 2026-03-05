@@ -239,6 +239,10 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
     veld = cp_wedstrijd.get('field_number')
     veld_str = str(veld) if veld else None
     
+    # Annulering status uit CP
+    cp_status = cp_wedstrijd.get('status', '')
+    is_geannuleerd = cp_status == 'cancelled'
+
     return {
         'nbb_wedstrijd_nr': cp_wedstrijd.get('nbb_id'),
         'datum': datum.strftime('%Y-%m-%d %H:%M') if datum else None,  # Spatie formaat zoals BOB
@@ -249,6 +253,7 @@ def map_cp_naar_bob(cp_wedstrijd: dict) -> dict:
         'vereist_bs2': bepaal_bs2_vereist(eigen_team_code),
         'veld': veld_str,
         'type': 'thuis' if is_thuiswedstrijd else 'uit',
+        'geannuleerd': is_geannuleerd,
         # Extra velden voor weergave/debugging
         '_cp_id': cp_wedstrijd.get('id'),
         '_cp_poule': cp_wedstrijd.get('poule'),
@@ -612,8 +617,9 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
     # Velden om te vergelijken
     # NB: niveau en teams staan hier NIET bij
     velden = [
-        ('datum', 'Datum/tijd', True),   # altijd vergelijken
-        ('veld', 'Veld', False),          # alleen als CP waarde heeft
+        ('datum', 'Datum/tijd', True),          # altijd vergelijken
+        ('veld', 'Veld', False),                 # alleen als CP waarde heeft
+        ('geannuleerd', 'Geannuleerd', True),    # altijd vergelijken
     ]
     
     for veld, label, altijd_vergelijken in velden:

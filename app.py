@@ -14627,12 +14627,23 @@ def toon_synchronisatie_tab():
                     # Tel verschillende typen wijzigingen
                     verplaatst_count = sum(1 for item in resultaat['gewijzigd'] if item.get('_verplaatst'))
                     incomplete_count = sum(1 for item in resultaat['gewijzigd'] if item.get('_incomplete'))
-                    regulier_count = len(resultaat['gewijzigd']) - verplaatst_count - incomplete_count
-                    
+                    annulering_count = sum(1 for item in resultaat['gewijzigd']
+                                          if any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == True
+                                                 for w in item.get('wijzigingen', [])))
+                    heractivering_count = sum(1 for item in resultaat['gewijzigd']
+                                             if any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == False
+                                                    and w.get('bob_waarde') == True
+                                                    for w in item.get('wijzigingen', [])))
+                    regulier_count = len(resultaat['gewijzigd']) - verplaatst_count - incomplete_count - annulering_count - heractivering_count
+
                     st.subheader(f"✏️ Gewijzigde wedstrijden ({len(resultaat['gewijzigd'])})")
-                    
+
                     # Toon samenvatting van typen
                     samenvatting_delen = []
+                    if annulering_count > 0:
+                        samenvatting_delen.append(f"🚫 {annulering_count} geannuleerd")
+                    if heractivering_count > 0:
+                        samenvatting_delen.append(f"✅ {heractivering_count} heractiveerd")
                     if incomplete_count > 0:
                         samenvatting_delen.append(f"🔧 {incomplete_count} incompleet (teamnamen ontbreken)")
                     if verplaatst_count > 0:
@@ -14677,8 +14688,18 @@ def toon_synchronisatie_tab():
                             team_display = f"{uitteam} vs {thuisteam}"
                             type_icoon = "🚗"
                         
+                        # Check of dit een annulering/heractivering is
+                        is_annulering = any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == True for w in wijzigingen)
+                        is_heractivering = any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == False and w.get('bob_waarde') == True for w in wijzigingen)
+
                         # Kies label op basis van type wijziging
-                        if is_incomplete:
+                        if is_annulering:
+                            wijzig_label = "🚫 GEANNULEERD: "
+                            expanded = True
+                        elif is_heractivering:
+                            wijzig_label = "✅ HERACTIVEERD: "
+                            expanded = True
+                        elif is_incomplete:
                             wijzig_label = "INCOMPLEET: "
                             expanded = True
                         elif is_verplaatst:
@@ -14700,6 +14721,7 @@ def toon_synchronisatie_tab():
                                 ('type', 'Type'),
                                 ('niveau', 'Niveau'),
                                 ('veld', 'Veld'),
+                                ('geannuleerd', 'Status'),
                             ]
                             
                             tabel_data = []
@@ -14719,6 +14741,11 @@ def toon_synchronisatie_tab():
                                             cp_waarde = dt.strftime('%d-%m-%Y %H:%M')
                                     except:
                                         pass
+
+                                # Format geannuleerd boolean als leesbare status
+                                if veld == 'geannuleerd':
+                                    bob_waarde = '🚫 Geannuleerd' if bob_waarde else '✅ Actief'
+                                    cp_waarde = '🚫 Geannuleerd' if cp_waarde else '✅ Actief'
                                 
                                 # Bepaal of dit veld verandert
                                 bob_str = str(bob_waarde).strip() if bob_waarde else ''
@@ -14765,7 +14792,10 @@ def toon_synchronisatie_tab():
                             if bob.get('scheids_2'):
                                 scheids_info.append(f"2e: {bob['scheids_2']}")
                             if scheids_info:
-                                st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)} (blijven behouden)")
+                                if is_annulering:
+                                    st.warning(f"⚠️ Scheidsrechters worden afgemeld: {', '.join(scheids_info)}")
+                                else:
+                                    st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)} (blijven behouden)")
                             
                             st.session_state['cp_wijzig_selectie'][i] = st.checkbox(
                                 "CP waarden overnemen",
@@ -14779,34 +14809,71 @@ def toon_synchronisatie_tab():
                         if st.button(f"✏️ Werk {geselecteerd_wijzig} wedstrijden bij", key="cp_update_btn"):
                             bijgewerkt = 0
                             fouten = []
-                            
+                            scheids_afgemeld = 0
+
                             for i, item in enumerate(resultaat['gewijzigd']):
                                 if st.session_state['cp_wijzig_selectie'][i]:
                                     bob = item['bob']
                                     bob_fmt = item['bob_format']
+                                    wijzigingen = item.get('wijzigingen', [])
                                     wed_id = bob.get('wed_id')
-                                    
+
                                     # Identificatie voor foutmelding
                                     wed_info = f"{bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} ({bob_fmt.get('datum', '?')[:16]})"
-                                    
+
                                     if wed_id:
                                         # BELANGRIJK: Start met ALLE bestaande BOB waarden
                                         # De sla_wedstrijd_op functie doet een volledige UPSERT
                                         # dus we moeten alles meegeven om data verlies te voorkomen
                                         update_data = dict(bob)  # Kopie van alle bestaande waarden
-                                        
+
                                         # Overschrijf met CP waarden waar ze verschillen en CP een waarde heeft
                                         sync_velden = ['datum', 'thuisteam', 'uitteam', 'type', 'niveau', 'veld']
-                                        
+
                                         for veld in sync_velden:
                                             cp_waarde = bob_fmt.get(veld)
                                             if cp_waarde is not None and str(cp_waarde).strip():
                                                 update_data[veld] = cp_waarde
-                                        
+
                                         # Voeg nbb_wedstrijd_nr toe als die nog niet gezet is
                                         if bob_fmt.get('nbb_wedstrijd_nr') and not bob.get('nbb_wedstrijd_nr'):
                                             update_data['nbb_wedstrijd_nr'] = bob_fmt['nbb_wedstrijd_nr']
-                                        
+
+                                        # Check op annulering/heractivering
+                                        wordt_geannuleerd = any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == True for w in wijzigingen)
+                                        wordt_heractiveerd = any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == False and w.get('bob_waarde') == True for w in wijzigingen)
+
+                                        if wordt_geannuleerd:
+                                            # Annulering: markeer als geannuleerd en verwijder scheidsrechters
+                                            update_data['geannuleerd'] = True
+                                            update_data['geannuleerd_op'] = datetime.now().isoformat()
+
+                                            # Log afmelding en verwijder scheidsrechters
+                                            for positie in ["scheids_1", "scheids_2"]:
+                                                scheids_nbb = bob.get(positie)
+                                                if scheids_nbb:
+                                                    try:
+                                                        wed_datum_str = bob.get('datum', '')
+                                                        wed_datum_dt = datetime.strptime(str(wed_datum_str).replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+                                                        db.log_registratie(scheids_nbb, wed_id, positie, "annulering_wedstrijd", wed_datum_dt)
+                                                        scheids_afgemeld += 1
+                                                    except:
+                                                        pass
+
+                                            # Verwijder scheidsrechter-gerelateerde velden
+                                            update_data['scheids_1'] = None
+                                            update_data['scheids_2'] = None
+                                            update_data['scheids_1_punten_berekend'] = None
+                                            update_data['scheids_2_punten_berekend'] = None
+                                            update_data['scheids_1_punten_details'] = None
+                                            update_data['scheids_2_punten_details'] = None
+                                            update_data['begeleider'] = None
+
+                                        elif wordt_heractiveerd:
+                                            # Heractivering: verwijder annulering
+                                            update_data['geannuleerd'] = False
+                                            update_data.pop('geannuleerd_op', None)
+
                                         try:
                                             sla_wedstrijd_op(wed_id, update_data)
                                             bijgewerkt += 1
@@ -14817,7 +14884,10 @@ def toon_synchronisatie_tab():
                             
                             # Toon resultaat
                             if bijgewerkt > 0:
-                                st.success(f"✅ {bijgewerkt} wedstrijden bijgewerkt!")
+                                succes_msg = f"✅ {bijgewerkt} wedstrijden bijgewerkt!"
+                                if scheids_afgemeld > 0:
+                                    succes_msg += f" ({scheids_afgemeld} scheidsrechters afgemeld)"
+                                st.success(succes_msg)
                             
                             if fouten:
                                 st.error(f"⚠️ {len(fouten)} fouten opgetreden:")
@@ -14825,11 +14895,13 @@ def toon_synchronisatie_tab():
                                     st.write(fout)
                                 st.warning("Los de fouten op en probeer opnieuw. De sync wordt NIET automatisch herstart.")
                             else:
-                                # Alleen rerun als er geen fouten zijn
+                                # Invalideer cache en rerun
+                                if "_db_cache_wedstrijden" in st.session_state:
+                                    del st.session_state["_db_cache_wedstrijden"]
                                 del st.session_state['cp_sync_resultaat']
                                 del st.session_state['cp_sync_uitgevoerd']
                                 st.rerun()
-                
+
                 # VERWIJDERDE WEDSTRIJDEN (in BOB maar niet in CP)
                 if resultaat['verwijderd']:
                     st.subheader(f"❌ Niet meer in CP ({len(resultaat['verwijderd'])})")
