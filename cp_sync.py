@@ -1,13 +1,14 @@
 """
 cp_sync.py - Koppeling BOB ↔ Competitie Planner
 
-Synchroniseert wedstrijden vanuit de Competitie Planner database naar BOB,
+Synchroniseert wedstrijden tussen de Competitie Planner database en BOB,
 zodat scheidsrechters zich kunnen inschrijven op thuiswedstrijden.
 
-Versie: 1.32.22
-Datum: 2026-01-27
+Versie: 1.38.0
+Datum: 2026-03-06
 
 Changelog:
+- 1.38.0: Bidirectionele sync (CP↔BOB) met richtingkeuze per record, geannuleerd status sync
 - 1.32.22: Fix datum parsing bug - lengte berekening was incorrect waardoor datumvergelijking altijd faalde
 """
 
@@ -17,7 +18,7 @@ from datetime import datetime, date, time
 from typing import Optional
 
 # Module versie (synchroon met app.py)
-CP_SYNC_VERSIE = "1.32.22"
+CP_SYNC_VERSIE = "1.38.0"
 
 
 # =============================================================================

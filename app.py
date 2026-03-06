@@ -25,9 +25,17 @@ import ti_sync  # Koppeling met Teamindeling database
 db.check_geo_access()
 
 # Versie informatie
-APP_VERSIE = "1.37.3"
-APP_VERSIE_DATUM = "2026-03-02"
+APP_VERSIE = "1.38.0"
+APP_VERSIE_DATUM = "2026-03-06"
 APP_CHANGELOG = """
+### v1.38.0 (2026-03-06)
+**Bidirectionele sync CP ↔ BOB:**
+- 🔄 Per wedstrijd kiezen: "CP is leidend", "BOB is leidend" of "Overslaan"
+- 🚫 Annuleringsstatus (geannuleerd) wordt meegesynchroniseerd
+- ✅ Heractivering: geannuleerde wedstrijden kunnen worden hersteld
+- 👥 Bij annulering via sync: scheidsrechters worden automatisch afgemeld
+- ↩️ BOB→CP richting: schrijf BOB wijzigingen terug naar Competitie Planner
+
 ### v1.37.3 (2026-03-02)
 **Beschikbaarheid log zichtbaar in beheer:**
 - 📋 Beschikbaarheidswijzigingen per speler zichtbaar in scheidsrechters overzicht
