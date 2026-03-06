@@ -14655,9 +14655,10 @@ def toon_synchronisatie_tab():
                     else:
                         st.write("Deze wedstrijden hebben verschillen tussen CP en BOB.")
                     
-                    # Reset selectie als lengte niet klopt
-                    if 'cp_wijzig_selectie' not in st.session_state or len(st.session_state['cp_wijzig_selectie']) != len(resultaat['gewijzigd']):
-                        st.session_state['cp_wijzig_selectie'] = [False] * len(resultaat['gewijzigd'])
+                    # Reset sync richting keuze als lengte niet klopt
+                    sync_opties = ["Overslaan", "CP is leidend", "BOB is leidend"]
+                    if 'cp_sync_richting' not in st.session_state or len(st.session_state.get('cp_sync_richting', [])) != len(resultaat['gewijzigd']):
+                        st.session_state['cp_sync_richting'] = ["Overslaan"] * len(resultaat['gewijzigd'])
                     
                     for i, item in enumerate(resultaat['gewijzigd']):
                         bob = item['bob']
@@ -14797,39 +14798,60 @@ def toon_synchronisatie_tab():
                                 else:
                                     st.info(f"👥 Huidige scheidsrechters: {', '.join(scheids_info)} (blijven behouden)")
                             
-                            st.session_state['cp_wijzig_selectie'][i] = st.checkbox(
-                                "CP waarden overnemen",
-                                value=st.session_state['cp_wijzig_selectie'][i],
+                            huidige_keuze = st.session_state['cp_sync_richting'][i]
+                            keuze_index = sync_opties.index(huidige_keuze) if huidige_keuze in sync_opties else 0
+                            st.session_state['cp_sync_richting'][i] = st.selectbox(
+                                "Synchronisatie richting",
+                                sync_opties,
+                                index=keuze_index,
                                 key=f"cp_wijzig_{i}"
                             )
                     
-                    # Bijwerken knop
-                    geselecteerd_wijzig = sum(st.session_state['cp_wijzig_selectie'])
+                    # Synchronisatie knop
+                    richtingen = st.session_state.get('cp_sync_richting', [])
+                    cp_naar_bob = sum(1 for r in richtingen if r == "CP is leidend")
+                    bob_naar_cp = sum(1 for r in richtingen if r == "BOB is leidend")
+                    geselecteerd_wijzig = cp_naar_bob + bob_naar_cp
+
                     if geselecteerd_wijzig > 0:
-                        if st.button(f"✏️ Werk {geselecteerd_wijzig} wedstrijden bij", key="cp_update_btn"):
-                            bijgewerkt = 0
+                        # Bouw button label met richting-info
+                        label_delen = []
+                        if cp_naar_bob > 0:
+                            label_delen.append(f"{cp_naar_bob}× CP→BOB")
+                        if bob_naar_cp > 0:
+                            label_delen.append(f"{bob_naar_cp}× BOB→CP")
+                        button_label = f"🔄 Synchroniseer {geselecteerd_wijzig} wedstrijden ({', '.join(label_delen)})"
+
+                        if st.button(button_label, key="cp_update_btn"):
+                            bijgewerkt_bob = 0
+                            bijgewerkt_cp = 0
                             fouten = []
                             scheids_afgemeld = 0
 
                             for i, item in enumerate(resultaat['gewijzigd']):
-                                if st.session_state['cp_wijzig_selectie'][i]:
-                                    bob = item['bob']
-                                    bob_fmt = item['bob_format']
-                                    wijzigingen = item.get('wijzigingen', [])
+                                richting = richtingen[i] if i < len(richtingen) else "Overslaan"
+                                if richting == "Overslaan":
+                                    continue
+
+                                bob = item['bob']
+                                bob_fmt = item['bob_format']
+                                wijzigingen = item.get('wijzigingen', [])
+
+                                # Identificatie voor foutmelding
+                                wed_info = f"{bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} ({bob_fmt.get('datum', '?')[:16]})"
+
+                                if richting == "CP is leidend":
+                                    # ========================================
+                                    # CP → BOB: bestaande logica
+                                    # ========================================
                                     wed_id = bob.get('wed_id')
 
-                                    # Identificatie voor foutmelding
-                                    wed_info = f"{bob_fmt.get('thuisteam', '?')} vs {bob_fmt.get('uitteam', '?')} ({bob_fmt.get('datum', '?')[:16]})"
-
                                     if wed_id:
-                                        # BELANGRIJK: Start met ALLE bestaande BOB waarden
-                                        # De sla_wedstrijd_op functie doet een volledige UPSERT
-                                        # dus we moeten alles meegeven om data verlies te voorkomen
-                                        update_data = dict(bob)  # Kopie van alle bestaande waarden
+                                        # Start met ALLE bestaande BOB waarden (volledige UPSERT)
+                                        update_data = dict(bob)
 
-                                        # Overschrijf met CP waarden waar ze verschillen en CP een waarde heeft
+                                        # Overschrijf met CP waarden
                                         sync_velden = ['datum', 'thuisteam', 'uitteam', 'type', 'niveau', 'veld']
-
                                         for veld in sync_velden:
                                             cp_waarde = bob_fmt.get(veld)
                                             if cp_waarde is not None and str(cp_waarde).strip():
@@ -14844,7 +14866,6 @@ def toon_synchronisatie_tab():
                                         wordt_heractiveerd = any(w.get('veld') == 'geannuleerd' and w.get('cp_waarde') == False and w.get('bob_waarde') == True for w in wijzigingen)
 
                                         if wordt_geannuleerd:
-                                            # Annulering: markeer als geannuleerd en verwijder scheidsrechters
                                             update_data['geannuleerd'] = True
                                             update_data['geannuleerd_op'] = datetime.now().isoformat()
 
@@ -14860,7 +14881,6 @@ def toon_synchronisatie_tab():
                                                     except:
                                                         pass
 
-                                            # Verwijder scheidsrechter-gerelateerde velden
                                             update_data['scheids_1'] = None
                                             update_data['scheids_2'] = None
                                             update_data['scheids_1_punten_berekend'] = None
@@ -14870,30 +14890,55 @@ def toon_synchronisatie_tab():
                                             update_data['begeleider'] = None
 
                                         elif wordt_heractiveerd:
-                                            # Heractivering: verwijder annulering
                                             update_data['geannuleerd'] = False
                                             update_data.pop('geannuleerd_op', None)
 
                                         try:
                                             sla_wedstrijd_op(wed_id, update_data)
-                                            bijgewerkt += 1
+                                            bijgewerkt_bob += 1
                                         except Exception as e:
-                                            fouten.append(f"❌ {wed_info}: {str(e)}")
+                                            fouten.append(f"❌ CP→BOB {wed_info}: {str(e)}")
                                     else:
-                                        fouten.append(f"❌ {wed_info}: Geen wed_id gevonden")
-                            
+                                        fouten.append(f"❌ CP→BOB {wed_info}: Geen BOB wed_id gevonden")
+
+                                elif richting == "BOB is leidend":
+                                    # ========================================
+                                    # BOB → CP: schrijf BOB waarden terug naar CP
+                                    # ========================================
+                                    cp_wed = item.get('cp', {})
+                                    cp_id = cp_wed.get('id')
+
+                                    if cp_id:
+                                        cp_updates = cp_sync.map_bob_naar_cp_updates(bob, wijzigingen)
+                                        if cp_updates:
+                                            succes, fout_msg = cp_sync.update_cp_wedstrijd(cp_id, cp_updates)
+                                            if succes:
+                                                bijgewerkt_cp += 1
+                                            else:
+                                                fouten.append(f"❌ BOB→CP {wed_info}: {fout_msg}")
+                                        else:
+                                            fouten.append(f"❌ BOB→CP {wed_info}: Geen wijzigingen om door te voeren")
+                                    else:
+                                        fouten.append(f"❌ BOB→CP {wed_info}: Geen CP id gevonden")
+
                             # Toon resultaat
-                            if bijgewerkt > 0:
-                                succes_msg = f"✅ {bijgewerkt} wedstrijden bijgewerkt!"
+                            succes_delen = []
+                            if bijgewerkt_bob > 0:
+                                msg = f"{bijgewerkt_bob} in BOB bijgewerkt"
                                 if scheids_afgemeld > 0:
-                                    succes_msg += f" ({scheids_afgemeld} scheidsrechters afgemeld)"
-                                st.success(succes_msg)
-                            
+                                    msg += f" ({scheids_afgemeld} scheidsrechters afgemeld)"
+                                succes_delen.append(msg)
+                            if bijgewerkt_cp > 0:
+                                succes_delen.append(f"{bijgewerkt_cp} in CP bijgewerkt")
+
+                            if succes_delen:
+                                st.success(f"✅ {', '.join(succes_delen)}!")
+
                             if fouten:
                                 st.error(f"⚠️ {len(fouten)} fouten opgetreden:")
                                 for fout in fouten:
                                     st.write(fout)
-                                st.warning("Los de fouten op en probeer opnieuw. De sync wordt NIET automatisch herstart.")
+                                st.warning("Los de fouten op en probeer opnieuw.")
                             else:
                                 # Invalideer cache en rerun
                                 if "_db_cache_wedstrijden" in st.session_state:

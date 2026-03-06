@@ -682,6 +682,87 @@ def detecteer_wijzigingen(cp_bob_format: dict, bob_wed: dict) -> list[dict]:
 
 
 # =============================================================================
+# BOB → CP SYNC (terugschrijven naar Competitie Planner)
+# =============================================================================
+
+def update_cp_wedstrijd(cp_id: str, updates: dict) -> tuple[bool, str]:
+    """
+    Werk een wedstrijd bij in de Competitie Planner database (BOB → CP richting).
+
+    Args:
+        cp_id: Het UUID id van de wedstrijd in CP
+        updates: Dict met CP-velden om bij te werken
+
+    Returns:
+        Tuple (succes: bool, foutmelding: str)
+    """
+    client = get_cp_client()
+    if not client:
+        return False, "Geen CP database verbinding"
+
+    try:
+        result = client.table('matches').update(updates).eq('id', cp_id).execute()
+        if result.data:
+            return True, ""
+        return False, "Geen records bijgewerkt (id niet gevonden?)"
+    except Exception as e:
+        return False, str(e)
+
+
+def map_bob_naar_cp_updates(bob_wed: dict, wijzigingen: list[dict]) -> dict:
+    """
+    Genereer CP update dict op basis van BOB waarden.
+    Alleen de gewijzigde velden worden meegenomen.
+
+    Args:
+        bob_wed: De BOB wedstrijd
+        wijzigingen: Lijst met gedetecteerde wijzigingen
+
+    Returns:
+        Dict met CP veldnamen en waarden
+    """
+    updates = {}
+
+    for wijziging in wijzigingen:
+        veld = wijziging.get('veld')
+
+        # Skip info-only velden
+        if wijziging.get('_info_only') or (veld and veld.startswith('_')):
+            continue
+
+        if veld == 'geannuleerd':
+            # BOB geannuleerd status → CP status veld
+            if bob_wed.get('geannuleerd', False):
+                updates['status'] = 'cancelled'
+            else:
+                updates['status'] = 'imported'
+
+        elif veld == 'datum':
+            # BOB datum → CP scheduled_date + scheduled_time
+            bob_datum = bob_wed.get('datum', '')
+            if bob_datum:
+                try:
+                    dt = datetime.strptime(str(bob_datum).replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+                    updates['scheduled_date'] = dt.strftime('%Y-%m-%d')
+                    updates['scheduled_time'] = dt.strftime('%H:%M:%S')
+                except:
+                    pass
+
+        elif veld == 'veld':
+            # BOB veld → CP field_number
+            bob_veld = bob_wed.get('veld')
+            if bob_veld:
+                try:
+                    updates['field_number'] = int(bob_veld)
+                except:
+                    updates['field_number'] = None
+            else:
+                updates['field_number'] = None
+
+    return updates
+
+
+# =============================================================================
 # SYNC ACTIES
 # =============================================================================
 
